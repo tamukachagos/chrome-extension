@@ -38,7 +38,10 @@
     context: captureContext(),
     knowledge: [],
     rulePacks: null,
-    settings: { ...DEFAULT_SETTINGS }
+    settings: { ...DEFAULT_SETTINGS },
+    lastScreenshot: null,
+    currentPlan: null,
+    actLog: []
   };
 
   const rootHost = document.createElement("div");
@@ -471,6 +474,121 @@
         margin-top: 8px;
       }
 
+      .step-card {
+        border: 1px solid var(--pbi-line);
+        border-radius: 6px;
+        background: #fff;
+        padding: 9px 10px;
+        margin-bottom: 6px;
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
+      .step-card.step-running {
+        border-color: var(--pbi-accent-2);
+        background: #f3f8ff;
+      }
+
+      .step-card.step-done {
+        border-color: var(--pbi-green);
+        opacity: 0.7;
+      }
+
+      .step-card.step-skipped {
+        opacity: 0.45;
+      }
+
+      .step-num {
+        flex: 0 0 auto;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--pbi-soft);
+        color: var(--pbi-muted);
+        font-size: 11px;
+        font-weight: 800;
+        display: grid;
+        place-items: center;
+      }
+
+      .step-body {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .step-desc {
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+
+      .step-detail {
+        font-size: 11px;
+        color: var(--pbi-muted);
+      }
+
+      .step-actions {
+        display: flex;
+        gap: 4px;
+        flex: 0 0 auto;
+      }
+
+      .step-btn {
+        border: 1px solid #b9ad95;
+        border-radius: 5px;
+        background: #fff;
+        color: #171717;
+        cursor: pointer;
+        padding: 3px 7px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .step-btn.approve {
+        background: var(--pbi-accent);
+        border-color: #d7b100;
+      }
+
+      .step-btn.skip {
+        color: var(--pbi-muted);
+      }
+
+      .log-entry {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--pbi-line);
+        font-size: 11px;
+      }
+
+      .log-entry:last-child {
+        border-bottom: 0;
+      }
+
+      .log-time {
+        flex: 0 0 auto;
+        color: var(--pbi-muted);
+        font-family: Consolas, monospace;
+      }
+
+      .log-type {
+        flex: 0 0 auto;
+        font-weight: 700;
+      }
+
+      .log-msg {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--pbi-muted);
+      }
+
+      .log-ok { color: var(--pbi-green); }
+      .log-err { color: var(--pbi-red); }
+
       .footer {
         border-top: 1px solid var(--pbi-line);
         background: #fffdf7;
@@ -732,73 +850,185 @@
         </section>
 
         <section class="section" data-section="act">
+
+          <!-- 1. Screenshot + Vision AI -->
           <div class="context-card">
-            <strong>Screenshot</strong>
-            <p>Capture the current Power BI page to see the report state.</p>
+            <strong>Screenshot + Vision AI</strong>
+            <p>Capture the screen, then ask Claude to analyze it.</p>
             <div class="actions">
-              <button class="btn primary" id="takeScreenshot">Capture screenshot</button>
-              <button class="btn" id="analyzeScreenshot">Analyze layout</button>
+              <button class="btn primary" id="takeScreenshot">Capture</button>
+              <button class="btn" id="copyScreenshot">Copy URL</button>
             </div>
             <div id="screenshotWrap" style="display:none; margin-top:10px;">
               <img id="screenshotImg" class="act-screenshot" style="display:block;" alt="Screenshot">
-              <div class="actions" style="margin-top:8px;">
-                <button class="btn" id="copyScreenshot">Copy data URL</button>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label for="visionPrompt">Ask Claude about the screenshot <span>needs proxy endpoint</span></label>
+              <textarea id="visionPrompt" style="min-height:64px;" placeholder="Describe what visuals you see, identify any errors, review the layout..."></textarea>
+            </div>
+            <div class="actions">
+              <button class="btn" data-vision-template="layout">Layout review</button>
+              <button class="btn" data-vision-template="errors">Find errors</button>
+              <button class="btn" data-vision-template="fields">Identify fields</button>
+              <button class="btn blue" id="sendVisionPrompt">Analyze with AI</button>
+            </div>
+            <div class="result" id="visionResult">
+              <div class="result-header">
+                <strong>Vision analysis</strong>
+                <button class="btn" data-copy="#visionOutput">Copy</button>
               </div>
+              <pre id="visionOutput"></pre>
             </div>
           </div>
 
+          <!-- 2. Action Planner -->
           <div class="context-card">
-            <strong>Read page elements</strong>
-            <p>Scan what interactive elements are visible on the Power BI canvas.</p>
+            <strong>Action Planner</strong>
+            <p>Describe your goal. Claude proposes steps. You approve before anything runs.</p>
+            <div class="field">
+              <label for="planGoal">Goal</label>
+              <textarea id="planGoal" style="min-height:64px;" placeholder="Example: Create a YoY % measure for Sales, add it to the bar chart, and format it as a percentage."></textarea>
+            </div>
             <div class="actions">
-              <button class="btn primary" id="readPage">Read all elements</button>
+              <button class="btn blue" id="generatePlan">Generate plan</button>
+              <button class="btn" id="runApprovedSteps" disabled>Run approved steps</button>
+              <button class="btn" id="clearPlan">Clear</button>
+            </div>
+            <div id="planStatus" class="note" style="display:none; margin-top:8px;"></div>
+            <div id="planSteps" style="margin-top:8px;"></div>
+          </div>
+
+          <!-- 3. Extended Action Executor -->
+          <div class="context-card">
+            <strong>Action executor</strong>
+            <p>Manual controls — click, type, scroll, keyboard shortcuts, and more.</p>
+
+            <div class="grid-2" style="margin-bottom:10px;">
+              <div class="field">
+                <label for="clickTarget">Click — label or text</label>
+                <input id="clickTarget" placeholder="Format pane, Fields...">
+              </div>
+              <div class="actions" style="align-items:flex-end; margin:0;">
+                <button class="btn primary" id="doClickElement">Click</button>
+                <button class="btn" id="doHighlightElement">Highlight</button>
+              </div>
+            </div>
+
+            <div class="grid-2" style="margin-bottom:10px;">
+              <div class="field">
+                <label for="coordX">Coordinate click X</label>
+                <input id="coordX" type="number" placeholder="420">
+              </div>
+              <div class="field">
+                <label for="coordY">Y</label>
+                <input id="coordY" type="number" placeholder="300">
+              </div>
+            </div>
+            <div class="actions" style="margin-bottom:10px;">
+              <button class="btn" id="doCoordClick">Left click XY</button>
+              <button class="btn" id="doCoordRightClick">Right click XY</button>
+              <button class="btn" id="doCoordDoubleClick">Double click XY</button>
+            </div>
+
+            <div class="grid-2" style="margin-bottom:10px;">
+              <div class="field">
+                <label for="typeTarget">Type — target label <span>blank = focused</span></label>
+                <input id="typeTarget" placeholder="DAX editor, search...">
+              </div>
+              <div class="field">
+                <label for="typeText">Text</label>
+                <input id="typeText" placeholder="Enter text...">
+              </div>
+            </div>
+            <div class="actions" style="margin-bottom:10px;">
+              <button class="btn primary" id="doTypeInField">Type</button>
+              <button class="btn" id="doClearField">Clear field</button>
+            </div>
+
+            <div class="grid-2" style="margin-bottom:10px;">
+              <div class="field">
+                <label for="keyCombo">Keyboard shortcut</label>
+                <input id="keyCombo" placeholder="Ctrl+A, Enter, Escape, Tab">
+              </div>
+              <div class="actions" style="align-items:flex-end; margin:0;">
+                <button class="btn primary" id="doPressKey">Send key</button>
+              </div>
+            </div>
+
+            <div class="grid-2" style="margin-bottom:10px;">
+              <div class="field">
+                <label for="scrollDir">Scroll direction</label>
+                <select id="scrollDir">
+                  <option value="down">Down</option>
+                  <option value="up">Up</option>
+                  <option value="right">Right</option>
+                  <option value="left">Left</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="scrollAmt">Amount (px)</label>
+                <input id="scrollAmt" type="number" value="300" placeholder="300">
+              </div>
+            </div>
+            <div class="actions" style="margin-bottom:10px;">
+              <button class="btn" id="doScroll">Scroll</button>
+              <button class="btn" id="doWait">Wait 500 ms</button>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="rightClickTarget">Right-click label</label>
+                <input id="rightClickTarget" placeholder="Visual name...">
+              </div>
+              <div class="field">
+                <label for="dblClickTarget">Double-click label</label>
+                <input id="dblClickTarget" placeholder="Visual title...">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn" id="doRightClick">Right-click</button>
+              <button class="btn" id="doDoubleClick">Double-click</button>
+            </div>
+
+            <div id="execFeedback" class="note" style="display:none; margin-top:8px;"></div>
+          </div>
+
+          <!-- 4. DOM Scanner -->
+          <div class="context-card">
+            <strong>DOM scanner</strong>
+            <p>Scan visible interactive elements and click them directly.</p>
+            <div class="actions">
+              <button class="btn primary" id="readPage">Scan all</button>
               <button class="btn" id="readPbiElements">Power BI only</button>
             </div>
             <div id="pageElementsList" class="el-list"></div>
           </div>
 
-          <div class="context-card">
-            <strong>Click element</strong>
-            <p>Find an element by its label or visible text and click it.</p>
-            <div class="field">
-              <label for="clickTarget">Label or text</label>
-              <input id="clickTarget" placeholder="Format, Field list, Add a visual...">
-            </div>
-            <div class="actions">
-              <button class="btn primary" id="doClickElement">Click it</button>
-              <button class="btn" id="doHighlightElement">Highlight only</button>
-            </div>
-            <div id="clickFeedback" class="note" style="display:none; margin-top:8px;"></div>
-          </div>
-
-          <div class="context-card">
-            <strong>Type text</strong>
-            <p>Type into the focused element or a labelled input field.</p>
-            <div class="field">
-              <label for="typeTarget">Target label <span>blank = current focus</span></label>
-              <input id="typeTarget" placeholder="Search box, measure name...">
-            </div>
-            <div class="field">
-              <label for="typeText">Text to type</label>
-              <input id="typeText" placeholder="Enter text...">
-            </div>
-            <div class="actions">
-              <button class="btn primary" id="doTypeInField">Type</button>
-              <button class="btn" id="doClearField">Clear field</button>
-            </div>
-          </div>
-
+          <!-- 5. Power BI Shortcuts -->
           <div class="context-card">
             <strong>Power BI shortcuts</strong>
-            <p>Common editing actions on app.powerbi.com.</p>
+            <p>Common report-editing actions.</p>
             <div class="actions">
               <button class="btn" id="pbiOpenFormat">Format pane</button>
               <button class="btn" id="pbiOpenFields">Fields list</button>
               <button class="btn" id="pbiOpenDax">New measure</button>
+              <button class="btn" id="pbiSaveMeasure">Save measure ✓</button>
               <button class="btn" id="pbiRefreshVisual">Refresh</button>
+              <button class="btn" id="pbiSelectAllVisuals">Select all visuals</button>
             </div>
             <div id="pbiActionFeedback" class="note" style="display:none; margin-top:8px;"></div>
           </div>
+
+          <!-- 6. Action Log -->
+          <div class="context-card">
+            <strong>Action log</strong>
+            <p>Every action executed this session.</p>
+            <div class="actions">
+              <button class="btn" id="clearActLog">Clear log</button>
+            </div>
+            <div id="actLogList" class="el-list" style="max-height:220px;"></div>
+          </div>
+
         </section>
       </main>
 
@@ -924,21 +1154,20 @@
       });
     });
 
-    // Act tab — screenshot
+    // ── Act tab ──────────────────────────────────────────────────────────
+
+    // Screenshot capture
     $("#takeScreenshot").addEventListener("click", async () => {
       toast("Capturing screenshot...");
       try {
-        const response = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ type: "TAKE_SCREENSHOT" }, (res) => {
-            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-            else resolve(res);
-          });
-        });
+        const response = await captureScreenshot();
         if (response?.dataUrl) {
+          state.lastScreenshot = response.dataUrl;
           const img = $("#screenshotImg");
           const wrap = $("#screenshotWrap");
           img.src = response.dataUrl;
           wrap.style.display = "block";
+          logAction("screenshot", "visible tab", "Captured");
           toast("Screenshot captured.");
         } else {
           toast("Screenshot failed — " + (response?.error || "unknown error"));
@@ -949,58 +1178,110 @@
     });
 
     $("#copyScreenshot").addEventListener("click", async () => {
-      const img = $("#screenshotImg");
-      if (!img.src || img.src === location.href) return toast("Take a screenshot first.");
-      await navigator.clipboard.writeText(img.src);
+      if (!state.lastScreenshot) return toast("Take a screenshot first.");
+      await navigator.clipboard.writeText(state.lastScreenshot);
       toast("Screenshot data URL copied.");
     });
 
-    $("#analyzeScreenshot").addEventListener("click", () => {
-      const analysis = [
-        `Page: ${state.context.pageMode} — ${state.context.title}`,
-        `URL: ${state.context.url}`,
-        "",
-        "Visible fields detected:",
-        ...state.context.likelyFields.slice(0, 10).map((f) => `  - ${f}`),
-        "",
-        "Tip: Go to the Ask tab and describe what you see in the screenshot to get layout recommendations."
-      ].join("\n");
-      showResult("#askResult", "#askOutput", analysis);
-      setActiveTab("ask");
-      toast("Context loaded in Ask tab.");
+    // Vision prompt templates
+    $$("[data-vision-template]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const templates = {
+          layout: "Review this Power BI report screenshot. Describe the layout, identify which visuals are present, and suggest any improvements to the layout or visual hierarchy.",
+          errors: "Look at this Power BI screenshot. Are there any error messages, broken visuals, or loading failures? List each problem you can see and suggest what may have caused it.",
+          fields: "Examine this Power BI screenshot. Identify the field names, measure names, column headers, and axis labels that are visible. List them clearly."
+        };
+        $("#visionPrompt").value = templates[btn.dataset.visionTemplate] || "";
+      });
     });
 
-    // Act tab — read page elements
-    $("#readPage").addEventListener("click", () => {
-      renderPageElements(readPageElements(false));
+    // Vision AI analysis
+    $("#sendVisionPrompt").addEventListener("click", async () => {
+      if (!state.lastScreenshot) return toast("Capture a screenshot first.");
+      const prompt = $("#visionPrompt").value.trim();
+      if (!prompt) return toast("Enter a prompt for the vision analysis.");
+      if (!state.settings.fallbackEndpoint || !state.settings.fallbackEnabled) {
+        return toast("Enable the fallback proxy endpoint in the Train tab first.");
+      }
+      showResult("#visionResult", "#visionOutput", "Sending to Claude vision...");
+      try {
+        const text = await callVisionApi(prompt, state.lastScreenshot);
+        showResult("#visionResult", "#visionOutput", text);
+        logAction("vision", "screenshot", "Analysis received");
+      } catch (err) {
+        showResult("#visionResult", "#visionOutput", "Vision API error: " + err.message);
+      }
     });
 
-    $("#readPbiElements").addEventListener("click", () => {
-      renderPageElements(readPageElements(true));
+    // Action Planner
+    $("#generatePlan").addEventListener("click", async () => {
+      const goal = $("#planGoal").value.trim();
+      if (!goal) return toast("Describe your goal first.");
+      if (!state.settings.fallbackEndpoint || !state.settings.fallbackEnabled) {
+        return toast("Enable the fallback proxy endpoint in the Train tab first.");
+      }
+      const planStatus = $("#planStatus");
+      planStatus.textContent = "Generating action plan...";
+      planStatus.style.display = "block";
+      $("#planSteps").innerHTML = "";
+      $("#runApprovedSteps").disabled = true;
+
+      try {
+        const screenshot = state.lastScreenshot || null;
+        const plan = await callActionPlanApi(goal, screenshot);
+        state.currentPlan = plan;
+        renderActionPlan(plan);
+        $("#runApprovedSteps").disabled = false;
+        planStatus.textContent = `Plan ready — ${plan.steps.length} steps. Approve each step before running.`;
+        logAction("plan", goal.slice(0, 50), `${plan.steps.length} steps generated`);
+      } catch (err) {
+        planStatus.textContent = "Plan error: " + err.message;
+      }
     });
 
-    // Act tab — click element
+    $("#runApprovedSteps").addEventListener("click", async () => {
+      if (!state.currentPlan?.steps?.length) return toast("Generate a plan first.");
+      const approved = state.currentPlan.steps.filter((s) => s.approved && !s.done && !s.skipped);
+      if (!approved.length) return toast("Approve at least one step first.");
+      await runApprovedSteps();
+    });
+
+    $("#clearPlan").addEventListener("click", () => {
+      state.currentPlan = null;
+      $("#planSteps").innerHTML = "";
+      $("#planStatus").style.display = "none";
+      $("#runApprovedSteps").disabled = true;
+    });
+
+    // Extended action executor — label click
     $("#doClickElement").addEventListener("click", () => {
       const target = $("#clickTarget").value.trim();
       if (!target) return toast("Enter a label or text.");
-      const result = findAndActElement(target, false);
-      const fb = $("#clickFeedback");
-      fb.textContent = result;
-      fb.style.display = "block";
-      toast(result.slice(0, 60));
+      const result = findAndActElement(target, "click");
+      showExecFeedback(result);
     });
 
     $("#doHighlightElement").addEventListener("click", () => {
       const target = $("#clickTarget").value.trim();
       if (!target) return toast("Enter a label or text.");
-      const result = findAndActElement(target, true);
-      const fb = $("#clickFeedback");
-      fb.textContent = result;
-      fb.style.display = "block";
-      toast(result.slice(0, 60));
+      const result = findAndActElement(target, "highlight");
+      showExecFeedback(result);
     });
 
-    // Act tab — type text
+    // Coordinate actions
+    $("#doCoordClick").addEventListener("click", () => {
+      showExecFeedback(coordAction(false, false));
+    });
+
+    $("#doCoordRightClick").addEventListener("click", () => {
+      showExecFeedback(coordAction(false, true));
+    });
+
+    $("#doCoordDoubleClick").addEventListener("click", () => {
+      showExecFeedback(coordAction(true, false));
+    });
+
+    // Type / clear
     $("#doTypeInField").addEventListener("click", () => {
       const targetLabel = $("#typeTarget").value.trim();
       const text = $("#typeText").value;
@@ -1009,11 +1290,53 @@
     });
 
     $("#doClearField").addEventListener("click", () => {
-      const targetLabel = $("#typeTarget").value.trim();
-      clearFieldByLabel(targetLabel);
+      clearFieldByLabel($("#typeTarget").value.trim());
     });
 
-    // Act tab — Power BI shortcuts
+    // Keyboard shortcut
+    $("#doPressKey").addEventListener("click", () => {
+      const combo = $("#keyCombo").value.trim();
+      if (!combo) return toast("Enter a key combo.");
+      showExecFeedback(pressKeyCombo(combo));
+    });
+
+    // Scroll + wait
+    $("#doScroll").addEventListener("click", () => {
+      const dir = $("#scrollDir").value;
+      const amt = parseInt($("#scrollAmt").value, 10) || 300;
+      scrollPage(dir, amt);
+    });
+
+    $("#doWait").addEventListener("click", async () => {
+      toast("Waiting 500 ms...");
+      await wait(500);
+      toast("Done.");
+      logAction("wait", "500ms", "OK");
+    });
+
+    // Right / double click
+    $("#doRightClick").addEventListener("click", () => {
+      const target = $("#rightClickTarget").value.trim();
+      if (!target) return toast("Enter a label to right-click.");
+      showExecFeedback(findAndActElement(target, "rightclick"));
+    });
+
+    $("#doDoubleClick").addEventListener("click", () => {
+      const target = $("#dblClickTarget").value.trim();
+      if (!target) return toast("Enter a label to double-click.");
+      showExecFeedback(findAndActElement(target, "doubleclick"));
+    });
+
+    // DOM Scanner
+    $("#readPage").addEventListener("click", () => {
+      renderPageElements(readPageElements(false));
+    });
+
+    $("#readPbiElements").addEventListener("click", () => {
+      renderPageElements(readPageElements(true));
+    });
+
+    // Power BI shortcuts
     $("#pbiOpenFormat").addEventListener("click", () => {
       pbiShortcut(["Format", "Format your visuals", "Format pane", "Format visual", "Visualizations"], "Format pane");
     });
@@ -1026,8 +1349,31 @@
       pbiShortcut(["New measure", "New quick measure", "Edit measure", "Quick measure"], "measure editor");
     });
 
+    $("#pbiSaveMeasure").addEventListener("click", () => {
+      // Click the checkmark save button in Power BI DAX editor
+      const saved = pbiShortcut(
+        ["Commit", "Apply", "Save measure", "✓", "Check mark", "Done"],
+        "save button"
+      );
+      if (!saved) {
+        // Fallback: dispatch Enter key
+        pressKeyCombo("Enter");
+        logAction("key", "Enter", "Sent (measure save fallback)");
+      }
+    });
+
     $("#pbiRefreshVisual").addEventListener("click", () => {
       pbiShortcut(["Refresh", "Refresh visuals", "Refresh now", "Refresh visual"], "refresh");
+    });
+
+    $("#pbiSelectAllVisuals").addEventListener("click", () => {
+      pressKeyCombo("Ctrl+A");
+    });
+
+    // Action log
+    $("#clearActLog").addEventListener("click", () => {
+      state.actLog = [];
+      renderActLog();
     });
   }
 
@@ -1669,6 +2015,208 @@
     return value.length > max ? `${value.slice(0, max - 3)}...` : value;
   }
 
+  // ── Screenshot ─────────────────────────────────────────────────────────
+
+  async function captureScreenshot() {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "TAKE_SCREENSHOT" }, (res) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(res);
+      });
+    });
+  }
+
+  // ── Vision API ─────────────────────────────────────────────────────────
+
+  async function callVisionApi(prompt, screenshotDataUrl) {
+    const response = await fetch(state.settings.fallbackEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "anthropic",
+        model: state.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
+        type: "vision",
+        prompt,
+        screenshot: screenshotDataUrl,
+        context: state.context,
+        knowledge: state.knowledge
+      })
+    });
+    if (!response.ok) throw new Error(`Vision endpoint HTTP ${response.status}`);
+    const data = await response.json();
+    return data.text || data.content || data.message || JSON.stringify(data);
+  }
+
+  // ── Action Planner API ────────────────────────────────────────────────
+
+  async function callActionPlanApi(goal, screenshotDataUrl) {
+    const systemPrompt = [
+      "You are a Power BI automation assistant.",
+      "Given a goal and optionally a screenshot of the current Power BI page, return a JSON action plan.",
+      "Response must be valid JSON in this exact shape:",
+      '{ "summary": "...", "steps": [ { "n": 1, "action": "click|type|key|scroll|wait|rightclick|doubleclick", "target": "aria-label or text", "text": "text to type", "combo": "Ctrl+S", "direction": "down", "amount": 300, "ms": 500, "description": "what this step does" } ] }',
+      "Only include fields relevant to each action type.",
+      "Keep steps granular — one action per step.",
+      "Include a wait step after any click that may cause Power BI to load (500ms minimum).",
+      "Target fields use Power BI aria-labels where possible."
+    ].join(" ");
+
+    const response = await fetch(state.settings.fallbackEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "anthropic",
+        model: state.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
+        type: "action_plan",
+        systemPrompt,
+        prompt: `Goal: ${goal}`,
+        screenshot: screenshotDataUrl,
+        context: state.context,
+        knowledge: state.knowledge
+      })
+    });
+
+    if (!response.ok) throw new Error(`Planner endpoint HTTP ${response.status}`);
+    const data = await response.json();
+    const raw = data.text || data.content || data.message || "";
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Could not parse JSON plan from response.");
+
+    const plan = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(plan.steps)) throw new Error("Plan has no steps array.");
+
+    plan.steps = plan.steps.map((s) => ({ ...s, approved: false, done: false, skipped: false }));
+    return plan;
+  }
+
+  // ── Action Plan UI ─────────────────────────────────────────────────────
+
+  function renderActionPlan(plan) {
+    const container = $("#planSteps");
+    container.innerHTML = "";
+
+    if (plan.summary) {
+      const sum = document.createElement("div");
+      sum.className = "note";
+      sum.style.marginBottom = "8px";
+      sum.textContent = plan.summary;
+      container.appendChild(sum);
+    }
+
+    plan.steps.forEach((step, i) => {
+      const card = document.createElement("div");
+      card.className = "step-card";
+      card.id = `step-card-${i}`;
+      card.innerHTML = `
+        <span class="step-num">${step.n || i + 1}</span>
+        <div class="step-body">
+          <div class="step-desc"></div>
+          <div class="step-detail"></div>
+        </div>
+        <div class="step-actions">
+          <button class="step-btn approve">Approve</button>
+          <button class="step-btn skip">Skip</button>
+        </div>
+      `;
+      card.querySelector(".step-desc").textContent = step.description || step.action;
+      const details = [step.action.toUpperCase()];
+      if (step.target) details.push(`→ ${step.target}`);
+      if (step.text) details.push(`"${step.text.slice(0, 40)}"`);
+      if (step.combo) details.push(step.combo);
+      if (step.ms) details.push(`${step.ms}ms`);
+      card.querySelector(".step-detail").textContent = details.join(" ");
+
+      const approveBtn = card.querySelector(".approve");
+      const skipBtn = card.querySelector(".skip");
+
+      approveBtn.addEventListener("click", () => {
+        step.approved = !step.approved;
+        approveBtn.textContent = step.approved ? "Approved ✓" : "Approve";
+        approveBtn.style.background = step.approved ? "var(--pbi-green)" : "";
+        approveBtn.style.color = step.approved ? "#fff" : "";
+        approveBtn.style.borderColor = step.approved ? "var(--pbi-green)" : "";
+      });
+
+      skipBtn.addEventListener("click", () => {
+        step.skipped = true;
+        step.approved = false;
+        card.classList.add("step-skipped");
+        approveBtn.disabled = true;
+        skipBtn.disabled = true;
+      });
+
+      container.appendChild(card);
+    });
+  }
+
+  async function runApprovedSteps() {
+    const steps = state.currentPlan.steps.filter((s) => s.approved && !s.done && !s.skipped);
+    const planStatus = $("#planStatus");
+
+    for (const step of steps) {
+      const card = $(`#step-card-${step.n - 1}`);
+      if (card) card.classList.add("step-running");
+      planStatus.textContent = `Running step ${step.n}: ${step.description || step.action}...`;
+      planStatus.style.display = "block";
+
+      try {
+        const result = await executeStep(step);
+        step.done = true;
+        if (card) { card.classList.remove("step-running"); card.classList.add("step-done"); }
+        logAction(step.action, step.target || step.text || "", result);
+      } catch (err) {
+        if (card) { card.classList.remove("step-running"); }
+        logAction(step.action, step.target || "", "ERROR: " + err.message);
+        planStatus.textContent = `Step ${step.n} failed: ${err.message}. Stopped.`;
+        return;
+      }
+
+      await wait(step.postDelay || 120);
+    }
+
+    planStatus.textContent = `All ${steps.length} approved steps complete.`;
+  }
+
+  async function executeStep(step) {
+    switch (step.action) {
+      case "click":
+        if (step.target) return findAndActElement(step.target, "click");
+        if (step.x != null && step.y != null) return clickAtCoord(step.x, step.y, "left", false);
+        throw new Error("click step has no target or coordinates");
+
+      case "rightclick":
+        if (step.target) return findAndActElement(step.target, "rightclick");
+        if (step.x != null && step.y != null) return clickAtCoord(step.x, step.y, "right", false);
+        throw new Error("rightclick step has no target");
+
+      case "doubleclick":
+        if (step.target) return findAndActElement(step.target, "doubleclick");
+        if (step.x != null && step.y != null) return clickAtCoord(step.x, step.y, "left", true);
+        throw new Error("doubleclick step has no target");
+
+      case "type":
+        typeIntoField(step.target || "", step.text || "");
+        return `Typed: ${(step.text || "").slice(0, 30)}`;
+
+      case "key":
+        return pressKeyCombo(step.combo || step.key || "");
+
+      case "scroll":
+        scrollPage(step.direction || "down", step.amount || 300);
+        return `Scrolled ${step.direction || "down"} ${step.amount || 300}px`;
+
+      case "wait":
+        await wait(step.ms || 500);
+        return `Waited ${step.ms || 500}ms`;
+
+      default:
+        throw new Error(`Unknown action type: ${step.action}`);
+    }
+  }
+
+  // ── DOM Scanner ────────────────────────────────────────────────────────
+
   function readPageElements(pbiOnly) {
     const selector = pbiOnly
       ? '[class*="visual"],[class*="pane"],[class*="slicer"],[aria-label],[data-testid],[role="button"],[role="tab"]'
@@ -1677,92 +2225,163 @@
     const seen = new Map();
     document.querySelectorAll(selector).forEach((el) => {
       const label = (el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 70);
-      const tag = el.tagName.toLowerCase();
-      const role = el.getAttribute("role") || tag;
-      if (label && label.length > 1 && !seen.has(label)) {
-        seen.set(label, { label, role, el });
-      }
+      const role = el.getAttribute("role") || el.tagName.toLowerCase();
+      if (label && label.length > 1 && !seen.has(label)) seen.set(label, { label, role, el });
     });
 
-    return Array.from(seen.values()).slice(0, 50);
+    return Array.from(seen.values()).slice(0, 60);
   }
 
   function renderPageElements(items) {
     const list = $("#pageElementsList");
     if (!list) return;
-
     if (!items.length) {
-      list.innerHTML = '<div class="note">No interactive elements found. Try refreshing page context.</div>';
+      list.innerHTML = '<div class="note">No interactive elements found. Refresh the context first.</div>';
       return;
     }
-
     list.innerHTML = "";
     items.forEach(({ label, role }) => {
       const row = document.createElement("div");
       row.className = "el-row";
-      row.innerHTML = `
-        <span class="el-tag"></span>
-        <span class="el-label" title=""></span>
-        <button class="btn" style="padding:3px 7px;font-size:11px;flex:0 0 auto;">Click</button>
-      `;
+      row.innerHTML = `<span class="el-tag"></span><span class="el-label" title=""></span><button class="btn" style="padding:3px 7px;font-size:11px;flex:0 0 auto;">Click</button>`;
       row.querySelector(".el-tag").textContent = role;
       const labelEl = row.querySelector(".el-label");
       labelEl.textContent = label;
       labelEl.title = label;
       row.querySelector(".btn").addEventListener("click", () => {
-        const result = findAndActElement(label, false);
+        const result = findAndActElement(label, "click");
         toast(result.slice(0, 60));
       });
       list.appendChild(row);
     });
   }
 
-  function findAndActElement(label, highlightOnly) {
+  // ── Element finder & actor ─────────────────────────────────────────────
+
+  function findAndActElement(label, action) {
     const lower = label.toLowerCase();
     const candidates = Array.from(
       document.querySelectorAll('button,input,select,textarea,[role="button"],[role="tab"],[role="menuitem"],[aria-label],[title]')
     );
+    const scored = candidates.map((el) => {
+      const a = (el.getAttribute("aria-label") || "").toLowerCase();
+      const t = (el.getAttribute("title") || "").toLowerCase();
+      const tx = (el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      let score = 0;
+      if (a === lower || t === lower || tx === lower) score = 100;
+      else if (a.includes(lower) || t.includes(lower)) score = 60;
+      else if (tx.includes(lower) && tx.length < 80) score = 40;
+      return { el, score };
+    }).filter((e) => e.score > 0).sort((a, b) => b.score - a.score);
 
-    const scored = candidates
-      .map((el) => {
-        const a = (el.getAttribute("aria-label") || "").toLowerCase();
-        const t = (el.getAttribute("title") || "").toLowerCase();
-        const tx = (el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-        let score = 0;
-        if (a === lower || t === lower || tx === lower) score = 100;
-        else if (a.includes(lower) || t.includes(lower)) score = 60;
-        else if (tx.includes(lower) && tx.length < 80) score = 40;
-        return { el, score };
-      })
-      .filter((e) => e.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    if (!scored.length) {
-      return `No element matched "${label}". Use Read Elements to see available labels.`;
-    }
+    if (!scored.length) return `No element matched "${label}".`;
 
     const { el } = scored[0];
     const name = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 50);
 
-    if (highlightOnly) {
-      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+
+    if (action === "highlight") {
       const prev = el.style.outline;
       el.style.outline = "3px solid #f2c811";
       setTimeout(() => { el.style.outline = prev; }, 2000);
       return `Highlighted: ${name}`;
     }
 
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (action === "rightclick") {
+      el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      logAction("rightclick", name, "OK");
+      return `Right-clicked: ${name}`;
+    }
+
+    if (action === "doubleclick") {
+      el.focus();
+      el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+      logAction("doubleclick", name, "OK");
+      return `Double-clicked: ${name}`;
+    }
+
+    // Default: left click
     el.focus();
     el.click();
     el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    logAction("click", name, "OK");
     return `Clicked: ${name}`;
   }
 
+  // ── Coordinate click ───────────────────────────────────────────────────
+
+  function coordAction(isDouble, isRight) {
+    const x = parseFloat($("#coordX").value);
+    const y = parseFloat($("#coordY").value);
+    if (isNaN(x) || isNaN(y)) return "Enter X and Y coordinates.";
+    return clickAtCoord(x, y, isRight ? "right" : "left", isDouble);
+  }
+
+  function clickAtCoord(x, y, button, isDouble) {
+    const el = document.elementFromPoint(x, y);
+    const label = el ? (el.getAttribute("aria-label") || el.tagName).slice(0, 40) : `(${x},${y})`;
+    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: button === "right" ? 2 : 0 };
+
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (button === "right") {
+        el.dispatchEvent(new MouseEvent("contextmenu", opts));
+      } else if (isDouble) {
+        el.dispatchEvent(new MouseEvent("dblclick", opts));
+      } else {
+        el.focus();
+        el.click();
+        el.dispatchEvent(new MouseEvent("mousedown", opts));
+        el.dispatchEvent(new MouseEvent("mouseup", opts));
+      }
+    }
+
+    const type = isDouble ? "doubleclick" : button === "right" ? "rightclick" : "click";
+    logAction(type, `(${x},${y}) → ${label}`, el ? "OK" : "No element at coords");
+    return `${type} at (${x},${y}): ${label}`;
+  }
+
+  // ── Keyboard ───────────────────────────────────────────────────────────
+
+  function pressKeyCombo(combo) {
+    if (!combo) return "No key combo specified.";
+
+    const parts = combo.split("+");
+    const keyPart = parts[parts.length - 1];
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      key: keyPart,
+      ctrlKey: /ctrl/i.test(combo),
+      shiftKey: /shift/i.test(combo),
+      altKey: /alt/i.test(combo),
+      metaKey: /meta|cmd/i.test(combo)
+    };
+
+    const target = document.activeElement || document.body;
+    target.dispatchEvent(new KeyboardEvent("keydown", opts));
+    target.dispatchEvent(new KeyboardEvent("keypress", opts));
+    target.dispatchEvent(new KeyboardEvent("keyup", opts));
+    logAction("key", combo, "OK");
+    return `Key sent: ${combo}`;
+  }
+
+  // ── Scroll ─────────────────────────────────────────────────────────────
+
+  function scrollPage(direction, amount) {
+    const map = { up: [0, -amount], down: [0, amount], left: [-amount, 0], right: [amount, 0] };
+    const [dx, dy] = map[direction] || [0, amount];
+    window.scrollBy(dx, dy);
+    logAction("scroll", `${direction} ${amount}px`, "OK");
+    toast(`Scrolled ${direction} ${amount}px`);
+  }
+
+  // ── Type / clear ───────────────────────────────────────────────────────
+
   function typeIntoField(targetLabel, text) {
     let el = null;
-
     if (targetLabel) {
       const lower = targetLabel.toLowerCase();
       el = Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"]')).find((node) => {
@@ -1770,33 +2389,27 @@
         return a.includes(lower);
       });
     }
-
     if (!el) el = document.activeElement;
     if (!el || el === document.body || el === document.documentElement) {
       el = document.querySelector('[contenteditable="true"]') || document.querySelector('input:not([type="hidden"])');
     }
-    if (!el) return toast("No input field found. Click on a field in Power BI first.");
+    if (!el) { toast("No input field found. Click on a field in Power BI first."); return; }
 
     el.focus();
-
     if (el.getAttribute("contenteditable") === "true") {
       document.execCommand("insertText", false, text);
+      logAction("type", "contenteditable", text.slice(0, 30));
       toast(`Typed into editor: ${text.slice(0, 30)}`);
       return;
     }
 
-    const inputProto = window.HTMLInputElement.prototype;
-    const textareaProto = window.HTMLTextAreaElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(inputProto, "value")?.set
-      || Object.getOwnPropertyDescriptor(textareaProto, "value")?.set;
-
-    if (setter) {
-      setter.call(el, text);
-    } else {
-      el.value = text;
-    }
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set
+      || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    if (setter) setter.call(el, text);
+    else el.value = text;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
+    logAction("type", targetLabel || "focused field", text.slice(0, 30));
     toast(`Typed: ${text.slice(0, 30)}`);
   }
 
@@ -1810,29 +2423,77 @@
       });
     }
     if (!el) el = document.activeElement;
-    if (!el || el === document.body) return toast("No field selected. Click on a field in Power BI first.");
+    if (!el || el === document.body) { toast("No field selected."); return; }
     el.focus();
     el.select?.();
     el.value = "";
     el.dispatchEvent(new Event("input", { bubbles: true }));
+    logAction("clear", targetLabel || "focused field", "OK");
     toast("Field cleared.");
   }
 
+  // ── Power BI shortcuts ─────────────────────────────────────────────────
+
   function pbiShortcut(labels, description) {
     for (const label of labels) {
-      const result = findAndActElement(label, false);
+      const result = findAndActElement(label, "click");
       if (!result.startsWith("No element matched")) {
         const fb = $("#pbiActionFeedback");
         fb.textContent = result;
         fb.style.display = "block";
-        toast(result.slice(0, 60));
-        return;
+        return true;
       }
     }
     const fb = $("#pbiActionFeedback");
-    fb.textContent = `Could not find ${description}. The pane may already be open or the button label differs in your Power BI version.`;
+    fb.textContent = `Could not find ${description}. The pane may already be open or the label differs in your Power BI version.`;
     fb.style.display = "block";
     toast(`${description} not found.`);
+    return false;
+  }
+
+  // ── Utilities ──────────────────────────────────────────────────────────
+
+  function showExecFeedback(message) {
+    const fb = $("#execFeedback");
+    if (!fb) return;
+    fb.textContent = message;
+    fb.style.display = "block";
+    toast(message.slice(0, 60));
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ── Action log ─────────────────────────────────────────────────────────
+
+  function logAction(type, target, result) {
+    const ok = !String(result).toUpperCase().startsWith("ERROR") && !String(result).startsWith("No element");
+    state.actLog.unshift({
+      time: new Date().toLocaleTimeString(),
+      type,
+      target: String(target).slice(0, 40),
+      result: String(result).slice(0, 60),
+      ok
+    });
+    if (state.actLog.length > 60) state.actLog.pop();
+    renderActLog();
+  }
+
+  function renderActLog() {
+    const list = $("#actLogList");
+    if (!list) return;
+    if (!state.actLog.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--pbi-muted);padding:4px 0;">No actions yet.</div>';
+      return;
+    }
+    list.innerHTML = state.actLog.map((entry) => `
+      <div class="log-entry">
+        <span class="log-time">${entry.time}</span>
+        <span class="log-type ${entry.ok ? "log-ok" : "log-err"}">${entry.type}</span>
+        <span class="log-msg" title="${entry.target}: ${entry.result}">${entry.target} — ${entry.result}</span>
+      </div>
+    `).join("");
   }
 
   function toast(message) {
