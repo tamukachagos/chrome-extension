@@ -284,5 +284,82 @@
     },
     "fixed_dax": "Projected Orders = COUNTROWS(Sales)",
     "category": "performance"
+  },
+  {
+    "pattern": "MAXX over fact table for scalar date instead of MAX",
+    "bad_dax": "Max Date = MAXX(Sales, Sales[OrderDate])",
+    "detection_logic": { "functions": ["MAXX"], "conditions": ["iterator_over_fact_table", "scalar_date_result"], "context": "date_scalar_measure" },
+    "fixed_dax": "Max Date = MAX(Sales[OrderDate])",
+    "category": "performance"
+  },
+  {
+    "pattern": "SUMX with FILTER over large fact for simple filtered sum",
+    "bad_dax": "Revenue 2024 = SUMX(FILTER(Sales, Sales[Year] = 2024), Sales[Amount])",
+    "detection_logic": { "functions": ["SUMX", "FILTER"], "conditions": ["filter_iterates_large_fact", "simple_calculate_available"], "context": "filtered_additive_measure" },
+    "fixed_dax": "Revenue 2024 = CALCULATE(SUM(Sales[Amount]), 'Date'[Year] = 2024)",
+    "category": "performance"
+  },
+  {
+    "pattern": "AVERAGEX over fact table for simple average of a column",
+    "bad_dax": "Avg Order = AVERAGEX(Sales, Sales[Amount])",
+    "detection_logic": { "functions": ["AVERAGEX"], "conditions": ["simple_column_average"], "context": "average_measure" },
+    "fixed_dax": "Avg Order = AVERAGE(Sales[Amount])",
+    "category": "performance"
+  },
+  {
+    "pattern": "COUNTROWS with FILTER for simple threshold count",
+    "bad_dax": "High Value Orders = COUNTROWS(FILTER(Sales, Sales[Amount] > 1000))",
+    "detection_logic": { "functions": ["COUNTROWS", "FILTER"], "conditions": ["simple_scalar_threshold"], "context": "filtered_count_measure" },
+    "fixed_dax": "High Value Orders = CALCULATE(COUNTROWS(Sales), Sales[Amount] > 1000)",
+    "category": "performance"
+  },
+  {
+    "pattern": "Cumulative total using FILTER(ALL(Date)) instead of DATESYTD",
+    "bad_dax": "Cumulative = CALCULATE(SUM(Sales[Amount]), FILTER(ALL('Date'), 'Date'[Date] <= MAX('Date'[Date])))",
+    "detection_logic": { "functions": ["CALCULATE", "FILTER", "ALL"], "conditions": ["cumulative_sum_pattern", "date_table_available"], "context": "running_total_measure" },
+    "fixed_dax": "Cumulative = CALCULATE(SUM(Sales[Amount]), DATESYTD('Date'[Date]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "RANKX missing Dense tie-handling causes rank gaps",
+    "bad_dax": "Rank = RANKX(ALL(Product[Name]), [Revenue], , DESC)",
+    "detection_logic": { "functions": ["RANKX"], "conditions": ["tie_handling_missing"], "context": "ranking_measure" },
+    "fixed_dax": "Rank = RANKX(ALL(Product[Name]), [Revenue], , DESC, Dense)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "TOPN missing sort direction defaults to ascending",
+    "bad_dax": "Top 10 = TOPN(10, ALL(Product[Name]), [Revenue])",
+    "detection_logic": { "functions": ["TOPN"], "conditions": ["missing_order_direction_argument"], "context": "top_n_measure" },
+    "fixed_dax": "Top 10 = TOPN(10, ALL(Product[Name]), [Revenue], DESC)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "HASONEVALUE used for hierarchy level detection instead of ISINSCOPE",
+    "bad_dax": "Level = IF(HASONEVALUE('Date'[Month]), \"Month\", \"Year\")",
+    "detection_logic": { "functions": ["HASONEVALUE"], "conditions": ["hierarchy_level_detection"], "context": "hierarchy_measure" },
+    "fixed_dax": "Level = IF(ISINSCOPE('Date'[Month]), \"Month\", IF(ISINSCOPE('Date'[Quarter]), \"Quarter\", \"Year\"))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "SWITCH VAR missing — measure recalculated per branch",
+    "bad_dax": "Period Metric = SWITCH([Sel], 1, [Revenue YTD], 2, [Revenue MTD], 3, [Revenue QTD], [Revenue])",
+    "detection_logic": { "functions": ["SWITCH"], "conditions": ["no_var_cache", "period_selector_pattern"], "context": "dynamic_period_measure" },
+    "fixed_dax": "Period Metric =\nVAR Sel = [Sel]\nRETURN SWITCH(Sel, 1, [Revenue YTD], 2, [Revenue MTD], 3, [Revenue QTD], [Revenue])",
+    "category": "performance"
+  },
+  {
+    "pattern": "DISTINCTCOUNT on text name column instead of integer key",
+    "bad_dax": "Unique Products = DISTINCTCOUNT(Sales[ProductName])",
+    "detection_logic": { "functions": ["DISTINCTCOUNT"], "conditions": ["column_is_text", "key_column_available"], "context": "distinct_count_measure" },
+    "fixed_dax": "Unique Products = DISTINCTCOUNT(Sales[ProductKey])",
+    "category": "performance"
+  },
+  {
+    "pattern": "VAR not used when complex sub-expression appears in multiple branches",
+    "bad_dax": "Margin Check = IF(DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue])) > 0.3, \"Good\", IF(DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue])) > 0.1, \"OK\", \"Poor\"))",
+    "detection_logic": { "functions": ["IF", "DIVIDE", "SUM"], "conditions": ["repeated_sub_expression", "no_var_cache"], "context": "classification_measure" },
+    "fixed_dax": "Margin Check =\nVAR Margin = DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue]))\nRETURN IF(Margin > 0.3, \"Good\", IF(Margin > 0.1, \"OK\", \"Poor\"))",
+    "category": "performance"
   }
 ]

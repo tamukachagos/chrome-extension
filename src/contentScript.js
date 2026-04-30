@@ -540,9 +540,17 @@
                 <option value="distinctcount">DISTINCTCOUNT</option>
                 <option value="average">AVERAGE</option>
                 <option value="ratio">Ratio / percent</option>
-                <option value="ytd">Year-to-date</option>
-                <option value="yoy">Year-over-year change</option>
-                <option value="rolling">Rolling period</option>
+                <option value="ytd">Year-to-date (YTD)</option>
+                <option value="mtd">Month-to-date (MTD)</option>
+                <option value="qtd">Quarter-to-date (QTD)</option>
+                <option value="yoy">Year-over-year % (YoY)</option>
+                <option value="qoq">Quarter-over-quarter % (QoQ)</option>
+                <option value="rolling">Rolling 12-month</option>
+                <option value="movingavg">3-month moving average</option>
+                <option value="cumulative">Cumulative running total</option>
+                <option value="budgetvariance">Budget variance ($ and %)</option>
+                <option value="rankx">RANKX ranking</option>
+                <option value="topn">Top N contribution</option>
               </select>
             </div>
           </div>
@@ -1221,32 +1229,44 @@
     const denominator = input.denominator || "[Denominator Measure]";
     const columnRef = value.startsWith("[") ? value : `'${table}'[${stripBrackets(value)}]`;
 
+    const baseExpr = value.startsWith("[") ? value : `SUM(${columnRef})`;
     const patterns = {
-      sum: `${name} =\nSUM(${columnRef})`,
-      countrows: `${name} =\nCOUNTROWS('${table}')`,
-      distinctcount: `${name} =\nDISTINCTCOUNT(${columnRef})`,
-      average: `${name} =\nAVERAGE(${columnRef})`,
-      ratio: `${name} =\nDIVIDE(${value.startsWith("[") ? value : `[${name} Numerator]`}, ${denominator})`,
-      ytd: `${name} =\nCALCULATE(\n    ${value.startsWith("[") ? value : `SUM(${columnRef})`},\n    DATESYTD(${date})\n)`,
-      yoy: `${name} =\nVAR CurrentValue = ${value.startsWith("[") ? value : `SUM(${columnRef})`}\nVAR PriorValue =\n    CALCULATE(\n        ${value.startsWith("[") ? value : `SUM(${columnRef})`},\n        SAMEPERIODLASTYEAR(${date})\n    )\nRETURN\n    DIVIDE(CurrentValue - PriorValue, PriorValue)`,
-      rolling: `${name} =\nCALCULATE(\n    ${value.startsWith("[") ? value : `SUM(${columnRef})`},\n    DATESINPERIOD(${date}, MAX(${date}), -12, MONTH)\n)`
+      sum: `// Base measure — always create this first\n${name} =\nSUM(${columnRef})`,
+      countrows: `// Row count — use COUNTROWS not COUNT on a table\n${name} =\nCOUNTROWS('${table}')`,
+      distinctcount: `// Distinct count — use integer key column for best performance\n${name} =\nDISTINCTCOUNT(${columnRef})`,
+      average: `// Simple average — for weighted average use DIVIDE(SUM(num), SUM(denom))\n${name} =\nAVERAGE(${columnRef})`,
+      ratio: `// Safe ratio — DIVIDE handles zero denominator automatically\n${name} =\nDIVIDE(\n    ${value.startsWith("[") ? value : `[${name} Numerator]`},\n    ${denominator}\n)`,
+      ytd: `// Year-to-date — requires continuous marked Date table\n${name} =\nCALCULATE(\n    ${baseExpr},\n    DATESYTD(${date})\n)`,
+      mtd: `// Month-to-date\n${name} =\nCALCULATE(\n    ${baseExpr},\n    DATESMTD(${date})\n)`,
+      qtd: `// Quarter-to-date\n${name} =\nCALCULATE(\n    ${baseExpr},\n    DATESQTD(${date})\n)`,
+      yoy: `// Year-over-year % — VAR pattern caches base measure for performance\n${name} YoY % =\nVAR CurrentValue = ${baseExpr}\nVAR PriorValue =\n    CALCULATE(\n        ${baseExpr},\n        SAMEPERIODLASTYEAR(${date})\n    )\nRETURN\n    DIVIDE(CurrentValue - PriorValue, PriorValue)`,
+      qoq: `// Quarter-over-quarter %\n${name} QoQ % =\nVAR CurrentValue = ${baseExpr}\nVAR PriorValue =\n    CALCULATE(\n        ${baseExpr},\n        DATEADD(${date}, -1, QUARTER)\n    )\nRETURN\n    DIVIDE(CurrentValue - PriorValue, PriorValue)`,
+      rolling: `// Rolling 12-month total\n${name} Rolling 12M =\nCALCULATE(\n    ${baseExpr},\n    DATESINPERIOD(${date}, MAX(${date}), -12, MONTH)\n)`,
+      movingavg: `// 3-month moving average\n${name} 3M Avg =\nDIVIDE(\n    CALCULATE(${baseExpr}, DATESINPERIOD(${date}, MAX(${date}), -3, MONTH)),\n    3\n)`,
+      cumulative: `// Cumulative running total (use DATESYTD for calendar year)\n${name} Cumulative =\nCALCULATE(\n    ${baseExpr},\n    DATESYTD(${date})\n)`,
+      budgetvariance: `// Budget variance — show both absolute and %\n${name} vs Budget =\n    ${value.startsWith("[") ? value : `[${name}]`} - ${denominator}\n${name} vs Budget % =\n    DIVIDE(\n        ${value.startsWith("[") ? value : `[${name}]`} - ${denominator},\n        ${denominator}\n    )`,
+      rankx: `// RANKX — use Dense to avoid gaps on ties\n${name} Rank =\nRANKX(\n    ALL('${table}'[${stripBrackets(value) || "Name"}]),\n    ${baseExpr},\n    ,\n    DESC,\n    Dense\n)`,
+      topn: `// Top N contribution — combine with a What-If parameter for dynamic N\n${name} Top 10 =\nCALCULATE(\n    ${baseExpr},\n    TOPN(10, ALL('${table}'), ${baseExpr}, DESC)\n)`
     };
 
     return [
       patterns[input.type] || patterns.sum,
       "",
       "Expert notes:",
-      "- Format percent/ratio measures as Percentage in Power BI.",
-      "- Keep the base measure separate if this will be reused.",
-      "- Confirm the fact table grain before aggregating.",
-      "- For time intelligence, use a continuous marked Date table.",
+      "- Format percent/ratio measures as Percentage (0.00%) in Power BI format pane.",
+      "- Keep this base measure separate — derived measures should reference it.",
+      "- Confirm the fact table grain before writing any measure.",
+      "- For time intelligence, use a continuous Date table marked as Date table.",
+      "- Prefix helper/intermediate measures with _ to sort them to the top.",
+      "- Test with no slicers, a single date slicer, and a multi-select slicer.",
       "",
-      "Quick validation DAX query:",
+      "Validation query (paste into DAX Studio):",
       "EVALUATE",
       "SUMMARIZECOLUMNS(",
       `    ${date},`,
       `    "${name}", [${name}]`,
-      ")"
+      ")",
+      `ORDER BY ${date}`
     ].join("\n");
   }
 
@@ -1396,8 +1416,16 @@
       average: "Average Amount",
       ratio: "Rate %",
       ytd: "YTD Amount",
+      mtd: "MTD Amount",
+      qtd: "QTD Amount",
       yoy: "YoY Growth %",
-      rolling: "Rolling 12M Amount"
+      qoq: "QoQ Growth %",
+      rolling: "Rolling 12M Amount",
+      movingavg: "3M Moving Average",
+      cumulative: "Cumulative Total",
+      budgetvariance: "Variance vs Budget",
+      rankx: "Rank",
+      topn: "Top 10 Total"
     };
     return names[type] || "New Measure";
   }

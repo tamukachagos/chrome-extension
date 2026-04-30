@@ -339,5 +339,148 @@
     },
     "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\")",
     "category": "performance"
+  },
+  {
+    "pattern": "SELECTEDVALUE without default causes BLANK in card visuals",
+    "bad_dax": "Selected Year = SELECTEDVALUE('Date'[Year])",
+    "detection_logic": {
+      "functions": ["SELECTEDVALUE"],
+      "conditions": ["no_default_parameter", "used_in_card_or_title"],
+      "context": "dynamic_label_measure"
+    },
+    "fixed_dax": "Selected Year = SELECTEDVALUE('Date'[Year], \"All Years\")",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Time intelligence on fact date column instead of Date table",
+    "bad_dax": "Sales YTD = CALCULATE(SUM(Sales[Amount]), DATESYTD(Sales[OrderDate]))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "DATESYTD"],
+      "conditions": ["date_argument_from_fact_table", "marked_date_table_available"],
+      "context": "ytd_measure"
+    },
+    "fixed_dax": "Sales YTD = CALCULATE(SUM(Sales[Amount]), DATESYTD('Date'[Date]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "COALESCE not used to handle BLANK in chained measures",
+    "bad_dax": "Net Value = [Revenue] + [Adjustments]",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["additive_of_two_measures", "either_measure_can_return_blank"],
+      "context": "additive_measure"
+    },
+    "fixed_dax": "Net Value = COALESCE([Revenue], 0) + COALESCE([Adjustments], 0)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "VAR not used when measure is referenced multiple times in SWITCH",
+    "bad_dax": "Label = SWITCH(TRUE(), [Revenue] > 1000000, \"High\", [Revenue] > 500000, \"Medium\", \"Low\")",
+    "detection_logic": {
+      "functions": ["SWITCH"],
+      "conditions": ["same_measure_in_multiple_branches", "no_var_cache"],
+      "context": "classification_measure"
+    },
+    "fixed_dax": "Label =\nVAR Rev = [Revenue]\nRETURN SWITCH(TRUE(), Rev > 1000000, \"High\", Rev > 500000, \"Medium\", \"Low\")",
+    "category": "performance"
+  },
+  {
+    "pattern": "ALL on Date table breaks time intelligence filter",
+    "bad_dax": "Total All Time = CALCULATE(SUM(Sales[Amount]), ALL('Date'))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "ALL"],
+      "conditions": ["all_scope_date_table", "time_filter_expected"],
+      "context": "total_measure_with_date_context"
+    },
+    "fixed_dax": "Total All Time = CALCULATE(SUM(Sales[Amount]), REMOVEFILTERS('Date'))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "ISBLANK used instead of checking denominator in DIVIDE",
+    "bad_dax": "Rate = IF(ISBLANK([Denominator]), 0, [Numerator] / [Denominator])",
+    "detection_logic": {
+      "functions": ["IF", "ISBLANK"],
+      "conditions": ["manual_zero_division_guard", "divide_available"],
+      "context": "ratio_measure"
+    },
+    "fixed_dax": "Rate = DIVIDE([Numerator], [Denominator], 0)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "SUM of calculated column instead of measure",
+    "bad_dax": "Total Margin = SUM(Sales[Margin Calculated Column])",
+    "detection_logic": {
+      "functions": ["SUM"],
+      "conditions": ["column_is_calculated", "formula_references_other_columns"],
+      "context": "aggregation_of_calculated_column"
+    },
+    "fixed_dax": "Total Margin = SUMX(Sales, Sales[Revenue] - Sales[Cost])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "KEEPFILTERS missing when adding filter should intersect existing context",
+    "bad_dax": "Region Sales = CALCULATE([Total Sales], Sales[Region] = \"North\")",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["filter_should_intersect_not_replace", "slicer_context_active"],
+      "context": "filter_intersection_measure"
+    },
+    "fixed_dax": "Region Sales = CALCULATE([Total Sales], KEEPFILTERS(Sales[Region] = \"North\"))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "PARALLELPERIOD used instead of DATEADD for single-period offset",
+    "bad_dax": "Prior Month = CALCULATE([Revenue], PARALLELPERIOD('Date'[Date], -1, MONTH))",
+    "detection_logic": {
+      "functions": ["PARALLELPERIOD"],
+      "conditions": ["offset_is_single_period", "dateadd_preferred"],
+      "context": "prior_period_measure"
+    },
+    "fixed_dax": "Prior Month = CALCULATE([Revenue], DATEADD('Date'[Date], -1, MONTH))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Inactive relationship not activated in measure",
+    "bad_dax": "Revenue by Ship Date = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["inactive_relationship_exists", "wrong_date_dimension_used"],
+      "context": "role_playing_date_measure"
+    },
+    "fixed_dax": "Revenue by Ship Date = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP('Date'[Date], Sales[ShipDate]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "AVERAGE used on a ratio column instead of weighted average",
+    "bad_dax": "Avg Margin % = AVERAGE(Sales[MarginPct])",
+    "detection_logic": {
+      "functions": ["AVERAGE"],
+      "conditions": ["column_is_ratio_or_percentage", "weighted_average_intended"],
+      "context": "margin_or_rate_measure"
+    },
+    "fixed_dax": "Avg Margin % = DIVIDE(SUM(Sales[Margin]), SUM(Sales[Revenue]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "TREATAS used with mismatched column data types",
+    "bad_dax": "Virtual Filter = CALCULATE([Revenue], TREATAS(VALUES(Param[ID]), Fact[CustomerCode]))",
+    "detection_logic": {
+      "functions": ["TREATAS", "CALCULATE"],
+      "conditions": ["column_data_type_mismatch", "treatas_join_key"],
+      "context": "virtual_relationship_measure"
+    },
+    "fixed_dax": "Ensure both columns (Param[ID] and Fact[CustomerCode]) have the same data type before using TREATAS.",
+    "category": "correctness"
+  },
+  {
+    "pattern": "DATESBETWEEN with hardcoded dates instead of dynamic parameters",
+    "bad_dax": "Q1 Sales = CALCULATE([Revenue], DATESBETWEEN('Date'[Date], DATE(2024,1,1), DATE(2024,3,31)))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "DATESBETWEEN", "DATE"],
+      "conditions": ["hardcoded_date_literals", "dynamic_period_preferred"],
+      "context": "fixed_period_measure"
+    },
+    "fixed_dax": "Q1 Sales = CALCULATE([Revenue], DATESQTD('Date'[Date]))",
+    "category": "correctness"
   }
 ]

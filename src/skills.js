@@ -3,296 +3,377 @@
     {
       id: "architect-mode",
       name: "Power BI Architect Mode",
-      description: "Compiler-style Power BI analyzer that converts problems into deterministic rules, fixes, templates, and escalation flags.",
+      description: "Full-stack Power BI analyzer: DAX, modeling, visuals, performance, security, and service ops — converts any problem into a deterministic rule, fix, and validation.",
       triggers: [
-        "dax",
-        "measure",
-        "values",
-        "selectedvalue",
-        "max",
-        "if",
-        "switch",
-        "count",
-        "countrows",
-        "distinct",
-        "hasonevalue",
-        "blank",
-        "related",
-        "lookupvalue",
-        "allselected",
-        "crossjoin",
-        "transactionid",
-        "grouped by",
-        "model",
-        "relationship",
-        "bi-directional",
-        "slow",
-        "performance",
-        "wrong",
-        "incorrect",
-        "total",
-        "aggregation",
-        "flat table",
-        "repeated attribute",
-        "denormalized",
-        "visual",
-        "dashboard",
-        "finance",
-        "sales",
-        "saas"
+        "dax","measure","values","selectedvalue","max","if","switch","count","countrows",
+        "distinct","hasonevalue","blank","related","lookupvalue","allselected","crossjoin",
+        "transactionid","grouped by","model","relationship","bi-directional","slow",
+        "performance","wrong","incorrect","total","aggregation","flat table",
+        "repeated attribute","denormalized","visual","dashboard","finance","sales","saas",
+        "fix","review","audit","check","validate","wrong result","incorrect total",
+        "not working","broken","error","issue","problem","help","how do i","best practice",
+        "pattern","template","generate","create","build","design","architecture"
       ],
       rules: [
-        "Return RULE first.",
-        "Convert every problem into pattern, detection logic, fix template, category, and confidence.",
+        "Always return a RULE block with pattern, detection_logic, fix_template, category, confidence.",
         "Set requires_llm true only when confidence is below 0.5.",
-        "Prefer reusable templates over one-time explanations.",
-        "Classify impact with performance_gain and correctness_risk.",
-        "Minimize external model reliance."
+        "Prefer reusable templates over one-time fixes.",
+        "Classify impact as performance_gain and correctness_risk.",
+        "Start every DAX answer with a base measure before building derived measures.",
+        "Every model answer must address grain, relationships, and measure organization.",
+        "Every visual answer must state chart type, field wells, sort order, and title format.",
+        "Every performance answer must triage before optimizing.",
+        "Never expose API keys, credentials, or sensitive data in DAX, M, or reports.",
+        "Test every fix against blank, zero, and multi-select slicer cases."
       ],
       templates: {
-        daxResponse: "RULE:\n{\n  \"pattern\": \"<detectable structure>\",\n  \"detection_logic\": \"<how to identify>\",\n  \"fix_template\": \"<generalized fix>\",\n  \"category\": \"performance | correctness | modeling\",\n  \"confidence\": 0.0,\n  \"requires_llm\": false\n}\n\nFIXED_DAX:\n<code>\n\nIMPACT:\n- performance_gain: <low|medium|high>\n- correctness_risk: <low|medium|high>",
-        modelResponse: "RULE:\n{\n  \"pattern\": \"<model issue>\",\n  \"detection_logic\": \"<how to detect>\",\n  \"fix\": \"<schema-level fix>\",\n  \"category\": \"modeling\",\n  \"confidence\": 0.0,\n  \"requires_llm\": false\n}\n\nFIX:\n<steps>"
+        daxResponse: "RULE:\n{\n  \"pattern\": \"<detectable structure>\",\n  \"detection_logic\": \"<how to identify>\",\n  \"fix_template\": \"<generalized fix>\",\n  \"category\": \"performance | correctness | modeling\",\n  \"confidence\": 0.0,\n  \"requires_llm\": false\n}\n\nFIXED_DAX:\n<production-ready DAX with VAR pattern>\n\nVALIDATION:\nEVALUATE SUMMARIZECOLUMNS('Date'[Year], \"Result\", [Measure Name])\n\nIMPACT:\n- performance_gain: <low|medium|high>\n- correctness_risk: <low|medium|high>\n- edge_cases: blank denominator, empty filter context, slicer interactions",
+        modelResponse: "RULE:\n{\n  \"pattern\": \"<model issue>\",\n  \"detection_logic\": \"<how to detect>\",\n  \"fix\": \"<schema-level fix>\",\n  \"category\": \"modeling\",\n  \"confidence\": 0.0,\n  \"requires_llm\": false\n}\n\nFIX:\n<numbered steps>\n\nVALIDATION:\n- Spot-check totals in a matrix with no filters\n- Verify slicer cross-filtering works as expected\n- Confirm measure totals match source system"
       }
     },
     {
       id: "dax-expert",
       name: "DAX Expert",
-      description: "Measures, filter context, time intelligence, safe ratios, and DAX review.",
+      description: "Production-grade DAX: filter context, time intelligence, advanced patterns, VAR optimization, CALCULATE mastery, and measure validation.",
       triggers: [
-        "dax",
-        "measure",
-        "calculate",
-        "filter context",
-        "ytd",
-        "mtd",
-        "qtd",
-        "yoy",
-        "sameperiodlastyear",
-        "divide",
-        "selectedvalue",
-        "all",
-        "removefilters",
-        "keepfilters"
+        "dax","measure","calculate","filter context","ytd","mtd","qtd","yoy","qoq",
+        "sameperiodlastyear","dateadd","parallelperiod","datesytd","datesqtd","datesmtd",
+        "divide","selectedvalue","all","removefilters","keepfilters","allexcept","allselected",
+        "userelationship","treatas","crossfilter","var","return","rankx","topn","maxx","minx",
+        "averagex","sumx","countx","earlier","generate","generateseries","addcolumns",
+        "summarize","summarizecolumns","groupby","selectcolumns","union","intersect","except",
+        "calculatetable","naturalinnerjoin","naturalleftouterjoin","isfiltered","iscrossfiltered",
+        "isinscope","hasonevalue","hasonefilter","isblank","isempty","coalesce",
+        "rolling","moving average","running total","cumulative","abc","pareto","segmentation",
+        "dynamic","what-if","field parameter","calculation group","format string",
+        "ratio","percent","margin","rate","growth","variance","budget","target","forecast",
+        "time intelligence","period","calendar","fiscal","week","quarter","rolling 12",
+        "wrong total","blank result","measure","base measure","derived measure"
       ],
       rules: [
-        "Build base measures first, then derived measures.",
-        "Use DIVIDE for all ratio and percent measures.",
-        "Use variables for complex measures so intermediate values can be tested.",
-        "Use a continuous marked Date table for time intelligence.",
-        "Use REMOVEFILTERS or ALL only where the business definition requires ignoring slicers.",
-        "Prefer explicit measures over dragging numeric columns directly into visuals."
+        "Always build a simple base measure (SUM/COUNT) before derived measures.",
+        "Use DIVIDE() for every ratio — never raw division operator /.",
+        "Use VAR...RETURN in any measure that references the same expression more than once.",
+        "Use a continuous, marked Date table for all time intelligence.",
+        "CALCULATE changes filter context; understand which filters it adds, removes, or overrides.",
+        "REMOVEFILTERS is the modern replacement for ALL() as a CALCULATE argument.",
+        "KEEPFILTERS adds a filter without removing existing filters — use for intersection logic.",
+        "ALLEXCEPT is equivalent to REMOVEFILTERS(Table) + VALUES(column) — prefer explicit form.",
+        "SELECTEDVALUE returns BLANK when multiple values are selected — add a default parameter.",
+        "Use USERELATIONSHIP inside CALCULATE to activate an inactive relationship.",
+        "TREATAS(table, column) applies a virtual relationship without a physical one.",
+        "Cache expensive sub-expressions in VAR before SWITCH or ISINSCOPE logic.",
+        "Avoid FILTER(FactTable, ...) when a simple Boolean expression works as a CALCULATE argument.",
+        "RANKX requires explicit ALL scope — rank over ALL(DimTable[Column]), not ALL(DimTable).",
+        "Prefix hidden helper measures with _ so they sort to the top and signal internal use.",
+        "Validate every measure with: EVALUATE SUMMARIZECOLUMNS('Date'[Year], \"M\", [Measure])"
       ],
       templates: {
-        baseSum: "[Measure Name] =\nSUM('Fact Table'[Amount])",
-        ratio: "[Rate %] =\nDIVIDE([Numerator Measure], [Denominator Measure])",
-        yoy: "[YoY %] =\nVAR CurrentValue = [Base Measure]\nVAR PriorValue = CALCULATE([Base Measure], SAMEPERIODLASTYEAR('Date'[Date]))\nRETURN\n    DIVIDE(CurrentValue - PriorValue, PriorValue)"
+        baseSum: "// Base measure — always create this first\n[Total Revenue] =\nSUM('Sales'[Amount])",
+        ratio: "// Safe ratio with zero-denominator protection\n[Gross Margin %] =\nDIVIDE(\n    [Gross Margin],\n    [Total Revenue]\n)",
+        yoy: "// Year-over-year using VAR pattern for performance\n[Revenue YoY %] =\nVAR CurrentValue = [Total Revenue]\nVAR PriorValue =\n    CALCULATE(\n        [Total Revenue],\n        SAMEPERIODLASTYEAR('Date'[Date])\n    )\nRETURN\n    DIVIDE(CurrentValue - PriorValue, PriorValue)",
+        ytd: "// Year-to-date — requires marked Date table\n[Revenue YTD] =\nCALCULATE(\n    [Total Revenue],\n    DATESYTD('Date'[Date])\n)",
+        rolling12: "// Rolling 12-month total\n[Revenue Rolling 12M] =\nCALCULATE(\n    [Total Revenue],\n    DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -12, MONTH)\n)",
+        movingAvg: "// 3-month moving average\n[Revenue 3M Avg] =\nDIVIDE(\n    CALCULATE([Total Revenue], DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -3, MONTH)),\n    3\n)",
+        rankx: "// Safe RANKX — scope ALL on the column, not the whole table\n[Product Revenue Rank] =\nRANKX(\n    ALL('Product'[ProductName]),\n    [Total Revenue],\n    ,\n    DESC,\n    Dense\n)",
+        dynamicSegment: "// ABC segmentation\n[Customer Segment] =\nVAR Rev = [Total Revenue]\nVAR CumPct =\n    DIVIDE(\n        CALCULATE([Total Revenue], FILTER(ALL('Customer'), [Total Revenue] >= Rev)),\n        CALCULATE([Total Revenue], ALL('Customer'))\n    )\nRETURN\n    SWITCH(TRUE(),\n        CumPct <= 0.8, \"A\",\n        CumPct <= 0.95, \"B\",\n        \"C\"\n    )",
+        budgetVariance: "// Budget variance with safe divide\n[Variance vs Budget] = [Actual Revenue] - [Budget Revenue]\n[Variance vs Budget %] = DIVIDE([Variance vs Budget], [Budget Revenue])",
+        mtd: "// Month-to-date\n[Revenue MTD] =\nCALCULATE([Total Revenue], DATESMTD('Date'[Date]))",
+        qtd: "// Quarter-to-date\n[Revenue QTD] =\nCALCULATE([Total Revenue], DATESQTD('Date'[Date]))",
+        useRelationship: "// Activate an inactive date relationship (e.g., ship date)\n[Revenue by Ship Date] =\nCALCULATE(\n    [Total Revenue],\n    USERELATIONSHIP('Date'[Date], 'Sales'[ShipDate])\n)",
+        dynamicTopN: "// Dynamic Top N using What-If parameter\n[Top N Revenue] =\nCALCULATE(\n    [Total Revenue],\n    TOPN([Top N Parameter], ALL('Product'[ProductName]), [Total Revenue])\n)"
       }
     },
     {
       id: "visual-design",
       name: "Visual Design",
-      description: "Chart selection, field wells, layout, interactions, titles, and accessibility.",
+      description: "Expert report design: chart selection, field wells, interactions, bookmarks, drillthrough, tooltip pages, accessibility, mobile layout, and theme guidance.",
       triggers: [
-        "visual",
-        "chart",
-        "dashboard",
-        "report",
-        "page",
-        "layout",
-        "slicer",
-        "tooltip",
-        "drillthrough",
-        "matrix",
-        "bar",
-        "line",
-        "scatter",
-        "kpi",
-        "card"
+        "visual","chart","dashboard","report","page","layout","slicer","tooltip",
+        "drillthrough","matrix","bar","line","scatter","kpi","card","map","ribbon",
+        "waterfall","funnel","gauge","treemap","decomposition","key influencer",
+        "q&a","smart narrative","bookmark","button","navigation","drill","hierarchy",
+        "conditional format","data label","reference line","forecast","trend line",
+        "field parameter","dynamic axis","dynamic legend","dynamic title",
+        "mobile","phone layout","accessibility","alt text","tab order","focus mode",
+        "theme","json theme","color","font","branding","template","background",
+        "cross filter","cross highlight","interaction","sync slicer","page filter",
+        "report filter","visual level filter","drill down","drill up","expand",
+        "tooltip page","report page tooltip","custom tooltip","embed","publish to web"
       ],
       rules: [
-        "Use line charts for trends over time.",
-        "Use bar charts for ranked category comparison.",
-        "Use cards only for headline KPIs.",
-        "Use matrices for dense cross-tab detail, not as the primary executive summary.",
-        "Every visual should answer a distinct question.",
-        "Titles should state the insight or business question, not just the visual type.",
-        "Use conditional formatting sparingly and consistently."
+        "Use line charts for continuous time trends; clustered bar for category ranking.",
+        "Use 100% stacked bar when the mix/share story matters more than absolute values.",
+        "Use scatter charts for two-measure relationships, outlier detection, and segmentation.",
+        "Use cards for 3-5 headline KPIs only — not for operational detail.",
+        "Use matrices for dense cross-tab detail with expandable row hierarchies.",
+        "Every visual title must answer a business question, not describe the chart type.",
+        "Sort bar/column charts by the decision metric (descending) by default.",
+        "Use conditional formatting only when color changes the interpretation.",
+        "Keep slicers to dimensions that change the user's decision, not every available field.",
+        "Drillthrough pages need a Back button and should filter to the source context.",
+        "Tooltip pages show on hover — keep them narrow, fast, and decision-relevant.",
+        "Bookmarks replace multi-page navigation for guided storytelling.",
+        "Field parameters let users switch measure or dimension dynamically without editing.",
+        "Sync slicers across pages when the same filter applies report-wide.",
+        "Every published report must have alt text on key visuals for accessibility.",
+        "Design Mobile layout separately in View > Mobile layout; it does not auto-inherit.",
+        "Use a JSON report theme to enforce brand colors, fonts, and default visual settings.",
+        "Avoid more than 8 visuals per page — Performance Analyzer will tell you which are slow."
       ],
       templates: {
-        comparison: "Axis: category dimension\nValues: primary measure\nSort: primary measure descending\nTooltip: variance, target, and context fields",
-        trend: "X-axis: Date\nY-axis: primary measure\nLegend: optional category\nTooltip: prior period, variance %, target"
+        comparison: "Visual: Clustered bar chart\nAxis: Category dimension (sorted descending by value)\nValues: Primary measure\nSmall multiples: Optional second dimension\nTooltip: Variance %, target, rank\nTitle: 'Top [N] [Category] by [Metric] — [Period]'",
+        trend: "Visual: Line chart\nX-axis: Date hierarchy (Year > Quarter > Month)\nY-axis: Primary measure\nSecondary Y: Optional variance or prior period\nLegend: Category (≤5 series)\nTooltip: Prior period, YoY %, target\nTitle: '[Metric] Trend — [Period]'",
+        execDashboard: "Layout:\n1. KPI Cards row (3-5 headline metrics) — top\n2. Trend line (primary metric over time) — upper left\n3. Breakdown bar (top categories) — upper right\n4. Detail matrix (drillable rows) — bottom\n5. Date slicer + 1-2 business slicers — left panel\nSlicers: Date range, Region/BU, Status only",
+        drillthrough: "Drillthrough page setup:\n- Add drillthrough field (e.g., Product[Name]) to the Drillthrough well\n- Add Back button with bookmark action: Previous page\n- Filter all visuals to the drilled context\n- Show detail table + supporting measures",
+        fieldParam: "Field parameter (dynamic axis/measure):\n1. Modeling > New parameter > Fields\n2. Add measures or columns to switch between\n3. Add parameter slicer to page\n4. Use parameter[parameter fields] in visual axis/values\nResult: User can switch between measures without editing the report"
       }
     },
     {
       id: "semantic-model",
       name: "Semantic Model",
-      description: "Star schema, grain, relationships, dimensions, date tables, and model hygiene.",
+      description: "Star schema design, grain, relationships, role-playing dimensions, composite models, DirectQuery, aggregation tables, incremental refresh, and model hygiene.",
       triggers: [
-        "model",
-        "semantic",
-        "relationship",
-        "star schema",
-        "dimension",
-        "fact",
-        "cardinality",
-        "grain",
-        "many-to-many",
-        "bidirectional",
-        "date table"
+        "model","semantic","relationship","star schema","dimension","fact","cardinality",
+        "grain","many-to-many","bidirectional","date table","bridge table","snowflake",
+        "role-playing","inactive relationship","composite model","directquery","import mode",
+        "dual mode","aggregation table","incremental refresh","hybrid table","large dataset",
+        "premium","fabric","lakehouse","direct lake","onelake","delta","parquet",
+        "denormalized","flat table","calculated column","calculated table","what-if",
+        "parameter table","disconnected table","currency","exchange rate","slowly changing",
+        "scd","type 2","surrogate key","natural key","degenerate dimension","junk dimension",
+        "conformed dimension","shared dimension","enterprise model","tabular","ssas",
+        "xmla","external tool","tabular editor","alm toolkit","vertipaq","column store",
+        "model size","compression","cardinality reduction","hide","display folder",
+        "measure table","description","annotation","synonym","q&a"
       ],
       rules: [
-        "Declare the grain of every fact table before creating measures.",
-        "Dimension keys should be unique and stable.",
-        "Relationships should usually filter one-to-many from dimensions to facts.",
-        "Avoid bi-directional relationships unless they are explicitly required and tested.",
-        "Use bridge tables for true many-to-many scenarios.",
-        "Hide technical keys and columns that report users should not drag into visuals.",
-        "Organize measures in display folders or a dedicated measures table."
+        "Declare the grain of every fact table before writing any measures.",
+        "Dimension primary keys must be unique — validate with COUNTROWS vs DISTINCTCOUNT.",
+        "Relationships filter from dimension (one-side) to fact (many-side) by default.",
+        "Avoid bi-directional relationships unless explicitly required and tested for ambiguity.",
+        "Replace many-to-many with a bridge/junction table when possible.",
+        "Use USERELATIONSHIP() for role-playing date dimensions (OrderDate, ShipDate, DueDate).",
+        "A marked Date table must be continuous (no gaps), have a Date column typed as Date.",
+        "Calculated columns increase model size; prefer measures or Power Query columns.",
+        "Hide all technical keys, bridge keys, and columns not needed by report consumers.",
+        "Organize measures into display folders (e.g., Revenue, Margins, Time Intelligence).",
+        "Use a dedicated measures table (empty calculated table) to group all measures.",
+        "Composite models: set large fact tables to DirectQuery, small dimensions to Import/Dual.",
+        "Aggregation tables: define user-defined aggregations on summarized fact data.",
+        "Incremental refresh: partition fact tables by date; set RangeStart/RangeEnd parameters.",
+        "Direct Lake (Fabric): queries OneLake Parquet files — no import refresh needed.",
+        "Document every inactive relationship, its purpose, and the measures that activate it.",
+        "Apply object-level security (OLS) to hide sensitive columns from unauthorized roles.",
+        "Use TREATAS() to create a virtual relationship without a physical model connection."
       ],
       templates: {
-        grain: "Fact table: [name]\nGrain: one row per [business event]\nDate key: [date]\nDimensions: [list]\nAdditive facts: [list]"
+        grain: "Fact table: [name]\nGrain: one row per [business event — e.g. invoice line, delivery, transaction]\nDate keys: [OrderDate key, ShipDate key]\nDimension keys: [Customer, Product, Location, ...]\nAdditive facts: [Amount, Quantity, Cost]\nSemi-additive facts: [Balance, Inventory — use LASTDATE or LASTNONBLANK]\nNon-additive facts: [Price, Rate — never SUM, always AVERAGE or context-filtered]",
+        starSchema: "Star schema checklist:\n✓ One fact table per business process\n✓ Dimension tables with surrogate keys\n✓ Date table: continuous, marked, no gaps\n✓ All relationships: single-direction, one-to-many\n✓ No bi-directional unless intentional and documented\n✓ Bridge table for each many-to-many\n✓ Hidden technical keys\n✓ Measures in display folders\n✓ Descriptions on every measure and dimension table",
+        incrementalRefresh: "Incremental refresh setup:\n1. Create RangeStart and RangeEnd date parameters in Power Query\n2. Filter your date column: >= RangeStart and < RangeEnd\n3. In dataset settings: define incremental refresh policy\n4. Set Store rows to N years, Refresh last N days\n5. Enable 'Only refresh complete periods'\n6. Publish to Premium workspace (required for partitioning)"
       }
     },
     {
       id: "kpi-glossary",
       name: "Business KPI Glossary",
-      description: "Revenue, margin, supplier, inventory, forecast, and variance KPI definitions.",
+      description: "Authoritative definitions for financial, operational, SaaS, retail, supply chain, and HR KPIs with DAX templates.",
       triggers: [
-        "kpi",
-        "revenue",
-        "sales",
-        "margin",
-        "profit",
-        "supplier",
-        "inventory",
-        "forecast",
-        "variance",
-        "otif",
-        "fill rate",
-        "late",
-        "delivery",
-        "target",
-        "budget"
+        "kpi","revenue","sales","margin","profit","gross margin","net margin","ebitda",
+        "supplier","inventory","forecast","variance","otif","fill rate","late","delivery",
+        "target","budget","actual","plan","return","refund","churn","retention","ltv",
+        "customer lifetime value","cac","acquisition cost","arpu","mrr","arr","nrr",
+        "net revenue retention","expansion","contraction","logo churn","seat","license",
+        "conversion rate","win rate","pipeline","funnel","lead","opportunity","close rate",
+        "days sales outstanding","dso","inventory turns","stock out","on hand","reorder",
+        "service level","sla","on time","in full","otif","perfect order","defect rate",
+        "yield","throughput","utilization","capacity","headcount","attrition","turnover",
+        "overtime","productivity","revenue per employee","cost per hire","time to fill",
+        "nps","csat","satisfaction","survey","sentiment","return on investment","roi",
+        "payback","irr","wacc","working capital","cash conversion cycle","burn rate"
       ],
       rules: [
-        "Always define whether the KPI uses invoice date, order date, ship date, or delivery date.",
-        "Variance should state Actual minus Target or Target minus Actual explicitly.",
-        "Percent KPIs need a clear numerator and denominator.",
-        "Operational KPIs should define the eligible population before counting exceptions.",
-        "Currency measures should define gross/net treatment and return/credit handling."
+        "Define which date field drives the KPI: invoice date, order date, ship date, or delivery date.",
+        "State variance direction: Actual minus Target (favorable = positive) or Target minus Actual.",
+        "Every % KPI must have an explicit numerator and denominator documented.",
+        "Operational KPIs must define the eligible population before counting exceptions.",
+        "Currency measures must specify gross/net treatment and how returns/credits are handled.",
+        "SaaS MRR = sum of monthly recurring revenue from active subscriptions at period end.",
+        "Churn rate = lost MRR / beginning MRR for the period (not customer count by default).",
+        "OTIF = orders delivered on time AND in full / total orders — both conditions must be true.",
+        "Inventory turns = Cost of Goods Sold / Average Inventory — use LASTNONBLANK for avg.",
+        "DSO = (Accounts Receivable / Total Revenue) * Days in Period.",
+        "Gross margin = Revenue - Cost of Goods Sold (excludes operating expenses).",
+        "EBITDA = Operating Income + Depreciation + Amortization (add-back from P&L).",
+        "NPS = % Promoters (9-10) - % Detractors (0-6) — exclude passives (7-8) from calc.",
+        "Customer LTV = Average Revenue per Customer / Churn Rate (simple cohort model).",
+        "ROI = (Net Benefit - Cost) / Cost — specify time horizon explicitly."
       ],
       templates: {
-        variance: "[Variance] = [Actual] - [Target]\n[Variance %] = DIVIDE([Variance], [Target])",
-        lateRate: "[Late Delivery %] =\nDIVIDE([Late Delivery Count], [Delivery Count])"
+        variance: "// Budget variance — always show both absolute and %\n[Variance vs Budget] = [Actual] - [Budget]\n[Variance vs Budget %] = DIVIDE([Variance vs Budget], [Budget])\n// Favorable = positive for revenue KPIs, negative for cost KPIs",
+        grossMargin: "// Gross margin\n[Gross Margin] = [Total Revenue] - [Total COGS]\n[Gross Margin %] = DIVIDE([Gross Margin], [Total Revenue])",
+        churn: "// SaaS MRR churn rate\n[MRR Churn Rate] =\nDIVIDE(\n    CALCULATE([MRR], 'Status'[Type] = \"Churned\"),\n    CALCULATE([MRR], PREVIOUSMONTH('Date'[Date]))\n)",
+        otif: "// On Time In Full\n[OTIF %] =\nDIVIDE(\n    CALCULATE(COUNTROWS('Orders'), 'Orders'[OnTime] = TRUE && 'Orders'[InFull] = TRUE),\n    COUNTROWS('Orders')\n)",
+        lateRate: "// Late delivery rate\n[Late Delivery %] =\nDIVIDE(\n    CALCULATE(COUNTROWS('Deliveries'), 'Deliveries'[DaysLate] > 0),\n    COUNTROWS('Deliveries')\n)",
+        dso: "// Days Sales Outstanding\n[DSO] =\nDIVIDE(\n    [Accounts Receivable Balance],\n    [Total Revenue]\n) * 30"
       }
     },
     {
       id: "performance",
       name: "Performance Review",
-      description: "DAX and report performance warnings, visual density, DirectQuery, and cardinality.",
+      description: "DAX, report, and model performance: DAX Studio triage, VertiPaq analysis, DirectQuery tuning, iterator optimization, cardinality reduction, and visual density.",
       triggers: [
-        "performance",
-        "slow",
-        "optimize",
-        "directquery",
-        "import",
-        "sumx",
-        "filter",
-        "iterator",
-        "cardinality",
-        "too many visuals",
-        "refresh"
+        "performance","slow","optimize","directquery","import","sumx","filter","iterator",
+        "cardinality","too many visuals","refresh","timeout","heavy","lag","latency",
+        "dax studio","vertipaq","query plan","storage engine","formula engine","se","fe",
+        "materialization","cold cache","warm cache","server timing","query folding",
+        "aggregation","aggregation table","dual mode","composite","query reduction",
+        "report page","visual count","slicer count","high cardinality","slicer search",
+        "large model","big data","billion rows","million rows","premium","capacity",
+        "memory","cpu","refresh time","incremental","partition","parallel","concurrent"
       ],
       rules: [
-        "Reduce visuals on a page before tuning individual visuals.",
-        "Avoid high-cardinality columns in slicers and legends.",
-        "Prefer Import mode unless DirectQuery is required by latency or governance needs.",
-        "Avoid FILTER over entire large fact tables where a simple filter argument works.",
-        "Use Performance Analyzer and DAX Studio for serious bottleneck diagnosis.",
-        "Materialize expensive transformations upstream when they are stable business logic."
+        "Run Performance Analyzer first — sort visuals by total duration to find the bottleneck.",
+        "Open the slow visual's DAX in DAX Studio to see Server Timings (SE vs FE split).",
+        "High Formula Engine time = complex DAX logic; High Storage Engine time = data volume.",
+        "Replace FILTER(FactTable, condition) with a simple Boolean CALCULATE argument.",
+        "Replace SUMX(FILTER(...), col) with CALCULATE(SUM(col), condition).",
+        "Cache repeated measure references with VAR instead of recalculating per row.",
+        "SWITCH(TRUE(), [Measure] > x, ...) recalculates the measure per branch — use VAR.",
+        "Avoid COUNTROWS(VALUES(col)) — use DISTINCTCOUNT(col) instead.",
+        "Avoid bi-directional relationships — they double the filter propagation graph.",
+        "High-cardinality columns in slicers kill rendering; use search slicers or reduce options.",
+        "Each additional visual on a page adds parallel query load — keep pages to ≤8 visuals.",
+        "Use Import mode for most scenarios; DirectQuery only when latency or governance demands it.",
+        "Aggregation tables on large DirectQuery facts can eliminate most query engine calls.",
+        "VertiPaq Analyzer: columns with high cardinality and low compression ratio cost the most.",
+        "Incremental refresh reduces full-refresh load; segment your date partition correctly.",
+        "Use query reduction settings in Options to defer slicer queries until Apply is clicked."
       ],
       templates: {
-        triage: "1. Count visuals on the page.\n2. Identify slow visuals with Performance Analyzer.\n3. Check DAX measure complexity.\n4. Check cardinality of slicers/axis fields.\n5. Review storage mode and query folding."
+        triage: "Performance triage — run in order:\n1. Performance Analyzer: identify the slowest visual by total duration\n2. Copy DAX query from the slowest visual → paste into DAX Studio\n3. Server Timings tab: check SE duration vs FE duration\n4. SE high → cardinality or data volume issue → aggregations / Import mode\n5. FE high → DAX complexity → simplify measure, add VAR, remove nested FILTER\n6. Check visual count: ≤8 per page\n7. Check slicer cardinality: use search slicer for columns > 500 distinct values\n8. Check for bi-directional relationships in the model",
+        daxStudioQuery: "-- DAX Studio: paste this template to benchmark a measure\nEVALUATE\nADDCOLUMNS(\n    SUMMARIZECOLUMNS(\n        'Date'[Year],\n        'Date'[Month]\n    ),\n    \"Measure\", [Your Measure Here]\n)\nORDER BY 'Date'[Year], 'Date'[Month]"
       }
     },
     {
       id: "power-query",
-      name: "Power Query",
-      description: "M transformations, query folding, types, merges, appends, and cleaning patterns.",
+      name: "Power Query / M",
+      description: "M language, query folding, custom functions, data type handling, merges, appends, API connections, error handling, and dataflow patterns.",
       triggers: [
-        "power query",
-        "m code",
-        "query folding",
-        "merge",
-        "append",
-        "transform",
-        "data type",
-        "clean",
-        "source"
+        "power query","m code","query folding","merge","append","transform","data type",
+        "clean","source","let","in","each","try","otherwise","record","list","table",
+        "text.split","text.trim","text.between","table.selectrows","table.addcolumn",
+        "table.removealternaterows","list.generate","list.accumulate","function",
+        "custom function","fnget","parameter","relative path","api","rest","json","xml",
+        "odata","web.contents","csv","excel","sharepoint","sql","native query",
+        "query parameter","dataflow","datamart","dataflow gen2","incremental","gateway",
+        "privacy level","firewall","combine files","folder","binary","buffer",
+        "table.buffer","list.buffer","error","missing column","schema change",
+        "column rename","unpivot","pivot","transpose","fill down","replace value",
+        "group by","aggregate","split column","extract","parse"
       ],
       rules: [
-        "Set data types deliberately after source navigation and again after major transformations.",
-        "Preserve query folding for large remote sources when possible.",
-        "Do merges on stable keys with matching data types.",
-        "Keep business calculations in DAX when they depend on filter context.",
-        "Keep row-level cleaning and source shaping in Power Query."
+        "Set data types explicitly after every source step and after major transformations.",
+        "Preserve query folding by avoiding Table.Buffer, List.Buffer, and Table.ToList early.",
+        "Table.Buffer() forces evaluation in memory — use only when folding is already broken.",
+        "Use try...otherwise for resilient column access when source schema can change.",
+        "Native SQL queries maintain folding in SQL connectors — avoid string concatenation in queries.",
+        "Merges require matching data types on join keys — cast both sides if needed.",
+        "Use a reusable custom function (fnGetData) for parameterized API calls.",
+        "Set privacy levels to avoid the firewall error blocking cross-source queries.",
+        "Web.Contents with RelativePath and Query parameters maintains folding better than URL concat.",
+        "Group By aggregations fold to SQL GROUP BY on supported connectors.",
+        "Unpivot is often better than dozens of custom column steps for wide-to-tall reshaping.",
+        "Combine Files from Folder is the standard pattern for multi-file ingestion.",
+        "Use List.Generate for iterative API pagination when page count is unknown.",
+        "Column names in lowercase with underscores load faster in Tabular than mixed case.",
+        "Document each query step with a descriptive step name (rename in formula bar).",
+        "Disable Load on staging queries — only load the final output query into the model."
       ],
       templates: {
-        dateTable: "Use a dedicated Date table with continuous dates, fiscal attributes, and marked date column."
+        customFunction: "// Reusable parameterized API call\nlet\n    fnGetPage = (pageNum as number) =>\n    let\n        url = \"https://api.example.com/data?page=\" & Number.ToText(pageNum),\n        response = Web.Contents(url),\n        json = Json.Document(response)\n    in\n        json,\n    allPages = List.Generate(\n        () => [page = 1, data = fnGetPage(1)],\n        each [data] <> null and List.Count([data]) > 0,\n        each [page = [page] + 1, data = fnGetPage([page] + 1)],\n        each [data]\n    ),\n    combined = Table.FromList(List.Combine(allPages), Splitter.SplitByNothing())\nin\n    combined",
+        errorHandling: "// Safe column access with fallback\nTable.AddColumn(Source, \"SafeColumn\", each\n    try [ColumnThatMightNotExist]\n    otherwise null\n)",
+        groupBy: "// Group By with multiple aggregations\nTable.Group(Source, {\"CustomerID\"}, {\n    {\"TotalRevenue\", each List.Sum([Amount]), type number},\n    {\"OrderCount\", each Table.RowCount(_), type number},\n    {\"LastOrderDate\", each List.Max([OrderDate]), type date}\n})"
       }
     },
     {
       id: "security-rls",
       name: "Security and RLS",
-      description: "Row-level security, workspace permissions, app publishing, and governance warnings.",
+      description: "Row-level security, object-level security, dynamic RLS, workspace roles, sensitivity labels, guest access, and governance.",
       triggers: [
-        "security",
-        "rls",
-        "row-level",
-        "permission",
-        "workspace",
-        "app",
-        "userprincipalname",
-        "sensitivity",
-        "certified",
-        "endorsement"
+        "security","rls","row-level","row level security","permission","workspace","app",
+        "userprincipalname","username","sensitivity","certified","endorsement","governance",
+        "object level security","ols","column security","table security","hide column",
+        "hide table","guest user","external user","aad","azure ad","entra","b2b",
+        "conditional access","mip","purview","information protection","label","classify",
+        "tenant admin","admin portal","activity log","audit log","usage metrics",
+        "admin api","scanner api","lineage","impact analysis","data protection",
+        "dynamic rls","static rls","role","manage roles","test as role","view as",
+        "xmla","premium rls","embed token","service principal","app registration",
+        "client id","client secret","power bi embedded","aadb2c"
       ],
       rules: [
-        "Use workspace roles for authoring/admin permissions and RLS for data-level access.",
-        "Test RLS with View as role before publishing.",
-        "Dynamic RLS should use stable identity mappings, often USERPRINCIPALNAME.",
-        "Do not rely on hidden pages or hidden visuals for security.",
-        "Publish governed consumption through Power BI apps when possible."
+        "Use workspace roles (Admin/Member/Contributor/Viewer) for authoring permissions.",
+        "Use RLS for data-level access — workspace roles do not restrict data.",
+        "Always test RLS with 'View as role' before publishing to production.",
+        "Dynamic RLS: 'SecurityTable'[Email] = USERPRINCIPALNAME() — most common pattern.",
+        "Static RLS: hardcode region/department values in role filters for simple scenarios.",
+        "Do NOT rely on hidden pages or visuals for security — they can be bypassed.",
+        "Object-Level Security (OLS) hides entire tables or columns — set in Tabular Editor.",
+        "RLS does not apply to XMLA endpoints without Premium — use IP allowlisting + service principals.",
+        "Apply sensitivity labels at the dataset level — they propagate to downstream reports and exports.",
+        "Guest (B2B) users must be granted access to both the workspace and the underlying dataset.",
+        "Service principals bypass RLS in embedded scenarios unless EffectiveIdentity is set.",
+        "Embed tokens must include roles and username for RLS to apply in embedded reports.",
+        "Run the Admin API scanner to audit who has access to which datasets across the tenant.",
+        "Document every RLS role, its DAX filter, and the business owner responsible for user lists.",
+        "Certify datasets to signal governance compliance to consumers across the organization."
       ],
       templates: {
-        dynamicRls: "'Security'[UserPrincipalName] = USERPRINCIPALNAME()"
+        dynamicRls: "// Dynamic RLS — filter by the current user's email\n// Step 1: Create a security table with [Email] and [Dimension] columns\n// Step 2: Create relationship: Security[Email] → UserTable (or use TREATAS)\n// Step 3: Add role with this DAX filter on the Security table:\n'Security'[Email] = USERPRINCIPALNAME()\n\n// If Security table joins to dimension:\n// Role DAX filter on Dimension table:\n[DimensionKey] IN\n    CALCULATETABLE(\n        VALUES('Security'[DimensionKey]),\n        'Security'[Email] = USERPRINCIPALNAME()\n    )",
+        staticRls: "// Static RLS — hardcode allowed values\n// Role: 'North Region'\n// DAX filter on fact or dimension:\n'Sales'[Region] = \"North\"",
+        managerHierarchy: "// Manager hierarchy RLS — user sees their own + direct reports\n'Employee'[EmployeeEmail] IN\n    CALCULATETABLE(\n        VALUES('OrgHierarchy'[ReporteeEmail]),\n        'OrgHierarchy'[ManagerEmail] = USERPRINCIPALNAME()\n    )\n    || 'Employee'[EmployeeEmail] = USERPRINCIPALNAME()"
       }
     },
     {
       id: "service-ops",
       name: "Power BI Service Ops",
-      description: "Power BI web workflows, refresh, deployment pipelines, workspaces, and publishing.",
+      description: "Deployment pipelines, XMLA, dataflows, datamarts, Fabric integration, gateway management, refresh strategy, capacity planning, and tenant administration.",
       triggers: [
-        "service",
-        "web",
-        "workspace",
-        "refresh",
-        "gateway",
-        "deployment",
-        "pipeline",
-        "publish",
-        "app.powerbi.com",
-        "semantic model"
+        "service","web","workspace","refresh","gateway","deployment","pipeline","publish",
+        "app.powerbi.com","semantic model","dataflow","datamart","fabric","onelake",
+        "direct lake","lakehouse","delta lake","shortcut","xmla","tabular editor",
+        "alm toolkit","external tool","capacity","sku","premium","ppu","premium per user",
+        "embed","embedded","power bi embedded","rest api","admin api","activity log",
+        "audit","lineage","impact analysis","endorsement","certified","promoted",
+        "scheduled refresh","incremental","on-demand","gateway cluster","vnet gateway",
+        "personal gateway","enterprise gateway","cloud connection","oauth","service account",
+        "deployment rule","parameter rule","connection rule","scheduled report","subscribe",
+        "paginated report","rdl","report builder","ssrs","power automate","teams",
+        "sharepoint web part","embed in teams","embed in sharepoint"
       ],
       rules: [
-        "Separate development, test, and production workspaces for important reports.",
-        "Use deployment pipelines where available for controlled releases.",
-        "Check gateway status and credentials first when refresh fails.",
-        "Certified or promoted semantic models should be treated as shared contracts.",
-        "Document refresh schedule, source ownership, and data latency expectations."
+        "Use Dev → Test → Production deployment pipeline for any report used in decisions.",
+        "Set deployment rules to swap data source connections between pipeline stages.",
+        "Gateway clusters provide load balancing and HA — always use clusters in production.",
+        "Check gateway status, version, and credentials first when scheduled refresh fails.",
+        "Service principal authentication avoids personal credential dependency in gateway.",
+        "Certified semantic models are shared contracts — version them with Tabular Editor + git.",
+        "XMLA read endpoint enables DAX Studio, Tabular Editor, and ALM Toolkit connectivity.",
+        "XMLA write endpoint (Premium/PPU) allows schema changes without republishing from Desktop.",
+        "Fabric Direct Lake queries OneLake Delta Parquet without import or DirectQuery overhead.",
+        "Dataflow Gen2 (Fabric) supports staging and output to Lakehouse tables.",
+        "Schedule refresh during off-peak hours; stagger refreshes to avoid gateway saturation.",
+        "Use Power Automate to trigger refresh on pipeline completion or file arrival.",
+        "Monitor capacity with the Premium Capacity Metrics app — watch CPU, memory, and wait times.",
+        "Activity Log API captures all user activity — use for audit, adoption, and governance.",
+        "Impact Analysis shows which reports and dashboards depend on a dataset before changes.",
+        "Subscribe stakeholders to report pages or dashboards for scheduled email delivery.",
+        "Use Power BI Embedded (App owns data) for customer-facing analytics with embed tokens."
       ],
       templates: {
-        refreshTriage: "1. Check refresh history.\n2. Check gateway online status.\n3. Verify source credentials.\n4. Check schema changes.\n5. Review failed step/error message."
+        refreshTriage: "Refresh failure triage:\n1. Open dataset > Refresh history > expand failed run > copy error message\n2. Check gateway: Online status, version (keep within 6 months of latest)\n3. Check data source credentials: Settings > Data source credentials > Edit\n4. Check for source schema changes: column renamed, table dropped, permission revoked\n5. Check for timeout: consider incremental refresh or smaller partition\n6. For gateway: check Windows Event Viewer on gateway machine for connection errors",
+        deploymentPipeline: "Deployment pipeline setup:\n1. Create pipeline in Power BI Service > Deployment pipelines > Create\n2. Assign Dev workspace → Test workspace → Production workspace\n3. Set deployment rules: swap connection strings, parameters per stage\n4. Deploy: select specific items or 'Deploy all'\n5. Set up selective deployment: reports only, or dataset + reports together\n6. After deploy to Production: run dataset refresh and validate",
+        fabricLakehouse: "Fabric Lakehouse + Direct Lake setup:\n1. Create Lakehouse in Fabric workspace\n2. Load Delta Parquet files to Lakehouse Tables (not Files)\n3. Create Semantic Model: Lakehouse > New semantic model\n4. Add tables in Direct Lake mode — no import refresh needed\n5. Build measures and relationships in the model\n6. Framing query runs on first visual query to warm the cache\n7. Falls back to DirectQuery if column not in cache — monitor in Capacity Metrics"
       }
     }
   ];
@@ -427,20 +508,36 @@
       taskType === "dax" ? composeDaxAnswer(responseContext)
         : taskType === "model" ? composeModelAnswer(responseContext)
           : taskType === "debug" ? composeDebugAnswer(responseContext)
-            : composeGeneralAnswer(responseContext);
+            : taskType === "visual" ? composeVisualAnswer(responseContext)
+              : taskType === "rls" ? composeRlsAnswer(responseContext)
+                : taskType === "powerquery" ? composePQAnswer(responseContext)
+                  : taskType === "service" ? composeServiceAnswer(responseContext)
+                    : composeGeneralAnswer(responseContext);
 
     return { text, confidence: analysis.confidence, analysis, taskType };
   }
 
   function classifyPrompt(prompt) {
     const lower = prompt.toLowerCase();
-    if (/incorrect total|wrong total|wrong aggregation|slow|performance|optimi[sz]e|too slow|timeout|heavy visual/.test(lower)) {
+    if (/incorrect total|wrong total|wrong result|wrong aggregation|slow|performance|optimi[sz]e|too slow|timeout|heavy visual|dax studio|vertipaq|formula engine|storage engine/.test(lower)) {
       return "debug";
     }
-    if (/relationship|semantic model|data model|star schema|cardinality|many-to-many|bidirectional|dimension|fact table|grain|flat table|repeated attribute|denormalized|grouped by .*transactionid|transactionid/.test(lower)) {
+    if (/rls|row.level security|row level security|userprincipalname|dynamic rls|static rls|manage roles|view as role|object.level|ols|sensitivity label|guest user|b2b|embed token/.test(lower)) {
+      return "rls";
+    }
+    if (/power query|m code|query folding|let\b|in\b|table\.addcolumn|table\.selectrows|list\.|record\.|web\.contents|json\.document|csv|dataflow|merge queries|append queries|custom function|try otherwise/.test(lower)) {
+      return "powerquery";
+    }
+    if (/deployment pipeline|gateway|refresh fail|scheduled refresh|publish to service|workspace|fabric|onelake|direct lake|lakehouse|datamart|xmla|tabular editor|alm toolkit|capacity|premium|embed|activity log|admin api/.test(lower)) {
+      return "service";
+    }
+    if (/relationship|semantic model|data model|star schema|cardinality|many-to-many|bidirectional|dimension|fact table|grain|flat table|repeated attribute|denormalized|grouped by .*transactionid|transactionid|bridge table|composite model|incremental refresh|aggregation table/.test(lower)) {
       return "model";
     }
-    if (/dax|measure|calculate|sumx|averagex|minx|maxx|filter\(|switch|selectedvalue|sameperiodlastyear|dateadd|divide|ytd|mtd|qtd|hasonevalue|blank\(|isblank|related\(|lookupvalue|allselected|crossjoin|distinct\(|values\(|countrows|count\(|\w+\s*=/.test(lower)) {
+    if (/visual|chart|report page|layout|slicer|drillthrough|bookmark|tooltip page|field parameter|conditional format|mobile layout|theme|accessibility|alt text|bar chart|line chart|scatter|matrix|card|kpi|waterfall|funnel/.test(lower)) {
+      return "visual";
+    }
+    if (/dax|measure|calculate|sumx|averagex|minx|maxx|filter\(|switch|selectedvalue|sameperiodlastyear|dateadd|parallelperiod|divide|ytd|mtd|qtd|yoy|hasonevalue|blank\(|isblank|related\(|lookupvalue|allselected|crossjoin|distinct\(|values\(|countrows|count\(|rankx|topn|userelationship|treatas|keepfilters|removefilters|var\b|return\b|\w+\s*=\s*(sum|count|divide|calculate|if|switch)/.test(lower)) {
       return "dax";
     }
     return "general";
@@ -450,6 +547,8 @@
     const dax = extractDaxCandidate(context.prompt);
     const pattern = analyzeDaxPattern(context.prompt, dax);
     const fixedDax = dax ? applyDaxPatternFix(dax, pattern) : inferDaxTemplate(context.prompt);
+    const skill = context.matched.find((s) => s.id === "dax-expert") || context.matched[0];
+    const knowledgeNotes = context.knowledge.slice(0, 3).map((k) => `  - ${k.title}: ${k.body}`).join("\n");
 
     return [
       "RULE:",
@@ -457,6 +556,15 @@
       "",
       "FIXED_DAX:",
       fixedDax,
+      "",
+      "EXPERT NOTES:",
+      "- Always start with a simple base measure before derived measures.",
+      "- Use DIVIDE() for every ratio — never raw / operator.",
+      "- Use VAR...RETURN to cache any expression referenced more than once.",
+      "- Validate with: EVALUATE SUMMARIZECOLUMNS('Date'[Year], \"Result\", [Measure])",
+      "- Test blank, zero-denominator, and multi-select slicer cases before publishing.",
+      ...(skill?.templates ? [`\nTEMPLATES FROM SKILL:\n${Object.values(skill.templates).slice(0, 2).join("\n\n")}`] : []),
+      ...(knowledgeNotes ? [`\nYOUR BUSINESS RULES:\n${knowledgeNotes}`] : []),
       "",
       "IMPACT:",
       `- performance_gain: ${pattern.impact.performance_gain}`,
@@ -466,73 +574,214 @@
 
   function composeModelAnswer(context) {
     const pattern = analyzeModelPattern(context.prompt);
+    const skill = context.matched.find((s) => s.id === "semantic-model") || context.matched[0];
+    const rules = (skill?.rules || []).slice(0, 6).map((r) => `- ${r}`);
+
     return [
       "RULE:",
       stringifyRule(pattern.rule),
       "",
       "FIX:",
-      ...pattern.fixSteps.map((step) => `- ${step}`)
+      ...pattern.fixSteps.map((step) => `- ${step}`),
+      "",
+      "MODEL BEST PRACTICES:",
+      ...rules,
+      "",
+      "VALIDATION:",
+      "- Put a measure in a matrix with no slicers and verify totals match source system.",
+      "- Check that slicer cross-filtering works as expected between all visuals.",
+      "- Confirm inactive relationships activate correctly with USERELATIONSHIP.",
+      ...(skill?.templates?.starSchema ? [`\nStar Schema Checklist:\n${skill.templates.starSchema}`] : [])
     ].join("\n");
   }
 
   function composeDebugAnswer(context) {
     const lower = context.prompt.toLowerCase();
-    if (/relationship|many-to-many|bidirectional|model|cardinality/.test(lower)) {
+    if (/relationship|many-to-many|bidirectional|model|cardinality|grain/.test(lower)) {
       return composeModelAnswer(context);
     }
-
-    if (/sumx|filter\(|all\(|divide|measure|dax|\w+\s*=/.test(lower)) {
+    if (/sumx|filter\(|all\(|divide|measure|dax|calculate|\w+\s*=/.test(lower)) {
       return composeDaxAnswer(context);
     }
 
-    const pattern = /slow|performance|timeout|optimi[sz]e/.test(lower)
-      ? {
-        rule: {
-          pattern: "slow report/page",
-          detection_logic: "User reports latency without a specific DAX expression; inspect page visual count, high-cardinality slicers, DirectQuery visuals, and expensive measures.",
-          fix: "Reduce visual count, remove high-cardinality slicers, isolate slow visuals with Performance Analyzer, then optimize DAX/source shape.",
-          category: "performance",
-          confidence: 0.7,
-          requires_llm: false
-        },
-        fixSteps: [
-          "Run Performance Analyzer and sort by visual duration.",
-          "Remove or defer visuals not required for the decision.",
-          "Replace high-cardinality slicers/legends with lower-cardinality dimensions.",
-          "Move stable row-level transformations upstream.",
-          "Optimize the slowest measure after the slowest visual is identified."
-        ]
-      }
-      : analyzeModelPattern(context.prompt);
+    const perfSkill = context.matched.find((s) => s.id === "performance");
+    const triage = perfSkill?.templates?.triage || [
+      "1. Run Performance Analyzer — sort by total duration.",
+      "2. Copy slow visual's DAX → paste into DAX Studio → check Server Timings.",
+      "3. High FE time → simplify DAX, add VAR, remove nested FILTER.",
+      "4. High SE time → reduce cardinality, use aggregation tables, switch to Import.",
+      "5. Check visual count: keep ≤ 8 per page.",
+      "6. Check slicer cardinality: use search slicer for > 500 distinct values.",
+      "7. Check for bi-directional relationships — remove unless required."
+    ].join("\n");
 
     return [
       "RULE:",
-      stringifyRule(pattern.rule),
+      stringifyRule({
+        pattern: "report or DAX performance issue",
+        detection_logic: "User reports slow visuals, timeouts, or incorrect results without a specific DAX expression.",
+        fix: "Triage with Performance Analyzer → DAX Studio → optimize DAX or model structure.",
+        category: "performance",
+        confidence: 0.82,
+        requires_llm: false
+      }),
       "",
-      "FIX:",
-      ...pattern.fixSteps.map((step) => `- ${step}`)
+      "TRIAGE STEPS:",
+      triage,
+      "",
+      "COMMON ROOT CAUSES:",
+      "- FILTER(FactTable, ...) instead of simple CALCULATE argument",
+      "- SUMX over large fact table when CALCULATE(SUM()) works",
+      "- Same measure referenced multiple times without VAR",
+      "- Bi-directional relationship causing cross-filter ambiguity",
+      "- High-cardinality column in slicer or legend",
+      "- Too many visuals on one page (> 8)"
+    ].join("\n");
+  }
+
+  function composeVisualAnswer(context) {
+    const skill = context.matched.find((s) => s.id === "visual-design") || context.matched[0];
+    const rules = (skill?.rules || []).slice(0, 8).map((r) => `- ${r}`);
+    const lower = context.prompt.toLowerCase();
+
+    const chartType = /trend|over time|month|week|daily|growth/.test(lower) ? "Line chart"
+      : /rank|top|bottom|compare|by region|by product|category/.test(lower) ? "Clustered bar chart"
+        : /share|mix|composition|percent of/.test(lower) ? "100% stacked bar chart"
+          : /scatter|outlier|correlation|relationship between/.test(lower) ? "Scatter chart"
+            : /map|geography|country|state|city|region/.test(lower) ? "Filled map"
+              : /matrix|cross|pivot|by month and/.test(lower) ? "Matrix"
+                : /kpi|scorecard|headline|single number/.test(lower) ? "Card"
+                  : "Clustered column chart";
+
+    return [
+      `RECOMMENDED VISUAL: ${chartType}`,
+      "",
+      "FIELD WELLS:",
+      skill?.templates?.comparison || "Axis: Category dimension | Values: Primary measure | Sort: Descending | Tooltip: Variance, target",
+      "",
+      "REPORT DESIGN RULES:",
+      ...rules,
+      "",
+      "FORMATTING CHECKLIST:",
+      "- Title states the business question, not the chart type",
+      "- Data labels on only if they change interpretation",
+      "- Consistent color palette across the page",
+      "- Sort order: descending by the decision metric",
+      "- Conditional formatting: only where color changes meaning",
+      "",
+      "INTERACTIONS:",
+      "- Set cross-filter/cross-highlight intentionally for each visual pair",
+      "- Sync slicers across pages that share the same filter context",
+      "- Add drillthrough to detail pages for operational records"
+    ].join("\n");
+  }
+
+  function composeRlsAnswer(context) {
+    const skill = context.matched.find((s) => s.id === "security-rls") || context.matched[0];
+    const rules = (skill?.rules || []).slice(0, 8).map((r) => `- ${r}`);
+
+    return [
+      "ROW-LEVEL SECURITY GUIDANCE",
+      "",
+      "DYNAMIC RLS SETUP (most common):",
+      skill?.templates?.dynamicRls || "'Security'[UserPrincipalName] = USERPRINCIPALNAME()",
+      "",
+      "STEPS:",
+      "1. Create a Security mapping table: [UserEmail], [FilterValue]",
+      "2. Create relationship: Security[FilterValue] → Dimension[Key]",
+      "3. Modeling > Manage roles > New role > add DAX filter",
+      "4. Test: Modeling > View as > select role + enter test email",
+      "5. Publish and assign users/groups to the role in Power BI Service",
+      "",
+      "SECURITY RULES:",
+      ...rules,
+      "",
+      "WARNINGS:",
+      "- RLS does not apply to XMLA endpoints without Premium",
+      "- Hidden pages and visuals are NOT security — use RLS for data access",
+      "- Service principals bypass RLS unless EffectiveIdentity is set in embed tokens",
+      "- Test every role with a real user account before go-live",
+      ...(skill?.templates?.managerHierarchy ? [`\nMANAGER HIERARCHY PATTERN:\n${skill.templates.managerHierarchy}`] : [])
+    ].join("\n");
+  }
+
+  function composePQAnswer(context) {
+    const skill = context.matched.find((s) => s.id === "power-query") || context.matched[0];
+    const rules = (skill?.rules || []).slice(0, 8).map((r) => `- ${r}`);
+
+    return [
+      "POWER QUERY / M GUIDANCE",
+      "",
+      "KEY PRINCIPLES:",
+      ...rules,
+      "",
+      "QUERY FOLDING RULES:",
+      "- Check folding: right-click a step → 'View Native Query' (greyed = folding broken)",
+      "- Table.Buffer() breaks folding — move it as late as possible",
+      "- SQL native queries maintain folding; string-built URLs break it",
+      "- Group By, Filter, Select Columns, Remove Columns usually fold on SQL sources",
+      "",
+      "ERROR HANDLING PATTERN:",
+      skill?.templates?.errorHandling || "try [Column] otherwise null",
+      "",
+      "CUSTOM FUNCTION PATTERN:",
+      skill?.templates?.customFunction || "let fnGet = (p) => Json.Document(Web.Contents(url & p)) in fnGet",
+      "",
+      "DATAFLOW BEST PRACTICES:",
+      "- Use Dataflow Gen2 for shared transformations consumed by multiple semantic models",
+      "- Stage intermediate tables in Lakehouse before final output",
+      "- Disable Load on every staging query to avoid bloating the dataflow model"
+    ].join("\n");
+  }
+
+  function composeServiceAnswer(context) {
+    const skill = context.matched.find((s) => s.id === "service-ops") || context.matched[0];
+    const rules = (skill?.rules || []).slice(0, 8).map((r) => `- ${r}`);
+    const lower = context.prompt.toLowerCase();
+
+    const specificTemplate = /refresh|gateway/.test(lower) ? skill?.templates?.refreshTriage
+      : /deployment|pipeline|stage/.test(lower) ? skill?.templates?.deploymentPipeline
+        : /fabric|lakehouse|direct lake|onelake/.test(lower) ? skill?.templates?.fabricLakehouse
+          : null;
+
+    return [
+      "POWER BI SERVICE GUIDANCE",
+      "",
+      "SERVICE BEST PRACTICES:",
+      ...rules,
+      ...(specificTemplate ? ["", "STEP-BY-STEP:", specificTemplate] : []),
+      "",
+      "GOVERNANCE CHECKLIST:",
+      "- Certified datasets = shared contracts; version with Tabular Editor + git",
+      "- Run Impact Analysis before changing any shared semantic model",
+      "- Use Activity Log API to audit report usage and identify unused assets",
+      "- Monitor capacity health with the Premium Capacity Metrics app",
+      "- Subscribe stakeholders to scheduled report snapshots via email subscription"
     ].join("\n");
   }
 
   function composeGeneralAnswer(context) {
-    const rules = context.matched.flatMap((skill) => skill.rules || []).slice(0, 6);
+    const rules = context.matched.flatMap((skill) => skill.rules || []).slice(0, 8);
+    const templates = context.matched.flatMap((skill) =>
+      Object.entries(skill.templates || {}).map(([k, v]) => `${k}:\n${v}`)
+    ).slice(0, 2);
     const knowledge = context.knowledge.slice(0, 3).map((item) => `- ${item.title}: ${item.body}`);
+    const topSkill = context.matched[0];
 
-    const confidence = rules.length ? 0.6 : 0.4;
     return [
-      "RULE:",
-      stringifyRule({
-        pattern: "general Power BI request",
-        detection_logic: "No DAX/model/debug-specific syntax detected; matched active skill triggers only.",
-        fix_template: "Apply matched deterministic skill rules; escalate if exact artifact generation is required.",
-        category: "correctness",
-        confidence,
-        requires_llm: confidence < 0.5
-      }),
+      `POWER BI SPECIALIST ANSWER — ${topSkill ? topSkill.name.toUpperCase() : "GENERAL"}`,
       "",
-      "FIXED_SOLUTION:",
+      "EXPERT RULES:",
       ...rules.map((rule) => `- ${rule}`),
-      ...(knowledge.length ? ["", "TEMPLATES:", ...knowledge] : [])
+      ...(templates.length ? ["", "TEMPLATES:", ...templates] : []),
+      ...(knowledge.length ? ["", "YOUR BUSINESS RULES:", ...knowledge] : []),
+      "",
+      "NEXT STEPS:",
+      "- Define the exact business question this report must answer.",
+      "- Confirm the grain of the fact table before writing measures.",
+      "- Build base measures first, then derived and time-intelligence measures.",
+      "- Validate totals against the source system with no slicers applied.",
+      "- Use Performance Analyzer to verify the report loads in < 3 seconds."
     ].join("\n");
   }
 

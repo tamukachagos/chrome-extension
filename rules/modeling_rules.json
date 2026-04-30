@@ -235,5 +235,89 @@
     },
     "fixed_dax": "Bi Sales = [Revenue]",
     "category": "modeling"
+  },
+  {
+    "pattern": "Flat denormalized table used instead of star schema",
+    "bad_dax": "Single wide table with CustomerName, ProductName, RegionName, Date, Amount all in one table",
+    "detection_logic": { "functions": [], "conditions": ["single_wide_table_detected", "no_dimension_tables"], "context": "model_structure" },
+    "fixed_dax": "Split into: FactSales (keys + Amount), DimCustomer, DimProduct, DimRegion, DimDate. Create relationships on surrogate keys.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "No dedicated Date table — using date column from fact table",
+    "bad_dax": "YTD Sales = CALCULATE(SUM(Sales[Amount]), DATESYTD(Sales[OrderDate]))",
+    "detection_logic": { "functions": ["DATESYTD"], "conditions": ["date_column_from_fact", "no_marked_date_table"], "context": "time_intelligence_measure" },
+    "fixed_dax": "Create a dedicated Date table with continuous dates, mark it as Date table. Use DATESYTD('Date'[Date]) instead.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Calculated columns used for business logic instead of measures",
+    "bad_dax": "Sales[Margin %] = Sales[Revenue] / Sales[Cost]",
+    "detection_logic": { "functions": [], "conditions": ["calculated_column_contains_ratio", "measure_preferred"], "context": "calculated_column_definition" },
+    "fixed_dax": "Margin % = DIVIDE([Total Revenue], [Total Cost]) — use as a measure so filter context applies correctly.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Many-to-many without bridge table causes incorrect totals",
+    "bad_dax": "Many-to-many relationship set between Sales[CustomerID] and Budget[CustomerID]",
+    "detection_logic": { "functions": [], "conditions": ["many_to_many_relationship", "no_bridge_table"], "context": "relationship_design" },
+    "fixed_dax": "Create a Customer bridge table with unique CustomerID. Relate Sales → Customer ← Budget through the bridge.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Role-playing date dimension not using USERELATIONSHIP",
+    "bad_dax": "ShipDate Revenue = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": { "functions": ["CALCULATE"], "conditions": ["multiple_date_relationships_in_model", "inactive_date_relationship_not_activated"], "context": "role_playing_date" },
+    "fixed_dax": "ShipDate Revenue = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP('Date'[Date], Sales[ShipDate]))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Technical surrogate keys visible in report field list",
+    "bad_dax": "CustomerKey, ProductKey, DateKey visible in field pane and draggable into visuals",
+    "detection_logic": { "functions": [], "conditions": ["surrogate_key_columns_visible", "not_hidden_in_model"], "context": "model_hygiene" },
+    "fixed_dax": "Right-click each key column in Model view > Hide. Users should never need to drag raw keys into visuals.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Measures not organized into display folders",
+    "bad_dax": "All 40 measures in a flat unsorted list in the field pane",
+    "detection_logic": { "functions": [], "conditions": ["no_display_folders", "large_measure_count"], "context": "model_hygiene" },
+    "fixed_dax": "Group measures into display folders: Revenue, Cost & Margin, Time Intelligence, KPIs, Operational. Set in Model view or Tabular Editor.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Bidirectional relationship between fact tables causes ambiguity",
+    "bad_dax": "Bidirectional filter between FactSales and FactBudget",
+    "detection_logic": { "functions": [], "conditions": ["bidirectional_between_fact_tables", "filter_ambiguity_risk"], "context": "relationship_design" },
+    "fixed_dax": "Remove the bidirectional filter. Use CROSSFILTER or TREATAS inside specific measures that need cross-fact filtering.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Incremental refresh not set on large fact table",
+    "bad_dax": "Full table refresh on 100M+ row fact table on every scheduled refresh",
+    "detection_logic": { "functions": [], "conditions": ["large_fact_table", "no_incremental_refresh_policy"], "context": "refresh_strategy" },
+    "fixed_dax": "Configure incremental refresh: add RangeStart/RangeEnd parameters in Power Query, set policy to store N years and refresh last N days.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Composite model DirectQuery fact table with no aggregation table",
+    "bad_dax": "All visuals query DirectQuery fact table with no Import-mode aggregation layer",
+    "detection_logic": { "functions": [], "conditions": ["directquery_fact_table", "no_aggregation_table", "high_query_volume"], "context": "composite_model_design" },
+    "fixed_dax": "Add an aggregation table (Import mode) summarized at day/month + key dimension granularity. Map it as user-defined aggregation in Manage Aggregations.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Snowflake schema with multi-hop dimension relationships",
+    "bad_dax": "Sales → Product → Category → Division — three hops from fact to top-level dimension",
+    "detection_logic": { "functions": [], "conditions": ["multi_hop_dimension_chain", "snowflake_schema"], "context": "model_structure" },
+    "fixed_dax": "Flatten the dimension hierarchy into one DimProduct table with Category and Division columns. Reduces join complexity and improves query performance.",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Currency conversion using SUMX without exchange rate date matching",
+    "bad_dax": "USD Revenue = SUMX(Sales, Sales[Amount] * VALUES(ExchangeRate[Rate]))",
+    "detection_logic": { "functions": ["SUMX", "VALUES"], "conditions": ["exchange_rate_lookup_without_date_match"], "context": "currency_conversion_measure" },
+    "fixed_dax": "USD Revenue = SUMX(Sales, Sales[Amount] * LOOKUPVALUE(ExchangeRate[Rate], ExchangeRate[Date], Sales[OrderDate], ExchangeRate[Currency], Sales[Currency]))",
+    "category": "modeling"
   }
 ]
