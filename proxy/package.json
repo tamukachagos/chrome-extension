@@ -1,0 +1,13 @@
+{
+  "name": "pbi-copilot-proxy",
+  "version": "1.0.0",
+  "description": "Local proxy routing Chrome extension requests to Ollama",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
