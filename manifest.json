@@ -6,6 +6,7 @@
   "options_page": "rule-tester.html",
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
     "scripting"
   ],

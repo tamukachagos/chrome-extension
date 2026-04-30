@@ -40,6 +40,20 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "TAKE_SCREENSHOT") {
+    const tabId = sender?.tab?.id;
+    chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ dataUrl });
+      }
+    });
+    return true;
+  }
+});
+
 chrome.action.onClicked.addListener((tab) => {
   if (!tab.id) return;
 

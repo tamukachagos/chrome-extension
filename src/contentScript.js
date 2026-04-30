@@ -179,7 +179,7 @@
 
       .tabs {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(6, 1fr);
         border-bottom: 1px solid var(--pbi-line);
         background: #fff;
       }
@@ -430,6 +430,47 @@
         color: var(--pbi-muted);
       }
 
+      .act-screenshot {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid #cfc7b7;
+        display: none;
+        margin-top: 10px;
+      }
+
+      .el-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0;
+        border-bottom: 1px solid var(--pbi-line);
+        font-size: 12px;
+      }
+
+      .el-row:last-child {
+        border-bottom: 0;
+      }
+
+      .el-tag {
+        flex: 0 0 auto;
+        color: var(--pbi-muted);
+        font-family: Consolas, monospace;
+        font-size: 11px;
+      }
+
+      .el-label {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .el-list {
+        max-height: 180px;
+        overflow: auto;
+        margin-top: 8px;
+      }
+
       .footer {
         border-top: 1px solid var(--pbi-line);
         background: #fffdf7;
@@ -471,6 +512,7 @@
 
         .tabs {
           grid-template-columns: repeat(3, 1fr);
+          grid-template-rows: repeat(2, auto);
         }
 
         .tab {
@@ -499,6 +541,7 @@
         <button class="tab" data-tab="visuals">Visuals</button>
         <button class="tab" data-tab="model">Model</button>
         <button class="tab" data-tab="train">Train</button>
+        <button class="tab" data-tab="act">Act</button>
       </nav>
 
       <main class="body">
@@ -687,6 +730,76 @@
           </div>
           <div id="knowledgeList"></div>
         </section>
+
+        <section class="section" data-section="act">
+          <div class="context-card">
+            <strong>Screenshot</strong>
+            <p>Capture the current Power BI page to see the report state.</p>
+            <div class="actions">
+              <button class="btn primary" id="takeScreenshot">Capture screenshot</button>
+              <button class="btn" id="analyzeScreenshot">Analyze layout</button>
+            </div>
+            <div id="screenshotWrap" style="display:none; margin-top:10px;">
+              <img id="screenshotImg" class="act-screenshot" style="display:block;" alt="Screenshot">
+              <div class="actions" style="margin-top:8px;">
+                <button class="btn" id="copyScreenshot">Copy data URL</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="context-card">
+            <strong>Read page elements</strong>
+            <p>Scan what interactive elements are visible on the Power BI canvas.</p>
+            <div class="actions">
+              <button class="btn primary" id="readPage">Read all elements</button>
+              <button class="btn" id="readPbiElements">Power BI only</button>
+            </div>
+            <div id="pageElementsList" class="el-list"></div>
+          </div>
+
+          <div class="context-card">
+            <strong>Click element</strong>
+            <p>Find an element by its label or visible text and click it.</p>
+            <div class="field">
+              <label for="clickTarget">Label or text</label>
+              <input id="clickTarget" placeholder="Format, Field list, Add a visual...">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="doClickElement">Click it</button>
+              <button class="btn" id="doHighlightElement">Highlight only</button>
+            </div>
+            <div id="clickFeedback" class="note" style="display:none; margin-top:8px;"></div>
+          </div>
+
+          <div class="context-card">
+            <strong>Type text</strong>
+            <p>Type into the focused element or a labelled input field.</p>
+            <div class="field">
+              <label for="typeTarget">Target label <span>blank = current focus</span></label>
+              <input id="typeTarget" placeholder="Search box, measure name...">
+            </div>
+            <div class="field">
+              <label for="typeText">Text to type</label>
+              <input id="typeText" placeholder="Enter text...">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="doTypeInField">Type</button>
+              <button class="btn" id="doClearField">Clear field</button>
+            </div>
+          </div>
+
+          <div class="context-card">
+            <strong>Power BI shortcuts</strong>
+            <p>Common editing actions on app.powerbi.com.</p>
+            <div class="actions">
+              <button class="btn" id="pbiOpenFormat">Format pane</button>
+              <button class="btn" id="pbiOpenFields">Fields list</button>
+              <button class="btn" id="pbiOpenDax">New measure</button>
+              <button class="btn" id="pbiRefreshVisual">Refresh</button>
+            </div>
+            <div id="pbiActionFeedback" class="note" style="display:none; margin-top:8px;"></div>
+          </div>
+        </section>
       </main>
 
       <footer class="footer">
@@ -809,6 +922,112 @@
         await navigator.clipboard.writeText(text);
         toast("Copied.");
       });
+    });
+
+    // Act tab — screenshot
+    $("#takeScreenshot").addEventListener("click", async () => {
+      toast("Capturing screenshot...");
+      try {
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({ type: "TAKE_SCREENSHOT" }, (res) => {
+            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+            else resolve(res);
+          });
+        });
+        if (response?.dataUrl) {
+          const img = $("#screenshotImg");
+          const wrap = $("#screenshotWrap");
+          img.src = response.dataUrl;
+          wrap.style.display = "block";
+          toast("Screenshot captured.");
+        } else {
+          toast("Screenshot failed — " + (response?.error || "unknown error"));
+        }
+      } catch (err) {
+        toast("Screenshot error: " + err.message);
+      }
+    });
+
+    $("#copyScreenshot").addEventListener("click", async () => {
+      const img = $("#screenshotImg");
+      if (!img.src || img.src === location.href) return toast("Take a screenshot first.");
+      await navigator.clipboard.writeText(img.src);
+      toast("Screenshot data URL copied.");
+    });
+
+    $("#analyzeScreenshot").addEventListener("click", () => {
+      const analysis = [
+        `Page: ${state.context.pageMode} — ${state.context.title}`,
+        `URL: ${state.context.url}`,
+        "",
+        "Visible fields detected:",
+        ...state.context.likelyFields.slice(0, 10).map((f) => `  - ${f}`),
+        "",
+        "Tip: Go to the Ask tab and describe what you see in the screenshot to get layout recommendations."
+      ].join("\n");
+      showResult("#askResult", "#askOutput", analysis);
+      setActiveTab("ask");
+      toast("Context loaded in Ask tab.");
+    });
+
+    // Act tab — read page elements
+    $("#readPage").addEventListener("click", () => {
+      renderPageElements(readPageElements(false));
+    });
+
+    $("#readPbiElements").addEventListener("click", () => {
+      renderPageElements(readPageElements(true));
+    });
+
+    // Act tab — click element
+    $("#doClickElement").addEventListener("click", () => {
+      const target = $("#clickTarget").value.trim();
+      if (!target) return toast("Enter a label or text.");
+      const result = findAndActElement(target, false);
+      const fb = $("#clickFeedback");
+      fb.textContent = result;
+      fb.style.display = "block";
+      toast(result.slice(0, 60));
+    });
+
+    $("#doHighlightElement").addEventListener("click", () => {
+      const target = $("#clickTarget").value.trim();
+      if (!target) return toast("Enter a label or text.");
+      const result = findAndActElement(target, true);
+      const fb = $("#clickFeedback");
+      fb.textContent = result;
+      fb.style.display = "block";
+      toast(result.slice(0, 60));
+    });
+
+    // Act tab — type text
+    $("#doTypeInField").addEventListener("click", () => {
+      const targetLabel = $("#typeTarget").value.trim();
+      const text = $("#typeText").value;
+      if (!text) return toast("Enter text to type.");
+      typeIntoField(targetLabel, text);
+    });
+
+    $("#doClearField").addEventListener("click", () => {
+      const targetLabel = $("#typeTarget").value.trim();
+      clearFieldByLabel(targetLabel);
+    });
+
+    // Act tab — Power BI shortcuts
+    $("#pbiOpenFormat").addEventListener("click", () => {
+      pbiShortcut(["Format", "Format your visuals", "Format pane", "Format visual", "Visualizations"], "Format pane");
+    });
+
+    $("#pbiOpenFields").addEventListener("click", () => {
+      pbiShortcut(["Fields", "Fields pane", "Data pane", "Data", "Show data pane"], "Fields pane");
+    });
+
+    $("#pbiOpenDax").addEventListener("click", () => {
+      pbiShortcut(["New measure", "New quick measure", "Edit measure", "Quick measure"], "measure editor");
+    });
+
+    $("#pbiRefreshVisual").addEventListener("click", () => {
+      pbiShortcut(["Refresh", "Refresh visuals", "Refresh now", "Refresh visual"], "refresh");
     });
   }
 
@@ -1448,6 +1667,172 @@
 
   function trim(value, max) {
     return value.length > max ? `${value.slice(0, max - 3)}...` : value;
+  }
+
+  function readPageElements(pbiOnly) {
+    const selector = pbiOnly
+      ? '[class*="visual"],[class*="pane"],[class*="slicer"],[aria-label],[data-testid],[role="button"],[role="tab"]'
+      : 'button,input,select,textarea,[role="button"],[role="tab"],[role="menuitem"],[aria-label]';
+
+    const seen = new Map();
+    document.querySelectorAll(selector).forEach((el) => {
+      const label = (el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 70);
+      const tag = el.tagName.toLowerCase();
+      const role = el.getAttribute("role") || tag;
+      if (label && label.length > 1 && !seen.has(label)) {
+        seen.set(label, { label, role, el });
+      }
+    });
+
+    return Array.from(seen.values()).slice(0, 50);
+  }
+
+  function renderPageElements(items) {
+    const list = $("#pageElementsList");
+    if (!list) return;
+
+    if (!items.length) {
+      list.innerHTML = '<div class="note">No interactive elements found. Try refreshing page context.</div>';
+      return;
+    }
+
+    list.innerHTML = "";
+    items.forEach(({ label, role }) => {
+      const row = document.createElement("div");
+      row.className = "el-row";
+      row.innerHTML = `
+        <span class="el-tag"></span>
+        <span class="el-label" title=""></span>
+        <button class="btn" style="padding:3px 7px;font-size:11px;flex:0 0 auto;">Click</button>
+      `;
+      row.querySelector(".el-tag").textContent = role;
+      const labelEl = row.querySelector(".el-label");
+      labelEl.textContent = label;
+      labelEl.title = label;
+      row.querySelector(".btn").addEventListener("click", () => {
+        const result = findAndActElement(label, false);
+        toast(result.slice(0, 60));
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function findAndActElement(label, highlightOnly) {
+    const lower = label.toLowerCase();
+    const candidates = Array.from(
+      document.querySelectorAll('button,input,select,textarea,[role="button"],[role="tab"],[role="menuitem"],[aria-label],[title]')
+    );
+
+    const scored = candidates
+      .map((el) => {
+        const a = (el.getAttribute("aria-label") || "").toLowerCase();
+        const t = (el.getAttribute("title") || "").toLowerCase();
+        const tx = (el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+        let score = 0;
+        if (a === lower || t === lower || tx === lower) score = 100;
+        else if (a.includes(lower) || t.includes(lower)) score = 60;
+        else if (tx.includes(lower) && tx.length < 80) score = 40;
+        return { el, score };
+      })
+      .filter((e) => e.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    if (!scored.length) {
+      return `No element matched "${label}". Use Read Elements to see available labels.`;
+    }
+
+    const { el } = scored[0];
+    const name = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 50);
+
+    if (highlightOnly) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      const prev = el.style.outline;
+      el.style.outline = "3px solid #f2c811";
+      setTimeout(() => { el.style.outline = prev; }, 2000);
+      return `Highlighted: ${name}`;
+    }
+
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.focus();
+    el.click();
+    el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    return `Clicked: ${name}`;
+  }
+
+  function typeIntoField(targetLabel, text) {
+    let el = null;
+
+    if (targetLabel) {
+      const lower = targetLabel.toLowerCase();
+      el = Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"]')).find((node) => {
+        const a = (node.getAttribute("aria-label") || node.getAttribute("placeholder") || node.getAttribute("title") || "").toLowerCase();
+        return a.includes(lower);
+      });
+    }
+
+    if (!el) el = document.activeElement;
+    if (!el || el === document.body || el === document.documentElement) {
+      el = document.querySelector('[contenteditable="true"]') || document.querySelector('input:not([type="hidden"])');
+    }
+    if (!el) return toast("No input field found. Click on a field in Power BI first.");
+
+    el.focus();
+
+    if (el.getAttribute("contenteditable") === "true") {
+      document.execCommand("insertText", false, text);
+      toast(`Typed into editor: ${text.slice(0, 30)}`);
+      return;
+    }
+
+    const inputProto = window.HTMLInputElement.prototype;
+    const textareaProto = window.HTMLTextAreaElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(inputProto, "value")?.set
+      || Object.getOwnPropertyDescriptor(textareaProto, "value")?.set;
+
+    if (setter) {
+      setter.call(el, text);
+    } else {
+      el.value = text;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    toast(`Typed: ${text.slice(0, 30)}`);
+  }
+
+  function clearFieldByLabel(targetLabel) {
+    let el = null;
+    if (targetLabel) {
+      const lower = targetLabel.toLowerCase();
+      el = Array.from(document.querySelectorAll('input,textarea')).find((node) => {
+        const a = (node.getAttribute("aria-label") || node.getAttribute("placeholder") || "").toLowerCase();
+        return a.includes(lower);
+      });
+    }
+    if (!el) el = document.activeElement;
+    if (!el || el === document.body) return toast("No field selected. Click on a field in Power BI first.");
+    el.focus();
+    el.select?.();
+    el.value = "";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    toast("Field cleared.");
+  }
+
+  function pbiShortcut(labels, description) {
+    for (const label of labels) {
+      const result = findAndActElement(label, false);
+      if (!result.startsWith("No element matched")) {
+        const fb = $("#pbiActionFeedback");
+        fb.textContent = result;
+        fb.style.display = "block";
+        toast(result.slice(0, 60));
+        return;
+      }
+    }
+    const fb = $("#pbiActionFeedback");
+    fb.textContent = `Could not find ${description}. The pane may already be open or the button label differs in your Power BI version.`;
+    fb.style.display = "block";
+    toast(`${description} not found.`);
   }
 
   function toast(message) {
