@@ -1,0 +1,428 @@
+{
+  "positive_cases": [
+    {
+      "name": "SUMX direct additive sales amount",
+      "input": "Revenue = SUMX(Sales, Sales[Amount])",
+      "expected_issue": "Using SUMX without row context need",
+      "expected_fix": "Revenue = SUM(Sales[Amount])"
+    },
+    {
+      "name": "SUMX over filtered table simple region",
+      "input": "US Revenue = SUMX(FILTER(Sales, Sales[Region] = \"US\"), Sales[Amount])",
+      "expected_issue": "SUMX over filtered fact table with direct additive column",
+      "expected_fix": "US Revenue = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\")"
+    },
+    {
+      "name": "FILTER inside CALCULATE simple status equality",
+      "input": "Closed Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Status] = \"Closed\"))",
+      "expected_issue": "FILTER inside CALCULATE for simple equality",
+      "expected_fix": "Closed Sales = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Closed\")"
+    },
+    {
+      "name": "FILTER inside CALCULATE threshold condition",
+      "input": "Large Sales = CALCULATE( SUM(Sales[Amount]), FILTER( Sales, Sales[Amount] > 1000 ) )",
+      "expected_issue": "Using FILTER incorrectly for scalar comparison",
+      "expected_fix": "Large Sales = CALCULATE(SUM(Sales[Amount]), Sales[Amount] > 1000)"
+    },
+    {
+      "name": "Raw margin division",
+      "input": "Margin % = SUM(Sales[Profit]) / SUM(Sales[Revenue])",
+      "expected_issue": "Division without zero handling",
+      "expected_fix": "Margin % = DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue]))"
+    },
+    {
+      "name": "Manual zero check division",
+      "input": "Conversion Rate = IF(SUM(Web[Visits]) = 0, 0, SUM(Web[Conversions]) / SUM(Web[Visits]))",
+      "expected_issue": "IF instead of DIVIDE",
+      "expected_fix": "Conversion Rate = DIVIDE(SUM(Web[Conversions]), SUM(Web[Visits]), 0)"
+    },
+    {
+      "name": "VALUES returned as scalar title",
+      "input": "Selected Product = VALUES(Product[ProductName])",
+      "expected_issue": "VALUES used where scalar expected",
+      "expected_fix": "Selected Product = SELECTEDVALUE(Product[ProductName])"
+    },
+    {
+      "name": "DISTINCT returned as scalar customer",
+      "input": "Current Customer = DISTINCT(Customer[CustomerName])",
+      "expected_issue": "DISTINCT used where scalar expected",
+      "expected_fix": "Current Customer = SELECTEDVALUE(Customer[CustomerName])"
+    },
+    {
+      "name": "MAX used for selected year label",
+      "input": "Year Label = MAX('Date'[Year])",
+      "expected_issue": "Using MAX instead of SELECTEDVALUE",
+      "expected_fix": "Year Label = SELECTEDVALUE('Date'[Year])"
+    },
+    {
+      "name": "CALCULATE without filters",
+      "input": "Total Revenue = CALCULATE(SUM(Sales[Revenue]))",
+      "expected_issue": "Incorrect use of CALCULATE without filters",
+      "expected_fix": "Total Revenue = SUM(Sales[Revenue])"
+    },
+    {
+      "name": "Nested CALCULATE around SUM",
+      "input": "Revenue = CALCULATE(CALCULATE(SUM(Sales[Amount])))",
+      "expected_issue": "Nested CALCULATE calls",
+      "expected_fix": "Revenue = CALCULATE(SUM(Sales[Amount]))"
+    },
+    {
+      "name": "ALL removes required product filters",
+      "input": "Visible Sales = CALCULATE(SUM(Sales[Amount]), ALL(Sales))",
+      "expected_issue": "Using ALL removes required filters",
+      "expected_fix": "Visible Sales = SUM(Sales[Amount])"
+    },
+    {
+      "name": "ALLSELECTED misused for stable grand total",
+      "input": "Grand Total Sales = CALCULATE(SUM(Sales[Amount]), ALLSELECTED(Sales))",
+      "expected_issue": "Incorrect use of ALLSELECTED for totals",
+      "expected_fix": "Grand Total Sales = CALCULATE(SUM(Sales[Amount]), REMOVEFILTERS(Sales))"
+    },
+    {
+      "name": "COUNT used on table",
+      "input": "Order Rows = COUNT(Sales)",
+      "expected_issue": "COUNT used on table instead of COUNTROWS",
+      "expected_fix": "Order Rows = COUNTROWS(Sales)"
+    },
+    {
+      "name": "COUNTROWS VALUES distinct order count",
+      "input": "Order Count = COUNTROWS(VALUES(Sales[OrderID]))",
+      "expected_issue": "Using COUNTROWS(VALUES()) instead of DISTINCTCOUNT",
+      "expected_fix": "Order Count = DISTINCTCOUNT(Sales[OrderID])"
+    },
+    {
+      "name": "SUM used on identifier column",
+      "input": "Total Order IDs = SUM(Sales[OrderID])",
+      "expected_issue": "SUM used on non-numeric column",
+      "expected_fix": "Total Order IDs = DISTINCTCOUNT(Sales[OrderID])"
+    },
+    {
+      "name": "EARLIER rank pattern in measure",
+      "input": "Sales Rank = CALCULATE(COUNTROWS(Sales), FILTER(Sales, Sales[Amount] > EARLIER(Sales[Amount])))",
+      "expected_issue": "Incorrect use of EARLIER in measure",
+      "expected_fix": "Sales Rank = RANKX(ALL(Sales), SUM(Sales[Amount]))"
+    },
+    {
+      "name": "BLANK equality comparison",
+      "input": "Has Amount = IF(Sales[Amount] = BLANK(), 0, 1)",
+      "expected_issue": "Incorrect logical comparison with BLANK",
+      "expected_fix": "Has Amount = IF(ISBLANK(Sales[Amount]), 0, 1)"
+    },
+    {
+      "name": "OR filter should use IN",
+      "input": "US EU Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\" || Sales[Region] = \"EU\")",
+      "expected_issue": "Incorrect OR condition using multiple filters",
+      "expected_fix": "US EU Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"US\", \"EU\"})"
+    },
+    {
+      "name": "Conflicting filters on same column",
+      "input": "North South Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"North\", Sales[Region] = \"South\")",
+      "expected_issue": "Multiple filters overriding unintentionally",
+      "expected_fix": "North South Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"North\", \"South\"})"
+    },
+    {
+      "name": "Duplicate CALCULATE filter",
+      "input": "US Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\", Sales[Region] = \"US\")",
+      "expected_issue": "Redundant filters in CALCULATE",
+      "expected_fix": "US Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\")"
+    },
+    {
+      "name": "LASTDATE used as scalar date",
+      "input": "Last Order Date = LASTDATE(Sales[OrderDate])",
+      "expected_issue": "LASTDATE used as scalar date value",
+      "expected_fix": "Last Order Date = MAX(Sales[OrderDate])"
+    },
+    {
+      "name": "Manual YTD filter",
+      "input": "Sales YTD = CALCULATE(SUM(Sales[Amount]), FILTER(ALL('Date'), 'Date'[Date] <= MAX('Date'[Date])))",
+      "expected_issue": "Incorrect time intelligence using manual filter",
+      "expected_fix": "Sales YTD = TOTALYTD(SUM(Sales[Amount]), 'Date'[Date])"
+    },
+    {
+      "name": "FILTER TRUE in CALCULATE",
+      "input": "All Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, TRUE()))",
+      "expected_issue": "Using FILTER on entire table unnecessarily",
+      "expected_fix": "All Sales = SUM(Sales[Amount])"
+    },
+    {
+      "name": "CALCULATETABLE materialized for scalar sum",
+      "input": "Closed Revenue = SUMX(CALCULATETABLE(Sales, Sales[Status] = \"Closed\"), Sales[Amount])",
+      "expected_issue": "CALCULATETABLE used where CALCULATE scalar is sufficient",
+      "expected_fix": "Closed Revenue = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Closed\")"
+    },
+    {
+      "name": "USERELATIONSHIP inside SUMX",
+      "input": "Ship Sales = SUMX(Sales, CALCULATE(Sales[Amount], USERELATIONSHIP(Sales[ShipDate], 'Date'[Date])))",
+      "expected_issue": "USERELATIONSHIP inside iterator",
+      "expected_fix": "Ship Sales = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP(Sales[ShipDate], 'Date'[Date]))"
+    },
+    {
+      "name": "Repeated measure in SWITCH branches",
+      "input": "Revenue Segment = SWITCH(TRUE(), [Revenue] > 1000000, \"High\", [Revenue] > 500000, \"Medium\", [Revenue] > 0, \"Low\", \"None\")",
+      "expected_issue": "Measure evaluated repeatedly inside SWITCH branches",
+      "expected_fix": "Revenue Segment = VAR RevenueValue = [Revenue] RETURN SWITCH(TRUE(), RevenueValue > 1000000, \"High\", RevenueValue > 500000, \"Medium\", RevenueValue > 0, \"Low\", \"None\")"
+    },
+    {
+      "name": "SELECTCOLUMNS before count",
+      "input": "Projected Orders = COUNTROWS(SELECTCOLUMNS(Sales, \"Order\", Sales[OrderID]))",
+      "expected_issue": "SELECTCOLUMNS projection used before simple count",
+      "expected_fix": "Projected Orders = COUNTROWS(Sales)"
+    },
+    {
+      "name": "GROUPBY CURRENTGROUP simple aggregation",
+      "input": "Grouped Sales = SUMX(GROUPBY(Sales, Sales[Region], \"Amt\", SUMX(CURRENTGROUP(), Sales[Amount])), [Amt])",
+      "expected_issue": "GROUPBY with CURRENTGROUP for simple aggregation",
+      "expected_fix": "Grouped Sales = SUM(Sales[Amount])"
+    },
+    {
+      "name": "ALLEXCEPT over wide fact table",
+      "input": "Customer Total = CALCULATE([Revenue], ALLEXCEPT(Sales, Sales[CustomerID]))",
+      "expected_issue": "Overuse of ALLEXCEPT on wide fact table",
+      "expected_fix": "Customer Total = CALCULATE([Revenue], REMOVEFILTERS(Sales), VALUES(Customer[CustomerID]))"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "SUMX valid discount calculation",
+      "input": "Discounted Sales = SUMX(Sales, Sales[Amount] * 0.9)"
+    },
+    {
+      "name": "SUMX valid quantity price multiplication",
+      "input": "Gross Sales = SUMX(Sales, Sales[Quantity] * Sales[UnitPrice])"
+    },
+    {
+      "name": "SUMX valid RELATED lookup calculation",
+      "input": "Cost Amount = SUMX(Sales, Sales[Quantity] * RELATED(Product[StandardCost]))"
+    },
+    {
+      "name": "Weighted average with SUMX",
+      "input": "Weighted Price = DIVIDE(SUMX(Sales, Sales[Quantity] * Sales[UnitPrice]), SUM(Sales[Quantity]))"
+    },
+    {
+      "name": "FILTER valid dimension threshold",
+      "input": "High Value Customer Sales = CALCULATE([Revenue], FILTER(Customer, [Revenue] > 10000))"
+    },
+    {
+      "name": "FILTER valid TOPN-style measure predicate",
+      "input": "Profitable Products = CALCULATE([Revenue], FILTER(Product, [Margin %] > 0.3))"
+    },
+    {
+      "name": "CALCULATE valid status filter",
+      "input": "Closed Sales = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Closed\")"
+    },
+    {
+      "name": "CALCULATE valid KEEPFILTERS",
+      "input": "US Sales = CALCULATE(SUM(Sales[Amount]), KEEPFILTERS(Sales[Region] = \"US\"))"
+    },
+    {
+      "name": "DIVIDE already safe",
+      "input": "Margin % = DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue]))"
+    },
+    {
+      "name": "DIVIDE with alternate result",
+      "input": "Conversion Rate = DIVIDE(SUM(Web[Conversions]), SUM(Web[Visits]), 0)"
+    },
+    {
+      "name": "SELECTEDVALUE already scalar",
+      "input": "Selected Product = SELECTEDVALUE(Product[ProductName])"
+    },
+    {
+      "name": "VALUES valid table iterator",
+      "input": "Customer Sales = SUMX(VALUES(Customer[CustomerID]), [Revenue])"
+    },
+    {
+      "name": "VALUES valid filter preservation",
+      "input": "Customer Total = CALCULATE([Revenue], VALUES(Customer[CustomerID]))"
+    },
+    {
+      "name": "REMOVEFILTERS intentional denominator",
+      "input": "Sales Share = DIVIDE([Revenue], CALCULATE([Revenue], REMOVEFILTERS(Product[Category])))"
+    },
+    {
+      "name": "ALL intentional rank scope",
+      "input": "Customer Rank = RANKX(ALL(Customer[CustomerName]), [Revenue])"
+    },
+    {
+      "name": "ALLSELECTED intentional visual total",
+      "input": "Visual Sales % = DIVIDE([Revenue], CALCULATE([Revenue], ALLSELECTED(Product[Category])))"
+    },
+    {
+      "name": "TOTALYTD already correct",
+      "input": "Sales YTD = TOTALYTD(SUM(Sales[Amount]), 'Date'[Date])"
+    },
+    {
+      "name": "DATESINPERIOD on date table",
+      "input": "Rolling 30 Sales = CALCULATE([Revenue], DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -30, DAY))"
+    },
+    {
+      "name": "ISBLANK already correct",
+      "input": "Has Amount = IF(ISBLANK(Sales[Amount]), 0, 1)"
+    },
+    {
+      "name": "IN syntax already correct",
+      "input": "US EU Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"US\", \"EU\"})"
+    },
+    {
+      "name": "DISTINCTCOUNT already optimized",
+      "input": "Order Count = DISTINCTCOUNT(Sales[OrderID])"
+    },
+    {
+      "name": "COUNTROWS table row count valid",
+      "input": "Sales Rows = COUNTROWS(Sales)"
+    },
+    {
+      "name": "RANKX valid dimension rank",
+      "input": "Product Rank = RANKX(ALL(Product[ProductName]), [Revenue], , DESC)"
+    },
+    {
+      "name": "SWITCH TRUE with cached measure",
+      "input": "Revenue Segment = VAR RevenueValue = [Revenue] RETURN SWITCH(TRUE(), RevenueValue > 1000000, \"High\", RevenueValue > 500000, \"Medium\", RevenueValue > 0, \"Low\", \"None\")"
+    },
+    {
+      "name": "USERELATIONSHIP correctly outside iterator",
+      "input": "Ship Sales = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP(Sales[ShipDate], 'Date'[Date]))"
+    },
+    {
+      "name": "SUMMARIZECOLUMNS valid query table",
+      "input": "EVALUATE SUMMARIZECOLUMNS(Product[Category], \"Revenue\", [Revenue])"
+    },
+    {
+      "name": "ADDCOLUMNS valid calculated projection",
+      "input": "Product Revenue Table = ADDCOLUMNS(VALUES(Product[ProductName]), \"Revenue\", [Revenue])"
+    },
+    {
+      "name": "CROSSFILTER intentional one-way override",
+      "input": "One Way Sales = CALCULATE([Revenue], CROSSFILTER(Customer[CustomerID], Sales[CustomerID], ONEWAY))"
+    },
+    {
+      "name": "LOOKUPVALUE with unique alternate result",
+      "input": "Standard Cost = LOOKUPVALUE(Product[StandardCost], Product[ProductID], Sales[ProductID], BLANK())"
+    },
+    {
+      "name": "Already optimal SUM",
+      "input": "Revenue = SUM(Sales[Amount])"
+    }
+  ],
+  "edge_cases": [
+    {
+      "name": "SUMX FILTER compound AND predicate",
+      "input": "Qualified Sales = SUMX(FILTER(Sales, Sales[Amount] > 100 && Sales[Region] = \"US\"), Sales[Amount])",
+      "expected_issue": "SUMX over filtered fact table with direct additive column",
+      "expected_fix": "Qualified Sales = CALCULATE(SUM(Sales[Amount]), Sales[Amount] > 100 && Sales[Region] = \"US\")"
+    },
+    {
+      "name": "SUMX FILTER OR predicate preservation",
+      "input": "Priority Sales = SUMX(FILTER(Sales, Sales[Status] = \"Open\" || Sales[Status] = \"Pending\"), Sales[Amount])",
+      "expected_issue": "SUMX over filtered fact table with direct additive column",
+      "expected_fix": "Priority Sales = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Open\" || Sales[Status] = \"Pending\")"
+    },
+    {
+      "name": "SUMX FILTER with different filter and sum columns",
+      "input": "Positive Qty Sales = SUMX(FILTER(Sales, Sales[Quantity] > 0), Sales[Amount])",
+      "expected_issue": "SUMX over filtered fact table with direct additive column",
+      "expected_fix": "Positive Qty Sales = CALCULATE(SUM(Sales[Amount]), Sales[Quantity] > 0)"
+    },
+    {
+      "name": "FILTER CALCULATE with two conditions",
+      "input": "US Large Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Amount] > 500 && Sales[Region] = \"US\"))",
+      "expected_issue": "Using FILTER incorrectly for scalar comparison",
+      "expected_fix": "US Large Sales = CALCULATE(SUM(Sales[Amount]), Sales[Amount] > 500 && Sales[Region] = \"US\")"
+    },
+    {
+      "name": "FILTER CALCULATE preserves OR logic",
+      "input": "Active Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Status] = \"Open\" || Sales[Status] = \"Closed\"))",
+      "expected_issue": "Using FILTER incorrectly for scalar comparison",
+      "expected_fix": "Active Sales = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Open\" || Sales[Status] = \"Closed\")"
+    },
+    {
+      "name": "Division expression with parentheses",
+      "input": "Profit Rate = (SUM(Sales[Revenue]) - SUM(Sales[Cost])) / SUM(Sales[Revenue])",
+      "expected_issue": "Division without zero handling",
+      "expected_fix": "Profit Rate = DIVIDE((SUM(Sales[Revenue]) - SUM(Sales[Cost])), SUM(Sales[Revenue]))"
+    },
+    {
+      "name": "Division expression with CALCULATE denominator",
+      "input": "Category Share = [Revenue] / CALCULATE([Revenue], REMOVEFILTERS(Product[Category]))",
+      "expected_issue": "Division without zero handling",
+      "expected_fix": "Category Share = DIVIDE([Revenue], CALCULATE([Revenue], REMOVEFILTERS(Product[Category])))"
+    },
+    {
+      "name": "VALUES scalar inside IF",
+      "input": "Product Label = IF(HASONEVALUE(Product[ProductName]), VALUES(Product[ProductName]), \"Multiple\")",
+      "expected_issue": "VALUES used where scalar expected",
+      "expected_fix": "Product Label = SELECTEDVALUE(Product[ProductName], \"Multiple\")"
+    },
+    {
+      "name": "Nested CALCULATE with valid outer filter",
+      "input": "US Revenue = CALCULATE(CALCULATE(SUM(Sales[Amount])), Sales[Region] = \"US\")",
+      "expected_issue": "Nested CALCULATE calls",
+      "expected_fix": "US Revenue = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\")"
+    },
+    {
+      "name": "ALL removes only fact table in ratio",
+      "input": "Bad Share = DIVIDE(SUM(Sales[Amount]), CALCULATE(SUM(Sales[Amount]), ALL(Sales)))",
+      "expected_issue": "Using ALL removes required filters",
+      "expected_fix": "Bad Share = DIVIDE(SUM(Sales[Amount]), CALCULATE(SUM(Sales[Amount]), REMOVEFILTERS(Sales)))"
+    },
+    {
+      "name": "ALLSELECTED with full fact table",
+      "input": "Selected Total = CALCULATE([Revenue], ALLSELECTED(Sales))",
+      "expected_issue": "Incorrect use of ALLSELECTED for totals",
+      "expected_fix": "Selected Total = CALCULATE([Revenue], REMOVEFILTERS(Sales))"
+    },
+    {
+      "name": "Duplicate filters with messy whitespace",
+      "input": "Retail Sales = CALCULATE( SUM(Sales[Amount]) , Sales[Channel] = \"Retail\" , Sales[Channel] = \"Retail\" )",
+      "expected_issue": "Redundant filters in CALCULATE",
+      "expected_fix": "Retail Sales = CALCULATE(SUM(Sales[Amount]), Sales[Channel] = \"Retail\")"
+    },
+    {
+      "name": "Conflicting date type filters",
+      "input": "Order Ship Sales = CALCULATE(SUM(Sales[Amount]), Sales[DateType] = \"Order\", Sales[DateType] = \"Ship\")",
+      "expected_issue": "Multiple filters overriding unintentionally",
+      "expected_fix": "Order Ship Sales = CALCULATE(SUM(Sales[Amount]), Sales[DateType] IN {\"Order\", \"Ship\"})"
+    },
+    {
+      "name": "Manual YTD with TODAY must preserve date table",
+      "input": "Current YTD Sales = CALCULATE(SUM(Sales[Amount]), FILTER(ALL('Date'), 'Date'[Date] <= TODAY()))",
+      "expected_issue": "Incorrect time intelligence using manual filter",
+      "expected_fix": "Current YTD Sales = TOTALYTD(SUM(Sales[Amount]), 'Date'[Date])"
+    },
+    {
+      "name": "EARLIER in calculated rank with customer granularity",
+      "input": "Customer Rank = CALCULATE(COUNTROWS(Customer), FILTER(Customer, Customer[Revenue] > EARLIER(Customer[Revenue])))",
+      "expected_issue": "Incorrect use of EARLIER in measure",
+      "expected_fix": "Customer Rank = RANKX(ALL(Customer), SUM(Customer[Revenue]))"
+    },
+    {
+      "name": "LOOKUPVALUE multiple match risk",
+      "input": "Customer Segment = LOOKUPVALUE(Segment[SegmentName], Segment[CustomerID], Sales[CustomerID])",
+      "expected_issue": "Incorrect use of LOOKUPVALUE with multiple matches",
+      "expected_fix": "Customer Segment = RELATED(Segment[SegmentName])"
+    },
+    {
+      "name": "INTERSECT virtual relationship",
+      "input": "Matched Revenue = CALCULATE([Revenue], INTERSECT(VALUES(Customer[CustomerID]), VALUES(Sales[CustomerID])))",
+      "expected_issue": "Bi-directional virtual relationship using INTERSECT",
+      "expected_fix": "Matched Revenue = [Revenue]"
+    },
+    {
+      "name": "CONTAINS virtual relationship inside FILTER",
+      "input": "Customer Revenue = CALCULATE([Revenue], FILTER(Sales, CONTAINS(VALUES(Customer[CustomerID]), Customer[CustomerID], Sales[CustomerID])))",
+      "expected_issue": "Virtual relationship using CONTAINS",
+      "expected_fix": "Customer Revenue = [Revenue]"
+    },
+    {
+      "name": "SUMMARIZE before TOPN ranking",
+      "input": "Top Product Sales = SUMX(TOPN(10, SUMMARIZE(Sales, Product[ProductName], \"Sales\", [Revenue]), [Sales], DESC), [Sales])",
+      "expected_issue": "SUMMARIZE used before TOPN ranking",
+      "expected_fix": "Top Product Sales = SUMX(TOPN(10, ALL(Product[ProductName]), [Revenue], DESC), [Revenue])"
+    },
+    {
+      "name": "UNION filtered fact tables",
+      "input": "Open Closed Sales = SUMX(UNION(FILTER(Sales, Sales[Status] = \"Open\"), FILTER(Sales, Sales[Status] = \"Closed\")), Sales[Amount])",
+      "expected_issue": "UNION of filtered fact tables inside measure",
+      "expected_fix": "Open Closed Sales = CALCULATE(SUM(Sales[Amount]), Sales[Status] IN {\"Open\", \"Closed\"})"
+    }
+  ]
+}

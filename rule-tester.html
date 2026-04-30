@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Power BI Rule Tester</title>
+    <link rel="stylesheet" href="src/ruleTester.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <header>
+          <h1>Power BI Rule Tester</h1>
+          <p>Paste DAX and run the deterministic rule packs.</p>
+        </header>
+
+        <label for="daxInput">DAX</label>
+        <textarea id="daxInput" spellcheck="false">Revenue = SUMX(Sales, Sales[Amount])</textarea>
+
+        <div class="actions">
+          <button id="analyzeBtn" type="button">Analyze</button>
+          <button id="clearBtn" type="button">Clear</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <h2>Output</h2>
+        </header>
+        <pre id="output">[]</pre>
+      </section>
+    </main>
+
+    <script src="src/daxEngine.js"></script>
+    <script src="src/ruleTester.js"></script>
+  </body>
+</html>

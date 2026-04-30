@@ -1,0 +1,343 @@
+[
+  {
+    "pattern": "Missing aggregation in measure",
+    "bad_dax": "Revenue = Sales[Amount]",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["artifact_type_measure", "raw_column_reference_returned", "has_aggregation_false"],
+      "context": "measure_definition"
+    },
+    "fixed_dax": "Revenue = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using ALL removes required filters",
+    "bad_dax": "Total Sales = CALCULATE(SUM(Sales[Amount]), ALL(Sales))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "ALL"],
+      "conditions": ["all_scope_fact_table", "measure_context_unexpected_total"],
+      "context": "total_measure"
+    },
+    "fixed_dax": "Total Sales = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "VALUES used where scalar expected",
+    "bad_dax": "Selected Product = VALUES(Product[Name])",
+    "detection_logic": {
+      "functions": ["VALUES"],
+      "conditions": ["scalar_required", "multi_value_table_function_returned"],
+      "context": "selected_label_measure"
+    },
+    "fixed_dax": "Selected Product = SELECTEDVALUE(Product[Name])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "COUNT used on table instead of COUNTROWS",
+    "bad_dax": "Orders = COUNT(Sales)",
+    "detection_logic": {
+      "functions": ["COUNT"],
+      "conditions": ["argument_type_table", "row_count_intended"],
+      "context": "count_measure"
+    },
+    "fixed_dax": "Orders = COUNTROWS(Sales)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "SUM used on non-numeric column",
+    "bad_dax": "Total IDs = SUM(Sales[OrderID])",
+    "detection_logic": {
+      "functions": ["SUM"],
+      "conditions": ["column_name_matches_id_or_key", "column_data_type_non_numeric_or_identifier"],
+      "context": "identifier_count_measure"
+    },
+    "fixed_dax": "Total IDs = COUNT(Sales[OrderID])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect filter context with CALCULATE and ALL",
+    "bad_dax": "Filtered Sales = CALCULATE(SUM(Sales[Amount]), ALL(Product))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "ALL"],
+      "conditions": ["all_scope_dimension_table", "dimension_affects_measure"],
+      "context": "filtered_measure"
+    },
+    "fixed_dax": "Filtered Sales = CALCULATE(SUM(Sales[Amount]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Missing relationship causing wrong results",
+    "bad_dax": "Sales by Category = SUM(Sales[Amount])",
+    "detection_logic": {
+      "functions": ["SUM"],
+      "conditions": ["dimension_used_for_grouping", "active_relationship_missing"],
+      "context": "visual_grouped_by_dimension"
+    },
+    "fixed_dax": "Create relationship between Sales and Category table",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Using MAX instead of SELECTEDVALUE",
+    "bad_dax": "Year Selected = MAX(Date[Year])",
+    "detection_logic": {
+      "functions": ["MAX"],
+      "conditions": ["single_selection_expected", "column_used_as_label_or_parameter"],
+      "context": "selected_value_measure"
+    },
+    "fixed_dax": "Year Selected = SELECTEDVALUE(Date[Year])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Division without zero handling",
+    "bad_dax": "Ratio = SUM(Sales[Profit]) / SUM(Sales[Revenue])",
+    "detection_logic": {
+      "functions": ["SUM"],
+      "conditions": ["division_operator_used", "no_zero_handling", "denominator_is_expression"],
+      "context": "ratio_measure"
+    },
+    "fixed_dax": "Ratio = DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "DISTINCT used where scalar expected",
+    "bad_dax": "Customer = DISTINCT(Sales[CustomerID])",
+    "detection_logic": {
+      "functions": ["DISTINCT"],
+      "conditions": ["scalar_required", "table_function_returned"],
+      "context": "selected_identifier_measure"
+    },
+    "fixed_dax": "Customer = SELECTEDVALUE(Sales[CustomerID])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Multiple filters overriding unintentionally",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\", Sales[Region] = \"EU\")",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["same_column_filtered_multiple_times", "conflicting_values"],
+      "context": "multi_value_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"US\", \"EU\"})",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect use of EARLIER in measure",
+    "bad_dax": "Rank = CALCULATE(COUNTROWS(Sales), FILTER(Sales, Sales[Amount] > EARLIER(Sales[Amount])))",
+    "detection_logic": {
+      "functions": ["EARLIER", "FILTER", "CALCULATE"],
+      "conditions": ["earlier_used_in_measure_context", "rank_pattern_detected"],
+      "context": "ranking_measure"
+    },
+    "fixed_dax": "Rank = RANKX(ALL(Sales), SUM(Sales[Amount]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using FILTER incorrectly for scalar comparison",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Amount] > 100))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER"],
+      "conditions": ["simple_scalar_comparison", "filter_iterates_fact_table"],
+      "context": "threshold_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Amount] > 100)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Missing context transition in calculated column",
+    "bad_dax": "Total = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "SUM"],
+      "conditions": ["artifact_type_calculated_column", "aggregation_used"],
+      "context": "calculated_column_definition"
+    },
+    "fixed_dax": "Use measure instead: Total = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Ambiguous many-to-many relationship",
+    "bad_dax": "Model with many-to-many between Sales and Products",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["relationship_type_many_to_many", "no_bridge_table"],
+      "context": "semantic_model_relationships"
+    },
+    "fixed_dax": "Introduce bridge table to resolve many-to-many relationship",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Incorrect time intelligence using manual filter",
+    "bad_dax": "Sales YTD = CALCULATE(SUM(Sales[Amount]), FILTER(ALL(Date), Date[Date] <= TODAY()))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER", "ALL", "TODAY"],
+      "conditions": ["manual_time_filter", "date_table_available"],
+      "context": "ytd_measure"
+    },
+    "fixed_dax": "Sales YTD = TOTALYTD(SUM(Sales[Amount]), Date[Date])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using SUMX without row context need",
+    "bad_dax": "Total = SUMX(Sales, Sales[Amount])",
+    "detection_logic": {
+      "functions": ["SUMX"],
+      "conditions": ["expression_type_direct_column", "row_context_required_false"],
+      "context": "additive_measure"
+    },
+    "fixed_dax": "Total = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect use of CALCULATE without filters",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["filter_arguments_count_zero", "context_transition_required_false"],
+      "context": "simple_measure"
+    },
+    "fixed_dax": "Sales = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using HASONEVALUE incorrectly",
+    "bad_dax": "Flag = HASONEVALUE(Sales[Region])",
+    "detection_logic": {
+      "functions": ["HASONEVALUE"],
+      "conditions": ["boolean_returned_directly", "numeric_flag_expected"],
+      "context": "flag_measure"
+    },
+    "fixed_dax": "Flag = IF(HASONEVALUE(Sales[Region]), 1, 0)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect logical comparison with BLANK",
+    "bad_dax": "Check = IF(Sales[Amount] = BLANK(), 0, 1)",
+    "detection_logic": {
+      "functions": ["IF", "BLANK"],
+      "conditions": ["blank_compared_with_equals_operator"],
+      "context": "blank_check_expression"
+    },
+    "fixed_dax": "Check = IF(ISBLANK(Sales[Amount]), 0, 1)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect OR condition using multiple filters",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\" || Sales[Region] = \"EU\")",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["or_operator_inside_filter_argument", "same_column_multi_value_filter"],
+      "context": "multi_value_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"US\", \"EU\"})",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using RELATED without relationship",
+    "bad_dax": "Category = RELATED(Product[Category])",
+    "detection_logic": {
+      "functions": ["RELATED"],
+      "conditions": ["relationship_exists_false", "lookup_column_from_related_table"],
+      "context": "calculated_column_lookup"
+    },
+    "fixed_dax": "Create relationship between tables or use LOOKUPVALUE",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Incorrect use of LOOKUPVALUE with multiple matches",
+    "bad_dax": "Price = LOOKUPVALUE(Product[Price], Product[ID], Sales[ProductID])",
+    "detection_logic": {
+      "functions": ["LOOKUPVALUE"],
+      "conditions": ["lookup_key_not_unique", "multiple_matches_possible"],
+      "context": "lookup_expression"
+    },
+    "fixed_dax": "Ensure unique key or use aggregation like MAXX/FILTER",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect use of ALLSELECTED for totals",
+    "bad_dax": "Total = CALCULATE(SUM(Sales[Amount]), ALLSELECTED(Sales))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "ALLSELECTED"],
+      "conditions": ["allselected_scope_fact_table", "grand_total_intended"],
+      "context": "total_measure"
+    },
+    "fixed_dax": "Total = CALCULATE(SUM(Sales[Amount]), REMOVEFILTERS(Sales))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using SUMMARIZE incorrectly for aggregation",
+    "bad_dax": "Table = SUMMARIZE(Sales, Sales[Region], \"Total\", SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": ["SUMMARIZE", "SUM"],
+      "conditions": ["used_for_measure_logic", "visual_can_group"],
+      "context": "calculated_table_or_measure_logic"
+    },
+    "fixed_dax": "Use measure: Total = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "FILTER inside CALCULATE for simple equality",
+    "bad_dax": "Sales Blue = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Color] = \"Blue\"))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER"],
+      "conditions": ["filter_simple_equality", "filter_iterates_fact_table"],
+      "context": "simple_equality_filter_measure"
+    },
+    "fixed_dax": "Sales Blue = CALCULATE(SUM(Sales[Amount]), Sales[Color] = \"Blue\")",
+    "category": "performance"
+  },
+  {
+    "pattern": "IF instead of DIVIDE",
+    "bad_dax": "Ratio = IF(SUM(Sales[A]) = 0, 0, SUM(Sales[B]) / SUM(Sales[A]))",
+    "detection_logic": {
+      "functions": ["IF"],
+      "conditions": ["manual_division_with_zero_check"],
+      "context": "ratio_measure"
+    },
+    "fixed_dax": "Ratio = DIVIDE(SUM(Sales[B]), SUM(Sales[A]), 0)",
+    "category": "performance"
+  },
+  {
+    "pattern": "Using COUNTROWS(VALUES()) instead of DISTINCTCOUNT",
+    "bad_dax": "Orders = COUNTROWS(VALUES(Sales[OrderID]))",
+    "detection_logic": {
+      "functions": ["COUNTROWS", "VALUES"],
+      "conditions": ["countrows_values_pattern"],
+      "context": "distinct_count_measure"
+    },
+    "fixed_dax": "Orders = DISTINCTCOUNT(Sales[OrderID])",
+    "category": "performance"
+  },
+  {
+    "pattern": "Nested CALCULATE calls",
+    "bad_dax": "Sales = CALCULATE(CALCULATE(SUM(Sales[Amount])))",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["nested_calculate"],
+      "context": "measure_definition"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "Using FILTER on entire table unnecessarily",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, TRUE()))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER"],
+      "conditions": ["filter_condition_true"],
+      "context": "redundant_filter_measure"
+    },
+    "fixed_dax": "Sales = SUM(Sales[Amount])",
+    "category": "performance"
+  },
+  {
+    "pattern": "Redundant filters in CALCULATE",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\", Sales[Region] = \"US\")",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["duplicate_same_column_same_value"],
+      "context": "duplicate_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\")",
+    "category": "performance"
+  }
+]

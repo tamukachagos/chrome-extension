@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Power BI Web Copilot",
+  "description": "A local Power BI Service assistant for DAX measures, visual planning, model review, and report-building guidance.",
+  "version": "0.9.0",
+  "options_page": "rule-tester.html",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://app.powerbi.com/*",
+    "https://*.powerbi.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Power BI Web Copilot"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.powerbi.com/*"
+      ],
+      "js": [
+        "src/daxEngine.js",
+        "src/ruleLoader.js",
+        "src/skills.js",
+        "src/contentScript.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "rules/processed/final_rules.json",
+        "rules/processed/compiled_rules.json",
+        "rules/processed/performance_rules.json",
+        "rules/processed/correctness_rules.json",
+        "rules/processed/modeling_rules.json",
+        "rules/performance_rules.json",
+        "rules/correctness_rules.json",
+        "src/daxEngine.js"
+      ],
+      "matches": [
+        "https://app.powerbi.com/*"
+      ]
+    }
+  ]
+}
