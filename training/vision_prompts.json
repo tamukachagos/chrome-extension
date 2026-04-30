@@ -1,0 +1,54 @@
+[
+  {
+    "id": "vision-001",
+    "name": "Analyze current Power BI report page",
+    "prompt": "You are analyzing a Power BI report screenshot. Return ONLY valid JSON with no markdown or explanation. Schema: {\"page_title\": string, \"page_mode\": \"viewing|editing\", \"visual_count\": number, \"visuals\": [{\"position\": \"top-left|top-center|top-right|mid-left|mid-center|mid-right|bottom-left|bottom-center|bottom-right\", \"visual_type\": string, \"title\": string, \"has_data\": boolean, \"has_error\": boolean}], \"slicers\": [{\"label\": string, \"selected_value\": string}], \"layout_issues\": [string], \"summary\": string}"
+  },
+  {
+    "id": "vision-002",
+    "name": "Detect visual errors",
+    "prompt": "You are a Power BI diagnostics assistant. Examine this screenshot for any visual errors, broken states, or loading failures. Return ONLY valid JSON: {\"has_errors\": boolean, \"errors\": [{\"visual_title\": string, \"error_text\": string, \"position\": string, \"likely_cause\": \"dax_error|relationship_missing|data_type_mismatch|filter_context|timeout|unknown\", \"suggested_fix\": string}], \"warning_count\": number, \"warnings\": [string]}"
+  },
+  {
+    "id": "vision-003",
+    "name": "Inspect selected visual",
+    "prompt": "You are inspecting a selected Power BI visual. A visual should be highlighted or have selection handles visible. Return ONLY valid JSON: {\"visual_selected\": boolean, \"visual_type\": string, \"visual_title\": string, \"field_wells\": {\"axis\": [string], \"values\": [string], \"legend\": [string], \"tooltips\": [string], \"details\": [string], \"filters\": [string]}, \"visible_labels\": [string], \"formatting_notes\": [string], \"recommendations\": [string]}"
+  },
+  {
+    "id": "vision-004",
+    "name": "Recommend better layout",
+    "prompt": "You are a Power BI report design expert. Analyze this report page layout and recommend improvements. Return ONLY valid JSON: {\"current_layout_score\": number, \"issues\": [{\"issue\": string, \"severity\": \"high|medium|low\", \"fix\": string}], \"recommended_layout\": {\"kpi_row\": string, \"primary_visual\": string, \"secondary_visual\": string, \"detail_visual\": string, \"slicer_placement\": string}, \"whitespace_utilization\": \"poor|acceptable|good|excellent\", \"visual_hierarchy_rating\": \"poor|acceptable|good|excellent\", \"actionable_steps\": [string]}"
+  },
+  {
+    "id": "vision-005",
+    "name": "Detect filter and slicer state",
+    "prompt": "You are reading the filter and slicer state from a Power BI screenshot. Return ONLY valid JSON: {\"slicers\": [{\"label\": string, \"type\": \"dropdown|list|date_range|numeric_range|tile\", \"selected_values\": [string], \"is_default\": boolean}], \"filter_pane_visible\": boolean, \"filter_pane_filters\": [{\"field\": string, \"operator\": string, \"value\": string, \"scope\": \"visual|page|report|drillthrough\"}], \"active_filter_count\": number, \"no_filter_risk\": boolean}"
+  },
+  {
+    "id": "vision-006",
+    "name": "Detect field wells if visible",
+    "prompt": "You are reading the Power BI Visualizations pane field wells. Look for the Build tab section showing Axis, Values, Legend, Tooltips, Details, or similar. Return ONLY valid JSON: {\"pane_visible\": boolean, \"build_tab_active\": boolean, \"visual_type\": string, \"wells\": {\"axis\": [string], \"values\": [string], \"legend\": [string], \"tooltips\": [string], \"details\": [string], \"small_multiples\": [string], \"play_axis\": [string]}, \"empty_wells\": [string], \"recommendations\": [string]}"
+  },
+  {
+    "id": "vision-007",
+    "name": "Diagnose why a visual looks wrong",
+    "prompt": "You are a Power BI troubleshooting expert. Analyze this screenshot to diagnose why a visual may be showing incorrect, unexpected, or confusing data. Return ONLY valid JSON: {\"visual_identified\": string, \"suspected_issues\": [{\"issue\": string, \"category\": \"filter_context|relationship|dax_logic|data_quality|visual_type|formatting\", \"confidence\": number, \"diagnostic_steps\": [string], \"likely_fix\": string}], \"needs_dax_review\": boolean, \"needs_model_review\": boolean, \"needs_data_review\": boolean}"
+  },
+  {
+    "id": "vision-008",
+    "name": "Generate action plan from screenshot",
+    "prompt": "You are a Power BI automation assistant. Given this screenshot and the user goal provided after this prompt, generate a precise step-by-step action plan. Return ONLY valid JSON: {\"summary\": string, \"preconditions\": [string], \"steps\": [{\"n\": number, \"action\": \"click|type|key|scroll|wait|screenshot|vision|drag|right_click|double_click\", \"target\": string, \"value\": string, \"description\": string, \"requires_approval\": boolean, \"risk\": \"low|medium|high\", \"post_wait_ms\": number}], \"estimated_duration_seconds\": number, \"risk_level\": \"low|medium|high\", \"rollback_steps\": [string]}",
+    "append_user_goal": true
+  },
+  {
+    "id": "vision-009",
+    "name": "Compare before and after screenshots",
+    "prompt": "You are comparing two Power BI screenshots to verify a change was applied correctly. The first image is BEFORE and the second is AFTER. Return ONLY valid JSON: {\"change_detected\": boolean, \"changes\": [{\"element\": string, \"before\": string, \"after\": string, \"change_type\": \"added|removed|modified|moved|resized\"}], \"intended_change_applied\": boolean, \"unintended_changes\": [string], \"verification_result\": \"success|partial|failed\", \"notes\": string}",
+    "requires_two_images": true
+  },
+  {
+    "id": "vision-010",
+    "name": "Extract visible business fields and measures",
+    "prompt": "You are extracting all visible business field names and measure names from a Power BI report screenshot. Look at axis labels, legend labels, card titles, matrix headers, tooltip names, and slicer labels. Return ONLY valid JSON: {\"fields\": [{\"name\": string, \"type\": \"dimension|measure|date|key|unknown\", \"table_hint\": string, \"visible_in\": string}], \"measure_count\": number, \"dimension_count\": number, \"date_fields\": [string], \"possible_fact_tables\": [string], \"possible_dim_tables\": [string]}"
+  }
+]

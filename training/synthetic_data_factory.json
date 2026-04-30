@@ -1,0 +1,911 @@
+{
+  "description": "Synthetic Power BI training artifacts across 8 business domains. Each domain includes table schemas, relationships, valid measures, bad measures with expected rule triggers, visual scenarios, and modeling scenarios.",
+  "domains": [
+    {
+      "domain": "sales",
+      "tables": [
+        {
+          "name": "FactSales",
+          "type": "fact",
+          "columns": ["SalesID", "DateKey", "CustomerKey", "ProductKey", "TerritoryKey", "Quantity", "UnitPrice", "Discount", "SalesAmount", "Cost"],
+          "row_count_estimate": 5000000,
+          "grain": "one row per order line"
+        },
+        {
+          "name": "DimDate",
+          "type": "dimension",
+          "columns": ["DateKey", "Date", "Year", "Quarter", "Month", "MonthName", "Week", "Day", "FiscalYear", "FiscalQuarter"],
+          "row_count_estimate": 3650,
+          "grain": "one row per calendar day"
+        },
+        {
+          "name": "DimCustomer",
+          "type": "dimension",
+          "columns": ["CustomerKey", "CustomerName", "Segment", "Region", "Country", "City", "PostalCode"],
+          "row_count_estimate": 10000,
+          "grain": "one row per customer"
+        },
+        {
+          "name": "DimProduct",
+          "type": "dimension",
+          "columns": ["ProductKey", "ProductName", "Category", "Subcategory", "Brand", "ListPrice", "StandardCost"],
+          "row_count_estimate": 2000,
+          "grain": "one row per product"
+        },
+        {
+          "name": "DimTerritory",
+          "type": "dimension",
+          "columns": ["TerritoryKey", "TerritoryName", "Region", "Country", "SalesManager"],
+          "row_count_estimate": 50,
+          "grain": "one row per territory"
+        }
+      ],
+      "relationships": [
+        {"from": "FactSales[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactSales[CustomerKey]", "to": "DimCustomer[CustomerKey]", "type": "many-to-one", "active": true},
+        {"from": "FactSales[ProductKey]", "to": "DimProduct[ProductKey]", "type": "many-to-one", "active": true},
+        {"from": "FactSales[TerritoryKey]", "to": "DimTerritory[TerritoryKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "Total Sales",
+          "dax": "Total Sales = SUM(FactSales[SalesAmount])",
+          "purpose": "Base revenue measure"
+        },
+        {
+          "name": "Sales YTD",
+          "dax": "Sales YTD = CALCULATE([Total Sales], DATESYTD(DimDate[Date]))",
+          "purpose": "Year-to-date cumulative sales"
+        },
+        {
+          "name": "Sales PY",
+          "dax": "Sales PY = CALCULATE([Total Sales], SAMEPERIODLASTYEAR(DimDate[Date]))",
+          "purpose": "Prior year same period"
+        },
+        {
+          "name": "Sales YoY %",
+          "dax": "Sales YoY % = DIVIDE([Total Sales] - [Sales PY], [Sales PY])",
+          "purpose": "Year-over-year growth rate"
+        },
+        {
+          "name": "Avg Order Value",
+          "dax": "Avg Order Value = DIVIDE([Total Sales], DISTINCTCOUNT(FactSales[SalesID]))",
+          "purpose": "Average revenue per order"
+        },
+        {
+          "name": "Gross Margin",
+          "dax": "Gross Margin = DIVIDE(SUM(FactSales[SalesAmount]) - SUM(FactSales[Cost]), SUM(FactSales[SalesAmount]))",
+          "purpose": "Margin percentage"
+        },
+        {
+          "name": "Sales Rolling 3M",
+          "dax": "Sales Rolling 3M = CALCULATE([Total Sales], DATESINPERIOD(DimDate[Date], LASTDATE(DimDate[Date]), -3, MONTH))",
+          "purpose": "3-month rolling window"
+        },
+        {
+          "name": "Top 10 Customers Sales",
+          "dax": "Top 10 Customers Sales = CALCULATE([Total Sales], TOPN(10, ALL(DimCustomer), [Total Sales], DESC))",
+          "purpose": "Sales filtered to top 10 customers"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Sales Current Year Bad",
+          "dax": "Sales Current Year Bad = CALCULATE([Total Sales], FILTER(ALL(DimDate), DimDate[Year] = YEAR(TODAY())))",
+          "expected_rule": "adv-perf-026",
+          "issue": "FILTER(ALL(dim)) for single equality — should use direct column filter"
+        },
+        {
+          "name": "Sales Category Bad",
+          "dax": "Sales Category Bad = CALCULATE([Total Sales], FILTER(ALL(DimProduct), DimProduct[Category] = SELECTEDVALUE(DimProduct[Category])))",
+          "expected_rule": "adv-cor-002",
+          "issue": "SELECTEDVALUE without ISFILTERED guard — circular filter risk"
+        },
+        {
+          "name": "Sales Rank Bad",
+          "dax": "Sales Rank Bad = RANKX(ALL(FactSales), [Total Sales])",
+          "expected_rule": "adv-perf-036",
+          "issue": "RANKX over entire fact table — should rank over dimension"
+        },
+        {
+          "name": "Formatted Sales Bad",
+          "dax": "Formatted Sales Bad = FORMAT([Total Sales], \"$#,##0.00\")",
+          "expected_rule": "adv-cor-008",
+          "issue": "FORMAT in aggregated measure returns text, not number"
+        },
+        {
+          "name": "Sales This Year Bad",
+          "dax": "Sales This Year Bad = CALCULATE([Total Sales], DimDate[Year] = YEAR(TODAY()))",
+          "expected_rule": "adv-cor-009",
+          "issue": "YEAR(TODAY()) in measure recalculates at query time — use a slicer or parameter"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "line_chart",
+          "axis": "DimDate[MonthName]",
+          "values": ["[Total Sales]", "[Sales PY]"],
+          "issue": "MonthName sorts alphabetically, not by month number",
+          "fix": "Sort MonthName by Month column in DimDate"
+        },
+        {
+          "visual_type": "matrix",
+          "rows": ["DimProduct[Category]", "DimProduct[Subcategory]"],
+          "values": ["[Total Sales]", "[Gross Margin]"],
+          "issue": "Gross Margin showing as sum across categories instead of weighted average",
+          "fix": "Gross Margin should use SUM(Sales) - SUM(Cost) / SUM(Sales), not AVERAGE(Margin%)"
+        },
+        {
+          "visual_type": "card",
+          "value": "[Sales YTD]",
+          "issue": "Card shows blank when no date filter is active",
+          "fix": "Add ISBLANK guard or use MAX(DimDate[Date]) as anchor for DATESYTD"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "Bidirectional relationship on DimTerritory",
+          "issue": "DimTerritory has bidirectional filter to FactSales — RLS on TerritoryKey leaks through to other dimensions",
+          "expected_rule": "adv-model-054",
+          "fix": "Set to single-directional; use CROSSFILTER in measures that need reverse filtering"
+        },
+        {
+          "scenario": "FactSales used as dimension in report",
+          "issue": "SalesID placed on row axis of matrix — 5M rows returned to visual",
+          "expected_rule": "adv-model-051",
+          "fix": "Create DimOrder dimension or use aggregated measure in visual"
+        }
+      ],
+      "expected_rules_triggered": ["adv-perf-026", "adv-cor-002", "adv-perf-036", "adv-cor-008", "adv-cor-009", "adv-model-051", "adv-model-054"]
+    },
+    {
+      "domain": "finance",
+      "tables": [
+        {
+          "name": "FactGL",
+          "type": "fact",
+          "columns": ["GLID", "DateKey", "AccountKey", "CostCenterKey", "DepartmentKey", "Amount", "TransactionType", "Currency", "FXRate"],
+          "row_count_estimate": 2000000,
+          "grain": "one row per general ledger posting"
+        },
+        {
+          "name": "DimAccount",
+          "type": "dimension",
+          "columns": ["AccountKey", "AccountCode", "AccountName", "AccountType", "ParentAccountKey", "IsHeader", "Level"],
+          "row_count_estimate": 5000,
+          "grain": "one row per chart of accounts entry"
+        },
+        {
+          "name": "DimCostCenter",
+          "type": "dimension",
+          "columns": ["CostCenterKey", "CostCenterCode", "CostCenterName", "Division", "Owner"],
+          "row_count_estimate": 200,
+          "grain": "one row per cost center"
+        },
+        {
+          "name": "DimBudget",
+          "type": "fact",
+          "columns": ["BudgetID", "Year", "Month", "AccountKey", "CostCenterKey", "BudgetAmount"],
+          "row_count_estimate": 50000,
+          "grain": "one row per account/cost center/month budget entry"
+        }
+      ],
+      "relationships": [
+        {"from": "FactGL[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactGL[AccountKey]", "to": "DimAccount[AccountKey]", "type": "many-to-one", "active": true},
+        {"from": "FactGL[CostCenterKey]", "to": "DimCostCenter[CostCenterKey]", "type": "many-to-one", "active": true},
+        {"from": "DimBudget[AccountKey]", "to": "DimAccount[AccountKey]", "type": "many-to-one", "active": true},
+        {"from": "DimBudget[CostCenterKey]", "to": "DimCostCenter[CostCenterKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "Actual Amount",
+          "dax": "Actual Amount = SUM(FactGL[Amount])",
+          "purpose": "Total GL postings"
+        },
+        {
+          "name": "Budget Amount",
+          "dax": "Budget Amount = SUM(DimBudget[BudgetAmount])",
+          "purpose": "Total budgeted amount"
+        },
+        {
+          "name": "Variance",
+          "dax": "Variance = [Actual Amount] - [Budget Amount]",
+          "purpose": "Actual vs budget variance"
+        },
+        {
+          "name": "Variance %",
+          "dax": "Variance % = DIVIDE([Variance], ABS([Budget Amount]))",
+          "purpose": "Variance as percentage of budget"
+        },
+        {
+          "name": "Revenue",
+          "dax": "Revenue = CALCULATE([Actual Amount], DimAccount[AccountType] = \"Revenue\")",
+          "purpose": "Total revenue from GL"
+        },
+        {
+          "name": "OpEx",
+          "dax": "OpEx = CALCULATE([Actual Amount], DimAccount[AccountType] = \"Expense\")",
+          "purpose": "Operating expenses"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Revenue Hardcoded Year Bad",
+          "dax": "Revenue 2024 = CALCULATE([Revenue], DimDate[Year] = 2024)",
+          "expected_rule": "adv-model-056",
+          "issue": "Hardcoded year literal — will be wrong next year"
+        },
+        {
+          "name": "Department Summary Bad",
+          "dax": "Dept Summary Bad = SUMMARIZE(FactGL, DimCostCenter[Division], \"Total\", [Actual Amount])",
+          "expected_rule": "adv-perf-042",
+          "issue": "SUMMARIZE with measures — use SUMMARIZECOLUMNS instead"
+        },
+        {
+          "name": "FX Converted Bad",
+          "dax": "USD Amount Bad = SUMX(FactGL, FactGL[Amount] * LOOKUPVALUE(DimExchange[Rate], DimExchange[Currency], FactGL[Currency]))",
+          "expected_rule": "adv-perf-038",
+          "issue": "LOOKUPVALUE inside SUMX when a relationship could be used"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "waterfall",
+          "category": "DimAccount[AccountName]",
+          "values": ["[Variance]"],
+          "issue": "Parent header accounts included in waterfall causing double-counting",
+          "fix": "Filter IsHeader = FALSE in visual or measure"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "DimBudget treated as dimension",
+          "issue": "DimBudget contains both budget rows and is related to DimAccount — many-to-many fan trap possible",
+          "expected_rule": "adv-model-052",
+          "fix": "Create a bridge table or use TREATAS to apply budget context"
+        }
+      ],
+      "expected_rules_triggered": ["adv-model-056", "adv-perf-042", "adv-perf-038", "adv-model-052"]
+    },
+    {
+      "domain": "saas",
+      "tables": [
+        {
+          "name": "FactSubscriptions",
+          "type": "fact",
+          "columns": ["SubscriptionID", "AccountID", "PlanKey", "StartDate", "EndDate", "MRR", "ARR", "Status", "ChurnDate", "DateKey"],
+          "row_count_estimate": 500000,
+          "grain": "one row per subscription per month"
+        },
+        {
+          "name": "DimAccount",
+          "type": "dimension",
+          "columns": ["AccountID", "AccountName", "Industry", "EmployeeSize", "AcquisitionChannel", "CSM", "ContractType"],
+          "row_count_estimate": 20000,
+          "grain": "one row per customer account"
+        },
+        {
+          "name": "DimPlan",
+          "type": "dimension",
+          "columns": ["PlanKey", "PlanName", "Tier", "MonthlyPrice", "AnnualPrice", "MaxUsers", "Features"],
+          "row_count_estimate": 20,
+          "grain": "one row per subscription plan"
+        },
+        {
+          "name": "FactUsage",
+          "type": "fact",
+          "columns": ["UsageID", "AccountID", "DateKey", "Feature", "Sessions", "Actions", "TimeSpentMinutes"],
+          "row_count_estimate": 10000000,
+          "grain": "one row per account per feature per day"
+        }
+      ],
+      "relationships": [
+        {"from": "FactSubscriptions[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactSubscriptions[AccountID]", "to": "DimAccount[AccountID]", "type": "many-to-one", "active": true},
+        {"from": "FactSubscriptions[PlanKey]", "to": "DimPlan[PlanKey]", "type": "many-to-one", "active": true},
+        {"from": "FactUsage[AccountID]", "to": "DimAccount[AccountID]", "type": "many-to-one", "active": true},
+        {"from": "FactUsage[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "MRR",
+          "dax": "MRR = CALCULATE(SUM(FactSubscriptions[MRR]), FactSubscriptions[Status] = \"Active\")",
+          "purpose": "Monthly recurring revenue"
+        },
+        {
+          "name": "ARR",
+          "dax": "ARR = [MRR] * 12",
+          "purpose": "Annualized recurring revenue"
+        },
+        {
+          "name": "Churn Rate",
+          "dax": "Churn Rate = DIVIDE(CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\"), CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] IN {\"Active\", \"Churned\"}))",
+          "purpose": "Monthly churn rate"
+        },
+        {
+          "name": "NRR",
+          "dax": "NRR = DIVIDE([MRR], CALCULATE([MRR], SAMEPERIODLASTYEAR(DimDate[Date])))",
+          "purpose": "Net revenue retention"
+        },
+        {
+          "name": "DAU",
+          "dax": "DAU = CALCULATE(DISTINCTCOUNT(FactUsage[AccountID]), LASTDATE(DimDate[Date]))",
+          "purpose": "Daily active users (accounts)"
+        },
+        {
+          "name": "Feature Adoption Rate",
+          "dax": "Feature Adoption Rate = DIVIDE(CALCULATE(DISTINCTCOUNT(FactUsage[AccountID]), FactUsage[Sessions] > 0), CALCULATE(DISTINCTCOUNT(FactSubscriptions[AccountID]), FactSubscriptions[Status] = \"Active\"))",
+          "purpose": "Percentage of active accounts using a feature"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "MRR Trend Bad",
+          "dax": "MRR Trend Bad = CALCULATE([MRR], DATEADD(DimDate[Date], -365, DAY))",
+          "expected_rule": "adv-perf-048",
+          "issue": "DATEADD with -365 days instead of SAMEPERIODLASTYEAR — misses leap years, slower"
+        },
+        {
+          "name": "Churn Accounts Bad",
+          "dax": "Churn Accounts Bad = COUNTROWS(FILTER(FactSubscriptions, FactSubscriptions[Status] = \"Churned\"))",
+          "expected_rule": "adv-perf-031",
+          "issue": "COUNTROWS(FILTER(fact, condition)) — use CALCULATE(COUNTROWS(), condition) instead"
+        },
+        {
+          "name": "Top Plan Revenue Bad",
+          "dax": "Top Plan Revenue Bad = CALCULATE([MRR], TOPN(3, ALL(DimPlan), [MRR], DESC))",
+          "expected_rule": "adv-cor-006",
+          "issue": "TOPN without tiebreaker — plans with equal MRR have nondeterministic inclusion"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "area_chart",
+          "axis": "DimDate[Date]",
+          "values": ["[MRR]", "[ARR]"],
+          "issue": "ARR is 12x MRR — both on same axis makes MRR line invisible at scale",
+          "fix": "Use secondary axis for ARR or show separately"
+        },
+        {
+          "visual_type": "funnel",
+          "category": "DimAccount[AcquisitionChannel]",
+          "values": ["[MRR]"],
+          "issue": "Funnel requires ordered sequential stages — AcquisitionChannel is categorical",
+          "fix": "Use bar chart for channel comparison; use funnel only for conversion stages"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "FactUsage and FactSubscriptions both connected to DimAccount",
+          "issue": "Chained fact tables with shared dimension — cross-filtering may produce unexpected BLANK rows",
+          "expected_rule": "adv-model-063",
+          "fix": "Use TREATAS to apply account context across fact tables explicitly"
+        }
+      ],
+      "expected_rules_triggered": ["adv-perf-048", "adv-perf-031", "adv-cor-006", "adv-model-063"]
+    },
+    {
+      "domain": "inventory",
+      "tables": [
+        {
+          "name": "FactInventory",
+          "type": "fact",
+          "columns": ["InventoryID", "DateKey", "ProductKey", "WarehouseKey", "OnHandQty", "ReservedQty", "AvailableQty", "ReorderPoint", "UnitCost"],
+          "row_count_estimate": 3000000,
+          "grain": "one row per product per warehouse per day (snapshot)"
+        },
+        {
+          "name": "FactPurchaseOrders",
+          "type": "fact",
+          "columns": ["POID", "DateKey", "ProductKey", "SupplierKey", "OrderedQty", "ReceivedQty", "UnitCost", "Status"],
+          "row_count_estimate": 200000,
+          "grain": "one row per purchase order line"
+        },
+        {
+          "name": "DimWarehouse",
+          "type": "dimension",
+          "columns": ["WarehouseKey", "WarehouseName", "Location", "Region", "Capacity"],
+          "row_count_estimate": 50,
+          "grain": "one row per warehouse"
+        },
+        {
+          "name": "DimSupplier",
+          "type": "dimension",
+          "columns": ["SupplierKey", "SupplierName", "Country", "LeadTimeDays", "ReliabilityScore"],
+          "row_count_estimate": 500,
+          "grain": "one row per supplier"
+        }
+      ],
+      "relationships": [
+        {"from": "FactInventory[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactInventory[ProductKey]", "to": "DimProduct[ProductKey]", "type": "many-to-one", "active": true},
+        {"from": "FactInventory[WarehouseKey]", "to": "DimWarehouse[WarehouseKey]", "type": "many-to-one", "active": true},
+        {"from": "FactPurchaseOrders[ProductKey]", "to": "DimProduct[ProductKey]", "type": "many-to-one", "active": true},
+        {"from": "FactPurchaseOrders[SupplierKey]", "to": "DimSupplier[SupplierKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "Total On Hand",
+          "dax": "Total On Hand = SUM(FactInventory[OnHandQty])",
+          "purpose": "Total units in stock"
+        },
+        {
+          "name": "Inventory Value",
+          "dax": "Inventory Value = SUMX(FactInventory, FactInventory[OnHandQty] * FactInventory[UnitCost])",
+          "purpose": "Total inventory value at cost"
+        },
+        {
+          "name": "Stock Out Count",
+          "dax": "Stock Out Count = CALCULATE(COUNTROWS(FactInventory), FactInventory[AvailableQty] <= 0)",
+          "purpose": "Number of product-warehouse combos with zero available stock"
+        },
+        {
+          "name": "Days of Supply",
+          "dax": "Days of Supply = DIVIDE([Total On Hand], DIVIDE([Total Sales], 30))",
+          "purpose": "Days of inventory remaining at current sell-through rate"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Inventory Text Value Bad",
+          "dax": "Inventory Text Bad = SUMX(FactInventory, FactInventory[OnHandQty] * FORMAT(FactInventory[UnitCost], \"$#.00\"))",
+          "expected_rule": "adv-perf-027",
+          "issue": "FORMAT inside SUMX converts to text — multiplication fails or causes type coercion"
+        },
+        {
+          "name": "Stock Search Bad",
+          "dax": "Product Search Bad = CALCULATE(COUNTROWS(FactInventory), SEARCH(\"widget\", DimProduct[ProductName], 1, 0) > 0)",
+          "expected_rule": "adv-perf-028",
+          "issue": "SEARCH used where FIND would suffice for case-insensitive search; both are row-context evaluated"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "scatter",
+          "x_axis": "[Days of Supply]",
+          "y_axis": "[Inventory Value]",
+          "details": "DimProduct[ProductName]",
+          "issue": "Scatter with 2000 product points — too dense to read",
+          "fix": "Aggregate to Category level or add a Top N filter"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "Snapshot fact table summed without date filter",
+          "issue": "FactInventory is a periodic snapshot — summing OnHandQty without date filter multiplies values across all days",
+          "expected_rule": "adv-model-051",
+          "fix": "Always filter FactInventory to LASTDATE or a specific snapshot date in measures"
+        }
+      ],
+      "expected_rules_triggered": ["adv-perf-027", "adv-perf-028", "adv-model-051"]
+    },
+    {
+      "domain": "supply_chain",
+      "tables": [
+        {
+          "name": "FactShipments",
+          "type": "fact",
+          "columns": ["ShipmentID", "OrderID", "DateKey", "OriginKey", "DestinationKey", "CarrierKey", "ShippedQty", "FreightCost", "ActualDeliveryDate", "PromisedDeliveryDate"],
+          "row_count_estimate": 1000000,
+          "grain": "one row per shipment"
+        },
+        {
+          "name": "DimCarrier",
+          "type": "dimension",
+          "columns": ["CarrierKey", "CarrierName", "Mode", "Region", "OnTimeRate"],
+          "row_count_estimate": 100,
+          "grain": "one row per carrier"
+        },
+        {
+          "name": "DimLocation",
+          "type": "dimension",
+          "columns": ["LocationKey", "LocationName", "City", "Country", "Region", "IsPort"],
+          "row_count_estimate": 5000,
+          "grain": "one row per shipping location"
+        }
+      ],
+      "relationships": [
+        {"from": "FactShipments[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactShipments[OriginKey]", "to": "DimLocation[LocationKey]", "type": "many-to-one", "active": true, "note": "role-playing dimension"},
+        {"from": "FactShipments[DestinationKey]", "to": "DimLocation[LocationKey]", "type": "many-to-one", "active": false, "note": "inactive — use USERELATIONSHIP"},
+        {"from": "FactShipments[CarrierKey]", "to": "DimCarrier[CarrierKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "On Time Delivery Rate",
+          "dax": "On Time Delivery Rate = DIVIDE(CALCULATE(COUNTROWS(FactShipments), FactShipments[ActualDeliveryDate] <= FactShipments[PromisedDeliveryDate]), COUNTROWS(FactShipments))",
+          "purpose": "Percentage of shipments delivered on or before promised date"
+        },
+        {
+          "name": "Avg Freight Cost",
+          "dax": "Avg Freight Cost = DIVIDE(SUM(FactShipments[FreightCost]), SUM(FactShipments[ShippedQty]))",
+          "purpose": "Freight cost per unit shipped"
+        },
+        {
+          "name": "Shipments by Destination",
+          "dax": "Shipments by Destination = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestinationKey], DimLocation[LocationKey]))",
+          "purpose": "Count filtered by destination using inactive relationship"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Late Days Bad",
+          "dax": "Late Days Bad = COUNTROWS(ADDCOLUMNS(FactShipments, \"Late\", FactShipments[ActualDeliveryDate] - FactShipments[PromisedDeliveryDate]))",
+          "expected_rule": "adv-perf-029",
+          "issue": "COUNTROWS(ADDCOLUMNS(fact)) — ADDCOLUMNS iterates all rows unnecessarily; use CALCULATE(COUNTROWS()) with filter"
+        },
+        {
+          "name": "Carrier List Bad",
+          "dax": "Carrier List Bad = CONCATENATEX(DimCarrier, DimCarrier[CarrierName], \", \")",
+          "expected_rule": "adv-cor-007",
+          "issue": "CONCATENATEX without ORDERBY — carrier order is nondeterministic"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "map",
+          "location": "DimLocation[City]",
+          "values": ["COUNTROWS(FactShipments)"],
+          "issue": "City names are ambiguous (Springfield appears in 35 US states) — map geocodes incorrectly",
+          "fix": "Use latitude/longitude columns or concatenate City + Country for geocoding"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "Role-playing DimLocation with inactive relationship for destination",
+          "issue": "Only one relationship can be active — destination analysis requires USERELATIONSHIP in every measure",
+          "expected_rule": "adv-model-066",
+          "fix": "Create DimOrigin and DimDestination as separate views or calculated tables from DimLocation"
+        }
+      ],
+      "expected_rules_triggered": ["adv-perf-029", "adv-cor-007", "adv-model-066"]
+    },
+    {
+      "domain": "hr",
+      "tables": [
+        {
+          "name": "FactHeadcount",
+          "type": "fact",
+          "columns": ["HeadcountID", "EmployeeKey", "DateKey", "DepartmentKey", "LocationKey", "JobLevelKey", "Salary", "Status", "HireDate", "TermDate"],
+          "row_count_estimate": 500000,
+          "grain": "one row per employee per month (snapshot)"
+        },
+        {
+          "name": "DimEmployee",
+          "type": "dimension",
+          "columns": ["EmployeeKey", "EmployeeID", "FullName", "Gender", "DateOfBirth", "HireDate", "ManagerKey", "IsManager"],
+          "row_count_estimate": 5000,
+          "grain": "one row per employee (current)"
+        },
+        {
+          "name": "DimDepartment",
+          "type": "dimension",
+          "columns": ["DepartmentKey", "DepartmentName", "Division", "CostCenter", "HeadCount_Budget"],
+          "row_count_estimate": 100,
+          "grain": "one row per department"
+        },
+        {
+          "name": "DimJobLevel",
+          "type": "dimension",
+          "columns": ["JobLevelKey", "Level", "Title", "Band", "SalaryMin", "SalaryMax"],
+          "row_count_estimate": 20,
+          "grain": "one row per job level"
+        }
+      ],
+      "relationships": [
+        {"from": "FactHeadcount[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactHeadcount[EmployeeKey]", "to": "DimEmployee[EmployeeKey]", "type": "many-to-one", "active": true},
+        {"from": "FactHeadcount[DepartmentKey]", "to": "DimDepartment[DepartmentKey]", "type": "many-to-one", "active": true},
+        {"from": "FactHeadcount[JobLevelKey]", "to": "DimJobLevel[JobLevelKey]", "type": "many-to-one", "active": true},
+        {"from": "DimEmployee[ManagerKey]", "to": "DimEmployee[EmployeeKey]", "type": "many-to-one", "active": true, "note": "self-referencing for org hierarchy"}
+      ],
+      "valid_measures": [
+        {
+          "name": "Headcount",
+          "dax": "Headcount = CALCULATE(COUNTROWS(FactHeadcount), FactHeadcount[Status] = \"Active\")",
+          "purpose": "Active employee count"
+        },
+        {
+          "name": "Avg Salary",
+          "dax": "Avg Salary = DIVIDE(CALCULATE(SUM(FactHeadcount[Salary]), FactHeadcount[Status] = \"Active\"), [Headcount])",
+          "purpose": "Average salary for active employees"
+        },
+        {
+          "name": "Attrition Rate",
+          "dax": "Attrition Rate = DIVIDE(CALCULATE(COUNTROWS(FactHeadcount), FactHeadcount[Status] = \"Terminated\"), CALCULATE(COUNTROWS(FactHeadcount), PREVIOUSMONTH(DimDate[Date]), FactHeadcount[Status] = \"Active\"))",
+          "purpose": "Monthly attrition rate"
+        },
+        {
+          "name": "Avg Tenure Years",
+          "dax": "Avg Tenure Years = AVERAGEX(FILTER(FactHeadcount, FactHeadcount[Status] = \"Active\"), DATEDIFF(FactHeadcount[HireDate], TODAY(), YEAR))",
+          "purpose": "Average years of service for active employees"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Manager List Bad",
+          "dax": "Manager List = CONCATENATEX(FILTER(DimEmployee, DimEmployee[IsManager] = TRUE()), DimEmployee[FullName], \", \")",
+          "expected_rule": "adv-cor-007",
+          "issue": "CONCATENATEX without ORDERBY — names appear in nondeterministic order"
+        },
+        {
+          "name": "Salary Range Bad",
+          "dax": "Over Band = COUNTROWS(FILTER(FactHeadcount, FactHeadcount[Salary] > RELATED(DimJobLevel[SalaryMax])))",
+          "expected_rule": "adv-cor-014",
+          "issue": "RELATED inside FILTER in measure context — RELATED only works in row context of the same table"
+        },
+        {
+          "name": "User RLS Bad",
+          "dax": "My Dept Headcount = CALCULATE([Headcount], FILTER(DimDepartment, DimEmployee[ManagerKey] = LOOKUPVALUE(DimEmployee[EmployeeKey], DimEmployee[FullName], USERNAME())))",
+          "expected_rule": "adv-cor-011",
+          "issue": "USERNAME() deprecated in Power BI Service — use USERPRINCIPALNAME()"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "org_chart",
+          "hierarchy": "DimEmployee[ManagerKey] → DimEmployee[EmployeeKey]",
+          "issue": "Power BI does not have a native org chart visual — decomposition tree or third-party visual needed",
+          "fix": "Use Decomposition Tree for hierarchy exploration or import AppSource org chart visual"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "Salary stored in FactHeadcount snapshot",
+          "issue": "Summing salary across all months in the snapshot gives inflated total — salary is a semi-additive measure",
+          "expected_rule": "adv-model-051",
+          "fix": "Use LASTNONBLANK or filter to single month when calculating salary totals"
+        }
+      ],
+      "expected_rules_triggered": ["adv-cor-007", "adv-cor-014", "adv-cor-011", "adv-model-051"]
+    },
+    {
+      "domain": "marketing",
+      "tables": [
+        {
+          "name": "FactCampaigns",
+          "type": "fact",
+          "columns": ["CampaignID", "DateKey", "ChannelKey", "AudienceKey", "Impressions", "Clicks", "Conversions", "Spend", "Revenue"],
+          "row_count_estimate": 500000,
+          "grain": "one row per campaign per day"
+        },
+        {
+          "name": "DimChannel",
+          "type": "dimension",
+          "columns": ["ChannelKey", "ChannelName", "Platform", "ChannelType", "TrackingMethod"],
+          "row_count_estimate": 30,
+          "grain": "one row per marketing channel"
+        },
+        {
+          "name": "DimAudience",
+          "type": "dimension",
+          "columns": ["AudienceKey", "AudienceName", "Segment", "Geography", "AgeGroup", "DeviceType"],
+          "row_count_estimate": 200,
+          "grain": "one row per audience segment"
+        },
+        {
+          "name": "FactWebAnalytics",
+          "type": "fact",
+          "columns": ["SessionID", "DateKey", "ChannelKey", "Sessions", "Pageviews", "BounceRate", "AvgSessionDuration", "GoalCompletions"],
+          "row_count_estimate": 5000000,
+          "grain": "one row per session"
+        }
+      ],
+      "relationships": [
+        {"from": "FactCampaigns[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactCampaigns[ChannelKey]", "to": "DimChannel[ChannelKey]", "type": "many-to-one", "active": true},
+        {"from": "FactCampaigns[AudienceKey]", "to": "DimAudience[AudienceKey]", "type": "many-to-one", "active": true},
+        {"from": "FactWebAnalytics[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactWebAnalytics[ChannelKey]", "to": "DimChannel[ChannelKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "CTR",
+          "dax": "CTR = DIVIDE(SUM(FactCampaigns[Clicks]), SUM(FactCampaigns[Impressions]))",
+          "purpose": "Click-through rate"
+        },
+        {
+          "name": "CPC",
+          "dax": "CPC = DIVIDE(SUM(FactCampaigns[Spend]), SUM(FactCampaigns[Clicks]))",
+          "purpose": "Cost per click"
+        },
+        {
+          "name": "ROAS",
+          "dax": "ROAS = DIVIDE(SUM(FactCampaigns[Revenue]), SUM(FactCampaigns[Spend]))",
+          "purpose": "Return on ad spend"
+        },
+        {
+          "name": "Conversion Rate",
+          "dax": "Conversion Rate = DIVIDE(SUM(FactCampaigns[Conversions]), SUM(FactCampaigns[Clicks]))",
+          "purpose": "Click to conversion rate"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Campaign Rank Bad",
+          "dax": "Campaign Rank Bad = RANKX(ALL(FactCampaigns), [ROAS])",
+          "expected_rule": "adv-perf-036",
+          "issue": "RANKX over fact table — should rank over DimChannel or aggregated table"
+        },
+        {
+          "name": "Channel Spend Formatted Bad",
+          "dax": "Channel Spend Display = FORMAT(SUM(FactCampaigns[Spend]), \"$#,##0\")",
+          "expected_rule": "adv-cor-008",
+          "issue": "FORMAT in measure returns text — cannot use in calculations or sort numerically"
+        },
+        {
+          "name": "Multi OR Filter Bad",
+          "dax": "Social Spend Bad = CALCULATE([CTR], DimChannel[Platform] = \"Facebook\" || DimChannel[Platform] = \"Instagram\" || DimChannel[Platform] = \"Twitter\" || DimChannel[Platform] = \"TikTok\")",
+          "expected_rule": "adv-perf-043",
+          "issue": "Multiple OR conditions — use IN operator or VALUES() for better readability and potential optimization"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "donut",
+          "category": "DimChannel[ChannelName]",
+          "values": ["SUM(FactCampaigns[Spend])"],
+          "issue": "Donut with 30 channels — too many slices, chart unreadable",
+          "fix": "Limit to top 5-7 channels, group remainder as 'Other'"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "FactCampaigns and FactWebAnalytics both connected to DimChannel",
+          "issue": "When filtering by channel, both fact tables filter — but campaign spend and web sessions may not have 1:1 granularity causing misaligned aggregations",
+          "expected_rule": "adv-model-063",
+          "fix": "Separate page-level visuals for campaign vs web metrics; avoid mixing fact tables in single visual"
+        }
+      ],
+      "expected_rules_triggered": ["adv-perf-036", "adv-cor-008", "adv-perf-043", "adv-model-063"]
+    },
+    {
+      "domain": "operations",
+      "tables": [
+        {
+          "name": "FactWorkOrders",
+          "type": "fact",
+          "columns": ["WorkOrderID", "DateKey", "AssetKey", "TechnicianKey", "WorkType", "Priority", "PlannedHours", "ActualHours", "DowntimeMinutes", "CompletionStatus", "Cost"],
+          "row_count_estimate": 300000,
+          "grain": "one row per work order"
+        },
+        {
+          "name": "DimAsset",
+          "type": "dimension",
+          "columns": ["AssetKey", "AssetName", "AssetType", "Location", "Department", "InstalledDate", "ExpectedLifeYears", "ReplacementCost"],
+          "row_count_estimate": 5000,
+          "grain": "one row per physical asset"
+        },
+        {
+          "name": "DimTechnician",
+          "type": "dimension",
+          "columns": ["TechnicianKey", "TechnicianName", "Certification", "Region", "Shift"],
+          "row_count_estimate": 200,
+          "grain": "one row per technician"
+        },
+        {
+          "name": "FactDowntime",
+          "type": "fact",
+          "columns": ["DowntimeID", "AssetKey", "StartDateKey", "EndDateKey", "DowntimeMinutes", "Reason", "ImpactScore"],
+          "row_count_estimate": 50000,
+          "grain": "one row per downtime event"
+        }
+      ],
+      "relationships": [
+        {"from": "FactWorkOrders[DateKey]", "to": "DimDate[DateKey]", "type": "many-to-one", "active": true},
+        {"from": "FactWorkOrders[AssetKey]", "to": "DimAsset[AssetKey]", "type": "many-to-one", "active": true},
+        {"from": "FactWorkOrders[TechnicianKey]", "to": "DimTechnician[TechnicianKey]", "type": "many-to-one", "active": true},
+        {"from": "FactDowntime[AssetKey]", "to": "DimAsset[AssetKey]", "type": "many-to-one", "active": true}
+      ],
+      "valid_measures": [
+        {
+          "name": "OEE",
+          "dax": "OEE = DIVIDE(CALCULATE(SUM(FactWorkOrders[ActualHours]), FactWorkOrders[CompletionStatus] = \"Completed\"), CALCULATE(SUM(FactWorkOrders[PlannedHours])))",
+          "purpose": "Overall Equipment Effectiveness proxy"
+        },
+        {
+          "name": "MTBF",
+          "dax": "MTBF = DIVIDE(CALCULATE(SUM(FactWorkOrders[PlannedHours])), COUNTROWS(FactDowntime))",
+          "purpose": "Mean time between failures (simplified)"
+        },
+        {
+          "name": "Maintenance Cost per Asset",
+          "dax": "Maintenance Cost per Asset = DIVIDE(SUM(FactWorkOrders[Cost]), DISTINCTCOUNT(FactWorkOrders[AssetKey]))",
+          "purpose": "Average maintenance cost per asset"
+        },
+        {
+          "name": "Downtime Hours",
+          "dax": "Downtime Hours = DIVIDE(SUM(FactDowntime[DowntimeMinutes]), 60)",
+          "purpose": "Total downtime in hours"
+        }
+      ],
+      "bad_measures": [
+        {
+          "name": "Asset Age Calc Column Bad",
+          "dax": "Asset Age Years = DATEDIFF(DimAsset[InstalledDate], TODAY(), YEAR)",
+          "expected_rule": "adv-model-055",
+          "issue": "TODAY() in calculated column — evaluated at refresh time, not at query time; stale between refreshes"
+        },
+        {
+          "name": "Efficiency Text Bad",
+          "dax": "Efficiency Display Bad = CONCATENATEX(DimTechnician, DimTechnician[TechnicianName] & \": \" & FORMAT([OEE], \"0%\"), UNICHAR(10))",
+          "expected_rule": "adv-cor-007",
+          "issue": "CONCATENATEX without ORDERBY and FORMAT in DAX context — nondeterministic order plus text type"
+        },
+        {
+          "name": "Work Type Switch Bad",
+          "dax": "Work Category Bad = SWITCH(FactWorkOrders[WorkType], \"PM\", \"Preventive\", \"CM\", \"Corrective\", \"PdM\", \"Predictive\", \"EM\", \"Emergency\", \"EM\", \"Emergency Duplicate\", \"Unknown\")",
+          "expected_rule": "adv-cor-003",
+          "issue": "SWITCH with duplicate 'EM' condition — second EM branch is unreachable"
+        }
+      ],
+      "visual_scenarios": [
+        {
+          "visual_type": "gauge",
+          "value": "[OEE]",
+          "min": 0,
+          "max": 1,
+          "issue": "Gauge target set to absolute value 0.85 but OEE can exceed 1.0 in some definitions — scale misleading",
+          "fix": "Use a KPI visual with status thresholds or card with conditional formatting"
+        }
+      ],
+      "modeling_scenarios": [
+        {
+          "scenario": "FactDowntime with StartDateKey and EndDateKey",
+          "issue": "Two date foreign keys — only StartDateKey has an active relationship; filtering by month misses events that started in prior month",
+          "expected_rule": "adv-model-066",
+          "fix": "Use USERELATIONSHIP in measures for EndDateKey; or expand downtime into a daily snapshot table in Power Query"
+        }
+      ],
+      "expected_rules_triggered": ["adv-model-055", "adv-cor-007", "adv-cor-003", "adv-model-066"]
+    }
+  ],
+  "shared_dimensions": {
+    "DimDate": {
+      "note": "All domains share this date dimension. Always mark as a date table. Ensure Date column has no gaps.",
+      "required_columns": ["DateKey", "Date", "Year", "Quarter", "Month", "MonthName", "Week", "Day", "IsWeekend", "FiscalYear", "FiscalQuarter"]
+    },
+    "DimProduct": {
+      "note": "Shared between sales and inventory domains. ProductKey must be consistent.",
+      "required_columns": ["ProductKey", "ProductName", "Category", "Subcategory", "Brand", "ListPrice", "StandardCost"]
+    }
+  },
+  "power_query_scenarios": [
+    {
+      "scenario": "List.Generate for date range expansion",
+      "code_pattern": "List.Generate(() => StartDate, each _ <= EndDate, each Date.AddDays(_, 1))",
+      "expected_rule": "adv-model-058",
+      "issue": "List.Generate breaks query folding — executes in Power Query engine instead of being pushed to source",
+      "fix": "Use Table.AddColumn with Date arithmetic or use a SQL-side calendar table"
+    },
+    {
+      "scenario": "Table.Buffer on large dataset",
+      "code_pattern": "Table.Buffer(Source)",
+      "expected_rule": "adv-model-058",
+      "issue": "Table.Buffer forces evaluation in memory and breaks folding for all downstream steps",
+      "fix": "Remove Table.Buffer unless specifically needed to prevent re-evaluation of a random or time-sensitive source"
+    },
+    {
+      "scenario": "try...otherwise null anti-pattern",
+      "code_pattern": "try [Amount] otherwise null",
+      "expected_rule": "adv-model-060",
+      "issue": "Silently converts errors to null — hides data quality issues; nulls propagate silently through calculations",
+      "fix": "Use explicit type checks or Table.SelectRows to filter out bad rows; log errors separately"
+    },
+    {
+      "scenario": "Untyped parameter",
+      "code_pattern": "let StartDate = #date(2024,1,1) in StartDate",
+      "expected_rule": "adv-model-059",
+      "issue": "Parameter without explicit type — Power Query may infer wrong type, causing date arithmetic failures",
+      "fix": "Declare parameter with explicit type: Date.From(StartDate)"
+    },
+    {
+      "scenario": "Excessive steps (>20) in a single query",
+      "code_pattern": "Step1 -> Step2 -> ... -> Step25",
+      "expected_rule": "adv-model-057",
+      "issue": "More than 20 steps in one query makes the query hard to debug, slows the editor, and increases refresh memory usage",
+      "fix": "Split into staging queries: source → cleaned → transformed → final. Reference staging queries."
+    }
+  ]
+}

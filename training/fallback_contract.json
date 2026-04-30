@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0",
+  "description": "Exact JSON contract Claude must return when deterministic confidence is below threshold",
+  "example_response": {
+    "diagnosis": "The measure uses FILTER(ALL('Date'), 'Date'[Year] = YEAR(TODAY())) which is a common but suboptimal pattern. The YEAR(TODAY()) call evaluates at query time which is correct, but wrapping it in FILTER(ALL('Date')) prevents the storage engine from using a direct column equality filter, causing a full date table scan on every query. Additionally, TODAY() can cause refresh-time staleness if the dataset is not refreshed at year boundary.",
+    "answer": "Replace FILTER(ALL('Date'), 'Date'[Year] = YEAR(TODAY())) with a direct column filter 'Date'[Year] = YEAR(TODAY()) inside CALCULATE. This allows VertiPaq to use its bitmap index for the Year column directly, reducing the filter materialization cost. For fiscal year alignment, consider DATESYTD('Date'[Date]) instead.",
+    "requires_user_approval": true,
+    "risk_level": "low",
+    "requires_llm": true,
+    "suggested_rule": {
+      "pattern": "FILTER(ALL(DimTable), single_column_equality_condition) used where a direct column filter suffices",
+      "detection_logic": {
+        "functions": ["FILTER", "ALL"],
+        "conditions": [
+          "ALL wraps a single dimension table",
+          "inner condition tests equality or range on exactly one column",
+          "direct column filter argument would produce identical result"
+        ]
+      },
+      "fixed_dax": "Replace FILTER(ALL(Table), Table[Col] = value) with direct column filter: CALCULATE([measure], Table[Col] = value)",
+      "category": "performance",
+      "confidence": 0.93,
+      "fix_type": "safe"
+    },
+    "action_plan": [
+      {
+        "type": "screenshot",
+        "target": "visible_tab",
+        "value": "",
+        "reason": "Capture current measure state before any edit",
+        "requires_approval": false
+      },
+      {
+        "type": "click",
+        "target": "[aria-label='New measure']",
+        "value": "",
+        "reason": "Open the measure editor",
+        "requires_approval": false
+      },
+      {
+        "type": "wait",
+        "target": "editor_ready",
+        "value": "600",
+        "reason": "Wait for Monaco editor to initialize",
+        "requires_approval": false
+      },
+      {
+        "type": "key",
+        "target": "editor",
+        "value": "Ctrl+A",
+        "reason": "Select all existing DAX",
+        "requires_approval": false
+      },
+      {
+        "type": "type",
+        "target": "editor",
+        "value": "Current Year Sales =\nCALCULATE(\n    [Total Sales],\n    'Date'[Year] = YEAR(TODAY())\n)",
+        "reason": "Replace with optimized DAX — requires user to verify the measure name and base measure reference",
+        "requires_approval": true
+      },
+      {
+        "type": "screenshot",
+        "target": "visible_tab",
+        "value": "",
+        "reason": "Verify DAX in editor before saving",
+        "requires_approval": false
+      },
+      {
+        "type": "click",
+        "target": "[aria-label='Commit']",
+        "value": "",
+        "reason": "Save the updated measure",
+        "requires_approval": true
+      },
+      {
+        "type": "wait",
+        "target": "dom_stable",
+        "value": "1000",
+        "reason": "Wait for model to update",
+        "requires_approval": false
+      },
+      {
+        "type": "screenshot",
+        "target": "visible_tab",
+        "value": "",
+        "reason": "Confirm measure saved and visual refreshed",
+        "requires_approval": false
+      }
+    ],
+    "tests_to_add": {
+      "positive_cases": [
+        {
+          "name": "FILTER(ALL(Date)) with YEAR(TODAY()) equality",
+          "input": "CY = CALCULATE([Sales], FILTER(ALL('Date'), 'Date'[Year] = YEAR(TODAY())))",
+          "expected_issue": "adv-perf-001: FILTER(ALL(dim)) for single equality — use direct column filter",
+          "expected_fix": "CALCULATE([Sales], 'Date'[Year] = YEAR(TODAY()))"
+        }
+      ],
+      "negative_cases": [
+        {
+          "name": "Valid FILTER(ALL(Date)) for multi-condition range",
+          "input": "Range = CALCULATE([Sales], FILTER(ALL('Date'), 'Date'[Date] >= StartDate && 'Date'[Date] <= EndDate))"
+        }
+      ],
+      "edge_cases": [
+        {
+          "name": "FILTER(ALL(Date)) with YEAR(TODAY()) but fiscal year model",
+          "input": "CY = CALCULATE([Sales], FILTER(ALL('Date'), 'Date'[FiscalYear] = YEAR(TODAY())))",
+          "expected_issue": "Rule fires but fix must use DATESYTD with fiscal year-end argument, not direct Year filter",
+          "expected_fix": "CALCULATE([Sales], DATESYTD('Date'[Date], '6/30'))"
+        }
+      ]
+    }
+  },
+  "fallback_rules": [
+    "Do not invent Power BI model state — only use what is visible in the screenshot or page context",
+    "Use screenshot and DOM context when available before reasoning from general knowledge",
+    "Ask for approval before any action that saves, publishes, deletes, overwrites, or exports",
+    "Prefer proposing a deterministic rule if the issue can be expressed as a programmatic pattern",
+    "If uncertain about intent or side effects, set requires_user_approval true and risk_level high",
+    "Never set fix_type to safe if the fix changes business logic, measure scope, or security filters",
+    "All action_plan steps that modify the model must have requires_approval true",
+    "Screenshot steps before and after any model change are mandatory in the action_plan",
+    "If diagnosis involves RLS or security, always set risk_level to high",
+    "Do not suggest XMLA or REST API operations without confirming the user has the required permissions"
+  ]
+}

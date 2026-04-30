@@ -1,0 +1,104 @@
+{
+  "training_loop": [
+    {
+      "step": 1,
+      "name": "Failure capture",
+      "description": "When a deterministic rule fires but the user marks the result as wrong, or when the user submits a prompt that returns low confidence, capture the failure event and store it with the input DAX, the rule that fired (if any), the user-provided correct answer, and the current page context."
+    },
+    {
+      "step": 2,
+      "name": "Screenshot and context snapshot",
+      "description": "On every Act tab action that involves vision or action planning, store: screenshot base64, page URL, page mode, detected fields, timestamp, and the action plan output. Store in chrome.storage.local with a 30-item circular buffer."
+    },
+    {
+      "step": 3,
+      "name": "Claude rule proposal",
+      "description": "When the fallback (Claude) solves a problem with confidence > 0.85 and the issue appears generalizable, Claude returns a suggested_rule in the fallback contract. This rule is queued in chrome.storage.local as a pending_rule candidate."
+    },
+    {
+      "step": 4,
+      "name": "Rule compilation",
+      "description": "A Node.js compile script reads rules_advanced.json, correctness_rules.json, performance_rules.json, modeling_rules.json, and pending_rules.json. It deduplicates by pattern string similarity and function set overlap. It assigns IDs, priority scores, and confidence values. Output is written to rules/processed/final_rules.json and compiled_rules.json."
+    },
+    {
+      "step": 5,
+      "name": "Test generation",
+      "description": "For each new rule promoted to final_rules.json, generate at least one positive test case (DAX that should trigger it), one negative test case (valid DAX that looks similar), and one edge case (false-positive trap). Store in training/test_suite.json."
+    },
+    {
+      "step": 6,
+      "name": "False positive prevention",
+      "description": "Run the full test suite against the compiled rule engine. Any rule that fires on a negative test case is flagged. Any rule that fires on a false-positive edge case has its confidence reduced by 0.05. Rules with confidence below 0.70 after adjustment are moved to requires_llm: true and removed from deterministic execution."
+    },
+    {
+      "step": 7,
+      "name": "Coverage measurement",
+      "description": "After each compile cycle, report: total rules by category, rules with at least one positive test, rules with at least one negative test, rules with at least one edge test, rules in needs_review vs safe, rules in requires_llm, average confidence by category."
+    },
+    {
+      "step": 8,
+      "name": "final_rules.json update",
+      "description": "When a rule passes all tests and meets promotion criteria, it is merged into final_rules.json with a promoted_at timestamp. The pending_rules.json entry is removed. The compile script is re-run to update compiled_rules.json."
+    },
+    {
+      "step": 9,
+      "name": "Fallback criteria review",
+      "description": "Monthly review of all rules that are currently requires_llm: true. If a pattern has appeared 10+ times in the failure log with consistent detection logic, promote it to deterministic with appropriate confidence. If a rule has been requires_llm for 6+ months with no promotion path, archive it."
+    }
+  ],
+  "failure_capture_schema": {
+    "failure_id": "uuid",
+    "timestamp": "ISO8601",
+    "input_dax": "string",
+    "rule_fired": "string or null",
+    "deterministic_result": "string",
+    "deterministic_confidence": "number",
+    "user_correction": "string or null",
+    "user_marked_wrong": "boolean",
+    "page_context": {
+      "url": "string",
+      "page_mode": "string",
+      "title": "string",
+      "likely_fields": ["string"]
+    },
+    "screenshot_id": "string or null",
+    "fallback_used": "boolean",
+    "fallback_result": "string or null",
+    "suggested_rule_id": "string or null"
+  },
+  "coverage_metrics": [
+    "total_rules: total count of rules in final_rules.json",
+    "rules_with_positive_test: count of rules with at least one positive_case in test_suite.json",
+    "rules_with_negative_test: count of rules with at least one negative_case",
+    "rules_with_edge_test: count of rules with at least one edge_case",
+    "coverage_pct: rules_with_positive_test / total_rules * 100",
+    "safe_fix_pct: count of safe rules / total_rules * 100",
+    "needs_review_pct: count of needs_review rules / total_rules * 100",
+    "requires_llm_pct: count of requires_llm rules / total_rules * 100",
+    "average_confidence_correctness: mean confidence for correctness rules",
+    "average_confidence_performance: mean confidence for performance rules",
+    "average_confidence_modeling: mean confidence for modeling rules",
+    "false_positive_rate: failures on negative_cases / total_negative_cases * 100",
+    "false_negative_rate: failures on positive_cases / total_positive_cases * 100",
+    "pending_rule_count: count of rules in pending_rules.json awaiting promotion"
+  ],
+  "promotion_criteria": [
+    "Rule has at least 1 positive test case that passes",
+    "Rule has at least 1 negative test case that does NOT fire",
+    "Rule has at least 1 edge case defined",
+    "Rule confidence >= 0.78",
+    "Rule does not overlap with an existing rule by more than 2 shared functions AND 2 shared conditions",
+    "Rule fix_type is correct: safe only if the fix provably preserves business logic",
+    "Rule has been validated against real-world DAX from at least 2 different domains"
+  ],
+  "fallback_criteria": [
+    "Deterministic confidence < threshold (default 72)",
+    "Input contains screenshot or visual description that requires vision analysis",
+    "Input describes a multi-step browser automation goal that requires planning",
+    "Input involves RLS or security changes — always escalate",
+    "Input involves destructive operations: delete, publish, overwrite, export",
+    "Input involves XMLA, REST API, or direct model write operations",
+    "Rule fires but fix_type is needs_review and user has not approved",
+    "Detection logic conditions are partially met but not all — confidence below threshold"
+  ]
+}

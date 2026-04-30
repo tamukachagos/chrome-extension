@@ -1,0 +1,251 @@
+{
+  "description": "Validation checklist for Codex to run after adding rules, tests, or skills. All checks must pass before committing to main.",
+  "version": "1.0",
+  "checks": [
+    {
+      "id": "val-001",
+      "name": "JSON schema validity — all training files",
+      "category": "schema",
+      "description": "Parse each training JSON file and verify it is valid JSON with no trailing commas, comments, or encoding errors.",
+      "command": "node -e \"['rules_advanced','test_suite','automation_skills','fallback_contract','vision_prompts','gap_analysis','training_loop','synthetic_data_factory','validation_checklist'].forEach(f => { try { JSON.parse(require('fs').readFileSync('training/' + f + '.json', 'utf8')); console.log('OK: ' + f); } catch(e) { console.error('FAIL: ' + f + ' — ' + e.message); process.exit(1); } })\"",
+      "pass_condition": "All files parse without error",
+      "fail_action": "Fix the JSON syntax error in the reported file before proceeding"
+    },
+    {
+      "id": "val-002",
+      "name": "Rule ID uniqueness check",
+      "category": "schema",
+      "description": "Verify that all rule IDs in rules_advanced.json are unique. No two rules may share the same id field.",
+      "command": "node -e \"const r = require('./training/rules_advanced.json'); const ids = r.rules.map(x => x.id); const dupes = ids.filter((v,i) => ids.indexOf(v) !== i); if(dupes.length) { console.error('FAIL: duplicate IDs', dupes); process.exit(1); } else console.log('OK: all rule IDs unique');\"",
+      "pass_condition": "Zero duplicate IDs",
+      "fail_action": "Rename the duplicate rule ID — use the next available sequence number in the appropriate category prefix"
+    },
+    {
+      "id": "val-003",
+      "name": "Rule schema field completeness",
+      "category": "schema",
+      "description": "Every rule in rules_advanced.json must have: id, pattern, detection_logic (with functions[] and conditions[]), category, confidence (number 0–1), fix_type (safe|needs_review), requires_llm (boolean). bad_dax and fixed_dax are required unless requires_llm is true.",
+      "command": "node -e \"const r = require('./training/rules_advanced.json'); const required = ['id','pattern','detection_logic','category','confidence','fix_type','requires_llm']; let fail=0; r.rules.forEach(rule => { required.forEach(f => { if(rule[f] === undefined) { console.error('FAIL: rule', rule.id, 'missing field', f); fail++; } }); if(!rule.requires_llm && !rule.fixed_dax) { console.error('FAIL: rule', rule.id, 'missing fixed_dax (required when requires_llm=false)'); fail++; } if(!rule.detection_logic?.functions || !rule.detection_logic?.conditions) { console.error('FAIL: rule', rule.id, 'detection_logic missing functions or conditions'); fail++; } }); if(fail) process.exit(1); else console.log('OK: all rule schemas valid');\"",
+      "pass_condition": "Zero field errors across all rules",
+      "fail_action": "Add missing fields to reported rules before promoting to final_rules.json"
+    },
+    {
+      "id": "val-004",
+      "name": "Confidence value range check",
+      "category": "schema",
+      "description": "All rule confidence values must be between 0.70 and 1.00 inclusive. Rules below 0.70 must be requires_llm: true.",
+      "command": "node -e \"const r = require('./training/rules_advanced.json'); let fail=0; r.rules.forEach(rule => { if(rule.confidence < 0 || rule.confidence > 1) { console.error('FAIL:', rule.id, 'confidence out of range:', rule.confidence); fail++; } if(rule.confidence < 0.70 && !rule.requires_llm) { console.error('FAIL:', rule.id, 'confidence below 0.70 but requires_llm is false'); fail++; } }); if(fail) process.exit(1); else console.log('OK: all confidence values valid');\"",
+      "pass_condition": "Zero range violations",
+      "fail_action": "Set requires_llm: true for any rule below confidence 0.70, or raise confidence if detection logic is sound"
+    },
+    {
+      "id": "val-005",
+      "name": "Duplicate detection — pattern string similarity",
+      "category": "duplicate_detection",
+      "description": "Check for rules whose pattern strings share more than 60% word overlap with another rule in the same category. Flag for human review.",
+      "command": "node -e \"const r = require('./training/rules_advanced.json'); const words = s => new Set(s.toLowerCase().split(/\\\\W+/).filter(w => w.length > 3)); const overlap = (a, b) => { const wa = words(a), wb = words(b); let shared = 0; wa.forEach(w => { if(wb.has(w)) shared++; }); return shared / Math.min(wa.size, wb.size); }; let warn=0; const rules = r.rules; for(let i=0;i<rules.length;i++) for(let j=i+1;j<rules.length;j++) { if(rules[i].category === rules[j].category) { const sim = overlap(rules[i].pattern, rules[j].pattern); if(sim > 0.6) { console.warn('WARN: possible duplicate:', rules[i].id, 'vs', rules[j].id, 'similarity:', sim.toFixed(2)); warn++; } } } if(warn) console.log(warn + ' potential duplicates flagged — review before promoting'); else console.log('OK: no high-similarity rule pairs found');\"",
+      "pass_condition": "Zero pairs with similarity > 0.8 in same category; review all > 0.6 pairs",
+      "fail_action": "Merge overlapping rules or narrow the detection logic to differentiate them clearly"
+    },
+    {
+      "id": "val-006",
+      "name": "Duplicate detection — function set overlap",
+      "category": "duplicate_detection",
+      "description": "No two rules in the same category should share ALL detection functions AND more than 2 identical conditions. Such rules are indistinguishable at runtime.",
+      "command": "node -e \"const r = require('./training/rules_advanced.json'); let fail=0; const rules = r.rules; for(let i=0;i<rules.length;i++) for(let j=i+1;j<rules.length;j++) { if(rules[i].category !== rules[j].category) continue; const fi = new Set(rules[i].detection_logic?.functions || []); const fj = new Set(rules[j].detection_logic?.functions || []); const allMatch = [...fi].every(f => fj.has(f)) && [...fj].every(f => fi.has(f)); if(!allMatch) continue; const ci = rules[i].detection_logic?.conditions || []; const cj = rules[j].detection_logic?.conditions || []; const sharedConds = ci.filter(c => cj.includes(c)); if(sharedConds.length >= 2) { console.error('FAIL: rules', rules[i].id, 'and', rules[j].id, 'share all functions and', sharedConds.length, 'conditions — may be duplicates'); fail++; } } if(fail) process.exit(1); else console.log('OK: no indistinguishable rule pairs');\"",
+      "pass_condition": "Zero fully overlapping rule pairs",
+      "fail_action": "Add distinguishing conditions or merge the rules into one with a broader pattern"
+    },
+    {
+      "id": "val-007",
+      "name": "Test coverage — every rule has at least one positive test",
+      "category": "test_coverage",
+      "description": "Every rule ID in rules_advanced.json must appear in at least one positive_cases entry in test_suite.json.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); const covered = new Set(suite.positive_cases.map(t => t.expected_rule).filter(Boolean)); let fail=0; rules.forEach(r => { if(!covered.has(r.id)) { console.error('FAIL: rule', r.id, 'has no positive test case'); fail++; } }); if(fail) process.exit(1); else console.log('OK: all rules have positive test coverage');\"",
+      "pass_condition": "Zero uncovered rules",
+      "fail_action": "Add a positive test case to test_suite.json for each uncovered rule ID"
+    },
+    {
+      "id": "val-008",
+      "name": "Test coverage — every rule has at least one negative test",
+      "category": "test_coverage",
+      "description": "Every rule ID must appear as a referenced rule in at least one negative_cases entry, confirming a similar-looking valid DAX does not trigger it.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); const negRules = new Set(suite.negative_cases.map(t => t.rule_must_not_fire).filter(Boolean)); let warn=0; rules.forEach(r => { if(!negRules.has(r.id)) { console.warn('WARN: rule', r.id, 'has no negative test — false positive risk'); warn++; } }); if(warn) console.log(warn + ' rules lack negative tests — add before promoting to high-confidence'); else console.log('OK: all rules have negative test coverage');\"",
+      "pass_condition": "Zero uncovered rules (warnings acceptable, failures are not)",
+      "fail_action": "Add a negative test for each uncovered rule, especially for safe fix_type rules"
+    },
+    {
+      "id": "val-009",
+      "name": "Test coverage — every rule has at least one edge case",
+      "category": "test_coverage",
+      "description": "Every rule ID should appear in at least one edge_cases entry to prevent false positives on boundary conditions.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); const edgeRules = new Set(suite.edge_cases.map(t => t.rule_id).filter(Boolean)); let warn=0; rules.forEach(r => { if(!edgeRules.has(r.id)) { console.warn('WARN: rule', r.id, 'has no edge case'); warn++; } }); console.log(warn + ' rules lack edge cases');\"",
+      "pass_condition": "All high-confidence (>=0.90) rules have edge cases; others are warned",
+      "fail_action": "Add edge cases for any rule with confidence >= 0.90 that lacks one"
+    },
+    {
+      "id": "val-010",
+      "name": "Rule compilation dry run",
+      "category": "compilation",
+      "description": "Simulate the rule compiler by loading all rule files, deduplicating, and generating the compiled output structure. Verify output has same rule count minus duplicates.",
+      "command": "node -e \"const adv = require('./training/rules_advanced.json').rules; const ids = new Set(); const compiled = []; adv.forEach(r => { if(!ids.has(r.id)) { ids.add(r.id); compiled.push({id: r.id, category: r.category, confidence: r.confidence, fix_type: r.fix_type, requires_llm: r.requires_llm, functions: r.detection_logic.functions}); } }); const byCategory = {}; compiled.forEach(r => { byCategory[r.category] = (byCategory[r.category]||0)+1; }); console.log('Compiled rules:', compiled.length); console.log('By category:', JSON.stringify(byCategory)); console.log('OK: compilation dry run complete');\"",
+      "pass_condition": "Compiled rule count equals input count minus exact duplicates; no errors thrown",
+      "fail_action": "Fix any rule that causes a compilation error — typically a missing required field or invalid fix_type value"
+    },
+    {
+      "id": "val-011",
+      "name": "Full test runner — positive cases",
+      "category": "test_runner",
+      "description": "For each positive test case in test_suite.json, simulate running the rule engine against the input DAX and verify the expected rule fires. Uses function-string pattern matching as a proxy for the full engine.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); let pass=0, fail=0; suite.positive_cases.forEach(tc => { const rule = rules.find(r => r.id === tc.expected_rule); if(!rule) { console.error('FAIL: test', tc.name, 'references unknown rule', tc.expected_rule); fail++; return; } const dax = (tc.input||'').toUpperCase(); const allFnsPresent = rule.detection_logic.functions.every(fn => dax.includes(fn.toUpperCase())); if(allFnsPresent) { pass++; } else { const missing = rule.detection_logic.functions.filter(fn => !dax.includes(fn.toUpperCase())); console.error('FAIL: test', tc.name, '— rule', rule.id, 'would not fire; missing functions:', missing); fail++; } }); console.log('Positive tests passed:', pass, '/ failed:', fail); if(fail > 0) process.exit(1);\"",
+      "pass_condition": "All positive test cases have all expected rule functions present in the DAX",
+      "fail_action": "Update the test case DAX to include the triggering functions, or update the rule detection logic if the test is correct"
+    },
+    {
+      "id": "val-012",
+      "name": "Full test runner — negative cases",
+      "category": "test_runner",
+      "description": "For each negative test case in test_suite.json, verify the named rule would NOT fire against the input DAX (i.e., at least one required function is absent from the input).",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); let pass=0, fail=0; suite.negative_cases.forEach(tc => { if(!tc.rule_must_not_fire) return; const rule = rules.find(r => r.id === tc.rule_must_not_fire); if(!rule) { console.warn('WARN: negative test', tc.name, 'references unknown rule', tc.rule_must_not_fire); return; } const dax = (tc.input||'').toUpperCase(); const allFnsPresent = rule.detection_logic.functions.every(fn => dax.includes(fn.toUpperCase())); if(!allFnsPresent) { pass++; } else { console.error('FAIL: negative test', tc.name, '— rule', rule.id, 'would fire but should not'); fail++; } }); console.log('Negative tests passed:', pass, '/ failed:', fail); if(fail > 0) process.exit(1);\"",
+      "pass_condition": "Zero negative test cases where the named rule would fire",
+      "fail_action": "Either narrow the rule detection conditions to exclude valid patterns, or fix the negative test to correctly not contain all rule functions"
+    },
+    {
+      "id": "val-013",
+      "name": "Browser engine parity test",
+      "category": "browser_engine",
+      "description": "Verify that every action type referenced in automation_skills.json has a corresponding handler in contentScript.js. Check: click, type, key, scroll, wait, screenshot, vision, drag, right_click, double_click.",
+      "command": "node -e \"const skills = require('./training/automation_skills.json'); const fs = require('fs'); const cs = fs.readFileSync('src/contentScript.js', 'utf8'); const actionTypes = new Set(); skills.forEach(s => s.actions.forEach(a => actionTypes.add(a.type))); const missing = []; actionTypes.forEach(t => { const patterns = {'click':'clickAtCoord\\\\|findAndActElement','type':'typeIntoField\\\\|execCommand','key':'pressKeyCombo\\\\|KeyboardEvent','scroll':'scrollPage\\\\|scrollBy','wait':'setTimeout\\\\|wait(','screenshot':'captureScreenshot\\\\|TAKE_SCREENSHOT','vision':'callVisionApi','drag':'mousemove\\\\|left_mouse','right_click':'contextmenu\\\\|right_click','double_click':'dblclick\\\\|isDouble'}; const pattern = patterns[t]; if(pattern && !new RegExp(pattern).test(cs)) { missing.push(t); console.error('FAIL: action type', t, 'has no handler in contentScript.js'); } }); if(missing.length) process.exit(1); else console.log('OK: all action types have handlers');\"",
+      "pass_condition": "All action types in automation_skills.json have corresponding code in contentScript.js",
+      "fail_action": "Implement the missing action handler in contentScript.js before the skill can be used"
+    },
+    {
+      "id": "val-014",
+      "name": "Synthetic DAX coverage — all expected rules triggered",
+      "category": "synthetic_coverage",
+      "description": "For each domain in synthetic_data_factory.json, verify that every rule in expected_rules_triggered exists in rules_advanced.json.",
+      "command": "node -e \"const factory = require('./training/synthetic_data_factory.json'); const rules = new Set(require('./training/rules_advanced.json').rules.map(r => r.id)); let fail=0; factory.domains.forEach(d => { (d.expected_rules_triggered||[]).forEach(rid => { if(!rules.has(rid)) { console.error('FAIL: domain', d.domain, 'expects rule', rid, 'which does not exist in rules_advanced.json'); fail++; } }); }); if(fail) process.exit(1); else console.log('OK: all synthetic domain rule references are valid');\"",
+      "pass_condition": "All referenced rule IDs exist in rules_advanced.json",
+      "fail_action": "Either add the missing rule to rules_advanced.json or update the domain expected_rules_triggered to reference the correct rule ID"
+    },
+    {
+      "id": "val-015",
+      "name": "False positive audit — edge cases must not trigger their named rule",
+      "category": "false_positive",
+      "description": "For each edge case in test_suite.json that has rule_must_not_fire set, run function-matching and confirm the rule would not fire.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); let pass=0, fail=0; (suite.edge_cases||[]).forEach(tc => { if(!tc.rule_must_not_fire) return; const rule = rules.find(r => r.id === tc.rule_must_not_fire); if(!rule) return; const dax = (tc.input||'').toUpperCase(); const allFnsPresent = rule.detection_logic.functions.every(fn => dax.includes(fn.toUpperCase())); if(!allFnsPresent) { pass++; } else { console.error('FAIL: edge case', tc.name, '— rule', rule.id, 'fires but should be suppressed by context'); fail++; } }); console.log('Edge case false-positive check passed:', pass, '/ failed:', fail); if(fail > 0) process.exit(1);\"",
+      "pass_condition": "Zero edge cases where rule fires but should not",
+      "fail_action": "Add a distinguishing condition to the rule detection_logic to prevent false positive on this edge case"
+    },
+    {
+      "id": "val-016",
+      "name": "Confidence adjustment after false positives",
+      "category": "false_positive",
+      "description": "For every rule that fires on a negative test case (from val-012), reduce its confidence by 0.05. If confidence drops below 0.70, set requires_llm: true automatically.",
+      "command": "node -e \"console.log('This check must be run AFTER val-012 reports failures.'); console.log('For each failing rule: reduce confidence by 0.05 in rules_advanced.json.'); console.log('If new confidence < 0.70: set requires_llm to true and remove from deterministic execution.'); console.log('Re-run val-004 and val-012 after adjustments.');\"",
+      "pass_condition": "All rules adjusted and re-validated pass val-004 and val-012",
+      "fail_action": "Apply confidence reductions and re-run the full checklist from val-001"
+    },
+    {
+      "id": "val-017",
+      "name": "Screenshot workflow test",
+      "category": "browser_workflow",
+      "description": "Verify that background.js has the TAKE_SCREENSHOT message handler and that contentScript.js calls it correctly with the captureScreenshot function.",
+      "command": "node -e \"const fs = require('fs'); const bg = fs.readFileSync('src/background.js', 'utf8'); const cs = fs.readFileSync('src/contentScript.js', 'utf8'); const checks = [['background.js has TAKE_SCREENSHOT handler', bg.includes('TAKE_SCREENSHOT')], ['background.js returns dataUrl', bg.includes('dataUrl')], ['background.js calls captureVisibleTab', bg.includes('captureVisibleTab')], ['background.js returns true for async', bg.includes('return true')], ['contentScript.js has captureScreenshot function', cs.includes('captureScreenshot')], ['contentScript.js sends TAKE_SCREENSHOT message', cs.includes(\\\"type: 'TAKE_SCREENSHOT'\\\" ) || cs.includes('TAKE_SCREENSHOT')]]; let fail=0; checks.forEach(([desc, result]) => { if(!result) { console.error('FAIL:', desc); fail++; } else console.log('OK:', desc); }); if(fail) process.exit(1);\"",
+      "pass_condition": "All 6 screenshot workflow checks pass",
+      "fail_action": "Ensure background.js has the TAKE_SCREENSHOT listener with return true, and contentScript.js uses sendMessage with type TAKE_SCREENSHOT"
+    },
+    {
+      "id": "val-018",
+      "name": "Action planner dry run",
+      "category": "browser_workflow",
+      "description": "Verify that contentScript.js has all required action planner functions: callActionPlanApi, renderActionPlan, runApprovedSteps, executeStep.",
+      "command": "node -e \"const fs = require('fs'); const cs = fs.readFileSync('src/contentScript.js', 'utf8'); const required = ['callActionPlanApi','renderActionPlan','runApprovedSteps','executeStep','callVisionApi']; let fail=0; required.forEach(fn => { if(!cs.includes(fn)) { console.error('FAIL: function', fn, 'not found in contentScript.js'); fail++; } else console.log('OK:', fn); }); if(fail) process.exit(1); else console.log('OK: all action planner functions present');\"",
+      "pass_condition": "All 5 action planner functions exist in contentScript.js",
+      "fail_action": "Implement the missing function according to the gap_analysis.json and fallback_contract.json specifications"
+    },
+    {
+      "id": "val-019",
+      "name": "Safety approval test — model-modifying steps require approval",
+      "category": "safety",
+      "description": "In the fallback_contract.json example action_plan, verify that every step with type 'type' or 'click' targeting a save/commit action has requires_approval: true.",
+      "command": "node -e \"const contract = require('./training/fallback_contract.json'); const plan = contract.example_response.action_plan; let fail=0; plan.forEach((step, i) => { const isModelModifying = step.type === 'type' || (step.type === 'click' && (step.target.includes('Commit') || step.target.includes('Save') || step.target.includes('Publish') || step.target.includes('Delete') || step.target.includes('Overwrite'))); if(isModelModifying && !step.requires_approval) { console.error('FAIL: step', i+1, '(', step.type, step.target, ') modifies the model but requires_approval is false'); fail++; } }); if(fail) process.exit(1); else console.log('OK: all model-modifying steps in example action plan require approval');\"",
+      "pass_condition": "Zero model-modifying steps without requires_approval: true",
+      "fail_action": "Set requires_approval: true on any step that types DAX, saves, or commits a measure change"
+    },
+    {
+      "id": "val-020",
+      "name": "RLS rule safety check",
+      "category": "safety",
+      "description": "All rules that detect RLS-related patterns (USERNAME, USERPRINCIPALNAME, REMOVEFILTERS on fact, ALL(fact)) must have fix_type: needs_review and requires_user_approval or requires_llm: true.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; let fail=0; const rlsKeywords = ['USERNAME','USERPRINCIPALNAME','RLS','security','REMOVEFILTERS','ALL(fact']; rules.forEach(r => { const isRLS = rlsKeywords.some(kw => (r.pattern||'').toLowerCase().includes(kw.toLowerCase()) || (r.category||'').toLowerCase().includes('rls')); if(isRLS && r.fix_type === 'safe' && !r.requires_llm) { console.error('FAIL: rule', r.id, 'is RLS-related but fix_type is safe — must be needs_review or requires_llm'); fail++; } }); if(fail) process.exit(1); else console.log('OK: all RLS-related rules are marked needs_review or requires_llm');\"",
+      "pass_condition": "Zero RLS-related rules with fix_type: safe",
+      "fail_action": "Change fix_type to needs_review and set requires_llm: true for all rules touching security filters, USERPRINCIPALNAME, or REMOVEFILTERS on fact tables"
+    },
+    {
+      "id": "val-021",
+      "name": "Manifest permissions check",
+      "category": "extension",
+      "description": "Verify manifest.json includes all required permissions for the Act tab features: activeTab, tabs, storage, scripting.",
+      "command": "node -e \"const m = require('./manifest.json'); const required = ['activeTab','tabs','storage','scripting']; let fail=0; required.forEach(p => { if(!(m.permissions||[]).includes(p)) { console.error('FAIL: manifest missing permission:', p); fail++; } else console.log('OK: permission', p); }); if(fail) process.exit(1);\"",
+      "pass_condition": "All 4 required permissions present in manifest.json",
+      "fail_action": "Add the missing permission to the permissions array in manifest.json"
+    },
+    {
+      "id": "val-022",
+      "name": "Vision prompt ID uniqueness",
+      "category": "schema",
+      "description": "All vision prompt IDs in vision_prompts.json must be unique.",
+      "command": "node -e \"const vp = require('./training/vision_prompts.json'); const ids = vp.map(v => v.id); const dupes = ids.filter((v,i) => ids.indexOf(v) !== i); if(dupes.length) { console.error('FAIL: duplicate vision prompt IDs:', dupes); process.exit(1); } else console.log('OK: all vision prompt IDs unique');\"",
+      "pass_condition": "Zero duplicate vision prompt IDs",
+      "fail_action": "Rename duplicate vision prompt IDs using the next available vision-NNN sequence"
+    },
+    {
+      "id": "val-023",
+      "name": "Automation skill ID uniqueness and action completeness",
+      "category": "schema",
+      "description": "All automation skills must have unique skill names, and each must have at least one action with a type field.",
+      "command": "node -e \"const skills = require('./training/automation_skills.json'); const names = skills.map(s => s.skill); const dupes = names.filter((v,i) => names.indexOf(v) !== i); if(dupes.length) { console.error('FAIL: duplicate skill names:', dupes); process.exit(1); } let fail=0; skills.forEach(s => { if(!s.actions || s.actions.length === 0) { console.error('FAIL: skill', s.skill, 'has no actions'); fail++; } s.actions.forEach((a,i) => { if(!a.type) { console.error('FAIL: skill', s.skill, 'action', i, 'has no type'); fail++; } }); }); if(fail) process.exit(1); else console.log('OK: all automation skills valid');\"",
+      "pass_condition": "Zero duplicate skill names; all actions have type fields",
+      "fail_action": "Add missing type fields or rename duplicate skills"
+    },
+    {
+      "id": "val-024",
+      "name": "Training loop schema check",
+      "category": "schema",
+      "description": "Verify training_loop.json has all required top-level keys: training_loop (array), failure_capture_schema (object), coverage_metrics (array), promotion_criteria (array), fallback_criteria (array).",
+      "command": "node -e \"const tl = require('./training/training_loop.json'); const required = ['training_loop','failure_capture_schema','coverage_metrics','promotion_criteria','fallback_criteria']; let fail=0; required.forEach(k => { if(!tl[k]) { console.error('FAIL: training_loop.json missing key:', k); fail++; } else console.log('OK:', k); }); if(fail) process.exit(1);\"",
+      "pass_condition": "All 5 required keys present",
+      "fail_action": "Add the missing key to training_loop.json"
+    },
+    {
+      "id": "val-025",
+      "name": "Coverage summary report",
+      "category": "coverage",
+      "description": "Generate a summary coverage report: total rules, rules with positive tests, rules with negative tests, rules with edge cases, requires_llm count, safe count, needs_review count.",
+      "command": "node -e \"const rules = require('./training/rules_advanced.json').rules; const suite = require('./training/test_suite.json'); const positiveRules = new Set(suite.positive_cases.map(t => t.expected_rule).filter(Boolean)); const negRules = new Set(suite.negative_cases.map(t => t.rule_must_not_fire).filter(Boolean)); const edgeRules = new Set((suite.edge_cases||[]).map(t => t.rule_id).filter(Boolean)); const total = rules.length; const withPos = rules.filter(r => positiveRules.has(r.id)).length; const withNeg = rules.filter(r => negRules.has(r.id)).length; const withEdge = rules.filter(r => edgeRules.has(r.id)).length; const llm = rules.filter(r => r.requires_llm).length; const safe = rules.filter(r => r.fix_type === 'safe').length; const review = rules.filter(r => r.fix_type === 'needs_review').length; const avgConf = (rules.reduce((s,r) => s + r.confidence, 0) / total).toFixed(3); console.log('--- Coverage Report ---'); console.log('Total rules:', total); console.log('With positive test:', withPos, '(' + (withPos/total*100).toFixed(1) + '%)'); console.log('With negative test:', withNeg, '(' + (withNeg/total*100).toFixed(1) + '%)'); console.log('With edge case:', withEdge, '(' + (withEdge/total*100).toFixed(1) + '%)'); console.log('Requires LLM:', llm); console.log('Safe fix:', safe); console.log('Needs review:', review); console.log('Avg confidence:', avgConf);\"",
+      "pass_condition": "Report generated successfully; positive test coverage >= 80%; zero rules without fix_type",
+      "fail_action": "Add missing tests or fix rules with undefined fix_type"
+    }
+  ],
+  "run_order": [
+    "val-001 — JSON validity (gate: all other checks depend on this)",
+    "val-002, val-003, val-004 — rule schema and field checks",
+    "val-005, val-006 — duplicate detection",
+    "val-007, val-008, val-009 — test coverage checks",
+    "val-010 — compilation dry run",
+    "val-011, val-012 — positive and negative test runner",
+    "val-013 — browser engine parity",
+    "val-014 — synthetic DAX coverage",
+    "val-015, val-016 — false positive audit and confidence adjustment",
+    "val-017, val-018 — screenshot and action planner workflow",
+    "val-019, val-020 — safety approval and RLS checks",
+    "val-021, val-022, val-023, val-024 — extension manifest and schema checks",
+    "val-025 — coverage summary report (always last)"
+  ],
+  "pass_threshold": {
+    "blocking": ["val-001", "val-002", "val-003", "val-011", "val-012", "val-019", "val-020", "val-021"],
+    "warning_only": ["val-008", "val-009", "val-016"],
+    "note": "Blocking checks must all pass before merging to main. Warning-only checks should be resolved within 2 sprint cycles."
+  }
+}

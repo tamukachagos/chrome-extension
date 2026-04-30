@@ -1,0 +1,449 @@
+[
+  {
+    "skill": "capture_screenshot",
+    "intent": "Capture the current visible state of the Power BI report page",
+    "preconditions": ["Extension panel is open", "User is on app.powerbi.com"],
+    "selectors_or_detection": ["chrome.tabs.captureVisibleTab available", "TAKE_SCREENSHOT message channel ready"],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Capture current report state for vision analysis or action planning", "requires_approval": false }
+    ],
+    "success_detection": ["response.dataUrl starts with data:image/png;base64"],
+    "failure_detection": ["chrome.runtime.lastError is set", "response.error is non-null"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "analyze_screenshot_with_vision",
+    "intent": "Send a captured screenshot to Claude via the proxy endpoint for visual analysis",
+    "preconditions": ["state.lastScreenshot is not null", "fallback endpoint is configured and enabled"],
+    "selectors_or_detection": ["state.settings.fallbackEndpoint is set", "state.settings.fallbackEnabled is true"],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Capture latest state before sending", "requires_approval": false },
+      { "type": "vision", "target": "fallback_endpoint", "value": "{prompt}", "reason": "Send screenshot + prompt to Claude for analysis", "requires_approval": false }
+    ],
+    "success_detection": ["response.text or response.content is non-empty string"],
+    "failure_detection": ["HTTP status != 200", "response.error is set", "response body has no text field"],
+    "risk_level": "low",
+    "requires_llm": true
+  },
+  {
+    "skill": "inspect_selected_visual",
+    "intent": "Capture screenshot and extract information about the currently selected visual",
+    "preconditions": ["A visual is selected in edit mode", "Format pane is visible"],
+    "selectors_or_detection": [
+      "[aria-label*='Visualization']",
+      "[class*='visualContainer selected']",
+      "[class*='visual-sandbox selected']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Capture current visual selection state", "requires_approval": false },
+      { "type": "vision", "target": "fallback_endpoint", "value": "Identify the selected visual type, its field wells (axis, values, legend, tooltips), and any visible formatting. Return JSON: {visual_type, fields, formatting_notes}", "reason": "Extract visual metadata from screenshot", "requires_approval": false }
+    ],
+    "success_detection": ["Vision response contains visual_type field"],
+    "failure_detection": ["No visual appears selected in screenshot", "Vision response is empty"],
+    "risk_level": "low",
+    "requires_llm": true
+  },
+  {
+    "skill": "detect_loading_spinner",
+    "intent": "Detect whether Power BI is currently loading and wait until it stops",
+    "preconditions": ["Content script is injected on app.powerbi.com"],
+    "selectors_or_detection": [
+      "[class*='loadingIndicator']",
+      "[class*='spinner']",
+      "[aria-label='Loading']",
+      "[class*='progress-ring']",
+      "[class*='loading-overlay']"
+    ],
+    "actions": [
+      { "type": "wait", "target": "loading_selector", "value": "500", "reason": "Poll for spinner disappearance every 500ms", "requires_approval": false },
+      { "type": "wait", "target": "dom_stable", "value": "200", "reason": "Extra buffer after spinner clears for DOM to settle", "requires_approval": false }
+    ],
+    "success_detection": ["No element matching loading selectors is visible in the DOM"],
+    "failure_detection": ["Spinner persists after 10000ms — report may have a data error"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "detect_visual_error_state",
+    "intent": "Detect if any visual is showing an error message or broken state",
+    "preconditions": ["Report page is loaded"],
+    "selectors_or_detection": [
+      "[class*='visual-error']",
+      "[aria-label*='Something went wrong']",
+      "[class*='errorMessage']",
+      "text content matching 'Can't display the visual'",
+      "text content matching 'Data load error'"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Capture error state for vision analysis", "requires_approval": false },
+      { "type": "vision", "target": "fallback_endpoint", "value": "Look for any Power BI visual error messages in this screenshot. Return JSON: {has_errors: bool, errors: [{visual_position, error_text, likely_cause}]}", "reason": "Identify which visuals have errors and why", "requires_approval": false }
+    ],
+    "success_detection": ["No error elements found in DOM AND vision confirms no errors"],
+    "failure_detection": ["Error selector matches at least one element"],
+    "risk_level": "low",
+    "requires_llm": true
+  },
+  {
+    "skill": "open_new_measure",
+    "intent": "Open the DAX measure editor to create a new measure",
+    "preconditions": ["User is in report edit mode", "A table is selected or active in the model"],
+    "selectors_or_detection": [
+      "[aria-label='New measure']",
+      "[aria-label='New quick measure']",
+      "[title='New measure']",
+      "button:contains('New measure')"
+    ],
+    "actions": [
+      { "type": "click", "target": "[aria-label='New measure']", "value": "", "reason": "Open the DAX measure editor", "requires_approval": false },
+      { "type": "wait", "target": "dax_editor", "value": "600", "reason": "Wait for Monaco editor to initialize", "requires_approval": false }
+    ],
+    "success_detection": ["[class*='monaco-editor'] or [contenteditable='true'] becomes visible"],
+    "failure_detection": ["No editor appears after 3000ms — user may not be in edit mode"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "paste_dax_into_measure_editor",
+    "intent": "Insert a generated DAX expression into the Power BI measure editor",
+    "preconditions": ["Measure editor is open", "Monaco editor or contenteditable DAX field is focused"],
+    "selectors_or_detection": [
+      "[class*='monaco-editor']",
+      "[contenteditable='true']",
+      "[aria-label*='DAX']",
+      "[class*='formula-bar']"
+    ],
+    "actions": [
+      { "type": "click", "target": "[class*='monaco-editor']", "value": "", "reason": "Focus the DAX editor", "requires_approval": false },
+      { "type": "key", "target": "editor", "value": "Ctrl+A", "reason": "Select all existing content", "requires_approval": false },
+      { "type": "type", "target": "editor", "value": "{dax_expression}", "reason": "Type or paste the DAX expression", "requires_approval": true },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify DAX was entered correctly before saving", "requires_approval": false }
+    ],
+    "success_detection": ["Editor contains the expected DAX text", "No red squiggles visible in screenshot"],
+    "failure_detection": ["Editor is empty after typing", "Red error underline visible in Monaco editor"],
+    "risk_level": "medium",
+    "requires_llm": false
+  },
+  {
+    "skill": "save_measure",
+    "intent": "Commit the measure in the DAX editor by clicking the checkmark or pressing Enter",
+    "preconditions": ["DAX editor is open with content", "No syntax errors visible"],
+    "selectors_or_detection": [
+      "[aria-label='Commit']",
+      "[aria-label='Apply']",
+      "[class*='commitButton']",
+      "[class*='checkmark']",
+      "button[title='Apply']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify measure content before saving", "requires_approval": false },
+      { "type": "click", "target": "[aria-label='Commit']", "value": "", "reason": "Click checkmark to save measure", "requires_approval": true },
+      { "type": "wait", "target": "dom_stable", "value": "800", "reason": "Wait for measure to be registered in the model", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify measure appears in field list", "requires_approval": false }
+    ],
+    "success_detection": ["Measure name appears in Fields pane", "Editor closes or clears"],
+    "failure_detection": ["Error message visible in editor", "Editor remains open with red indicators"],
+    "risk_level": "medium",
+    "requires_llm": false
+  },
+  {
+    "skill": "deploy_generated_dax",
+    "intent": "Full end-to-end workflow: open measure editor, paste DAX, verify, and save",
+    "preconditions": ["User is in report edit mode", "Generated DAX expression is available", "User has approved the DAX content"],
+    "selectors_or_detection": ["[aria-label='New measure']", "[class*='monaco-editor']", "[aria-label='Commit']"],
+    "actions": [
+      { "type": "click", "target": "[aria-label='New measure']", "value": "", "reason": "Open measure editor", "requires_approval": false },
+      { "type": "wait", "target": "editor_ready", "value": "600", "reason": "Wait for editor to initialize", "requires_approval": false },
+      { "type": "key", "target": "editor", "value": "Ctrl+A", "reason": "Select all", "requires_approval": false },
+      { "type": "type", "target": "editor", "value": "{dax_expression}", "reason": "Enter the approved DAX expression", "requires_approval": true },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify before saving", "requires_approval": false },
+      { "type": "click", "target": "[aria-label='Commit']", "value": "", "reason": "Save the measure", "requires_approval": true },
+      { "type": "wait", "target": "dom_stable", "value": "1000", "reason": "Wait for model update", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Confirm measure is saved", "requires_approval": false }
+    ],
+    "success_detection": ["Measure appears in Fields pane", "No error state visible"],
+    "failure_detection": ["Editor shows red squiggles", "Save button remains active after click"],
+    "risk_level": "high",
+    "requires_llm": false
+  },
+  {
+    "skill": "open_fields_pane",
+    "intent": "Open or reveal the Fields/Data pane in Power BI edit mode",
+    "preconditions": ["User is in edit mode"],
+    "selectors_or_detection": [
+      "[aria-label='Fields']",
+      "[aria-label='Data pane']",
+      "[aria-label='Show data pane']",
+      "[title='Fields']"
+    ],
+    "actions": [
+      { "type": "click", "target": "[aria-label='Fields']", "value": "", "reason": "Open the Fields pane", "requires_approval": false },
+      { "type": "wait", "target": "pane_visible", "value": "400", "reason": "Wait for pane to render", "requires_approval": false }
+    ],
+    "success_detection": ["Fields pane element is visible and has child table entries"],
+    "failure_detection": ["No table list visible after 2000ms"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "open_format_pane",
+    "intent": "Open the Format/Visualizations pane for the selected visual",
+    "preconditions": ["A visual is selected", "User is in edit mode"],
+    "selectors_or_detection": [
+      "[aria-label='Format your visuals']",
+      "[aria-label='Format visual']",
+      "[aria-label='Format']",
+      "[title='Format']"
+    ],
+    "actions": [
+      { "type": "click", "target": "[aria-label='Format your visuals']", "value": "", "reason": "Open Format pane", "requires_approval": false },
+      { "type": "wait", "target": "pane_visible", "value": "400", "reason": "Wait for format options to render", "requires_approval": false }
+    ],
+    "success_detection": ["Format pane sections visible: General, Visual, Title, Background"],
+    "failure_detection": ["No format sections visible after 2000ms"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "switch_report_page",
+    "intent": "Navigate to a specific report page by its tab label",
+    "preconditions": ["Report has multiple pages", "Target page name is known"],
+    "selectors_or_detection": [
+      "[role='tab'][aria-label*='{page_name}']",
+      "[class*='reportPageTabs'] [title*='{page_name}']",
+      "button[aria-label='{page_name}']"
+    ],
+    "actions": [
+      { "type": "click", "target": "[role='tab'][aria-label*='{page_name}']", "value": "", "reason": "Click the target page tab", "requires_approval": false },
+      { "type": "wait", "target": "loading_cleared", "value": "800", "reason": "Wait for page visuals to load", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify page has loaded", "requires_approval": false }
+    ],
+    "success_detection": ["Page tab aria-selected becomes true", "No loading spinner visible"],
+    "failure_detection": ["Target page tab not found", "Loading spinner persists after 5000ms"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "select_visual_by_label",
+    "intent": "Click on a specific visual in the report canvas by its title or aria-label",
+    "preconditions": ["Report is in edit mode", "Visual title is known"],
+    "selectors_or_detection": [
+      "[aria-label*='{visual_title}']",
+      "[class*='visualContainer'] [title*='{visual_title}']",
+      "[class*='visual-title']:contains('{visual_title}')"
+    ],
+    "actions": [
+      { "type": "click", "target": "[aria-label*='{visual_title}']", "value": "", "reason": "Select the visual", "requires_approval": false },
+      { "type": "wait", "target": "selection_state", "value": "300", "reason": "Wait for Format pane to update to selected visual", "requires_approval": false }
+    ],
+    "success_detection": ["Visual element has 'selected' class or border", "Format pane shows options for selected visual type"],
+    "failure_detection": ["No element matched the visual title"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "select_visual_by_coordinates",
+    "intent": "Click on a specific screen coordinate to select a visual on the report canvas",
+    "preconditions": ["Coordinates have been determined from a screenshot or user input"],
+    "selectors_or_detection": ["document.elementFromPoint(x, y)"],
+    "actions": [
+      { "type": "click", "target": "coordinate:{x},{y}", "value": "", "reason": "Click at the visual's canvas position", "requires_approval": false },
+      { "type": "wait", "target": "selection_state", "value": "300", "reason": "Wait for selection to register", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify correct visual was selected", "requires_approval": false }
+    ],
+    "success_detection": ["Screenshot shows selection handles around the target visual"],
+    "failure_detection": ["Screenshot shows no selection change", "Wrong visual selected"],
+    "risk_level": "low",
+    "requires_llm": true
+  },
+  {
+    "skill": "right_click_visual_and_select_menu_item",
+    "intent": "Right-click a visual and choose an item from the Power BI context menu",
+    "preconditions": ["Visual is visible and accessible", "Context menu item label is known"],
+    "selectors_or_detection": [
+      "[aria-label*='{visual_title}']",
+      "[class*='contextMenu']",
+      "[role='menuitem'][aria-label*='{menu_item}']"
+    ],
+    "actions": [
+      { "type": "right_click", "target": "[aria-label*='{visual_title}']", "value": "", "reason": "Open right-click context menu", "requires_approval": false },
+      { "type": "wait", "target": "context_menu_visible", "value": "300", "reason": "Wait for menu to render", "requires_approval": false },
+      { "type": "click", "target": "[role='menuitem'][aria-label*='{menu_item}']", "value": "", "reason": "Select the menu item", "requires_approval": true }
+    ],
+    "success_detection": ["Context menu closes after click", "Expected state change occurs"],
+    "failure_detection": ["Context menu does not appear", "Menu item not found"],
+    "risk_level": "medium",
+    "requires_llm": false
+  },
+  {
+    "skill": "drag_visual",
+    "intent": "Drag a visual to a new position on the report canvas",
+    "preconditions": ["Visual is selected", "Target position is known as screen coordinates"],
+    "selectors_or_detection": [
+      "[class*='visualContainer selected']",
+      "[class*='visual-sandbox selected']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Record position before drag", "requires_approval": false },
+      { "type": "drag", "target": "coordinate:{start_x},{start_y}", "value": "{end_x},{end_y}", "reason": "Drag visual to new position", "requires_approval": true },
+      { "type": "wait", "target": "dom_stable", "value": "500", "reason": "Wait for position to update", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify new position", "requires_approval": false }
+    ],
+    "success_detection": ["Visual bounding rect changed to target area"],
+    "failure_detection": ["Visual position unchanged after drag"],
+    "risk_level": "medium",
+    "requires_llm": true
+  },
+  {
+    "skill": "resize_visual",
+    "intent": "Resize a visual by dragging its resize handle",
+    "preconditions": ["Visual is selected", "Resize handle is visible", "Target dimensions are known"],
+    "selectors_or_detection": [
+      "[class*='resizeHandle']",
+      "[class*='visual-resize-handle']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Record current size before resize", "requires_approval": false },
+      { "type": "drag", "target": "resize_handle:{corner}", "value": "{delta_x},{delta_y}", "reason": "Drag resize handle to target size", "requires_approval": true },
+      { "type": "wait", "target": "dom_stable", "value": "400", "reason": "Wait for resize to complete", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify new size", "requires_approval": false }
+    ],
+    "success_detection": ["Visual bounding rect matches target dimensions"],
+    "failure_detection": ["Visual size unchanged after drag"],
+    "risk_level": "medium",
+    "requires_llm": true
+  },
+  {
+    "skill": "scroll_fields_pane",
+    "intent": "Scroll the Fields pane to reveal hidden tables or measures",
+    "preconditions": ["Fields pane is open and visible"],
+    "selectors_or_detection": [
+      "[class*='fieldList']",
+      "[class*='dataPane']",
+      "[aria-label='Fields']"
+    ],
+    "actions": [
+      { "type": "scroll", "target": "[class*='fieldList']", "value": "down:300", "reason": "Scroll down to reveal more tables", "requires_approval": false }
+    ],
+    "success_detection": ["Previously hidden table entries are now visible in the DOM"],
+    "failure_detection": ["Scroll position unchanged", "No new elements appear"],
+    "risk_level": "low",
+    "requires_llm": false
+  },
+  {
+    "skill": "detect_filters_slicers",
+    "intent": "Read which filters and slicers are currently active on the report page",
+    "preconditions": ["Report page is loaded"],
+    "selectors_or_detection": [
+      "[class*='slicer']",
+      "[class*='filter-card']",
+      "[aria-label*='filter']",
+      "[class*='filterPane']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Capture filter state", "requires_approval": false },
+      { "type": "vision", "target": "fallback_endpoint", "value": "Identify all visible slicers and filter cards in this Power BI screenshot. Return JSON: {slicers: [{label, selected_values}], filter_pane_filters: [{field, operator, value}]}", "reason": "Extract filter context from screenshot", "requires_approval": false }
+    ],
+    "success_detection": ["Vision response contains slicers and filter_pane_filters arrays"],
+    "failure_detection": ["No slicer elements found in DOM and vision returns empty arrays"],
+    "risk_level": "low",
+    "requires_llm": true
+  },
+  {
+    "skill": "read_field_wells",
+    "intent": "Read the current field assignments in the Visualizations pane field wells",
+    "preconditions": ["A visual is selected", "Visualizations pane is open and showing Build tab"],
+    "selectors_or_detection": [
+      "[class*='fieldWell']",
+      "[class*='bucket']",
+      "[aria-label*='Axis']",
+      "[aria-label*='Values']",
+      "[aria-label*='Legend']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Capture field wells state", "requires_approval": false },
+      { "type": "vision", "target": "fallback_endpoint", "value": "Read the field wells in the Power BI Visualizations pane visible in this screenshot. Return JSON: {visual_type, axis: [], values: [], legend: [], tooltips: [], details: [], small_multiples: []}", "reason": "Extract field well assignments", "requires_approval": false }
+    ],
+    "success_detection": ["Vision response contains visual_type and at least one populated well array"],
+    "failure_detection": ["No field well elements found in DOM"],
+    "risk_level": "low",
+    "requires_llm": true
+  },
+  {
+    "skill": "create_visual",
+    "intent": "Add a new visual to the report canvas by clicking the visual type in the Visualizations pane",
+    "preconditions": ["Report is in edit mode", "Visualizations pane is visible", "Visual type is known"],
+    "selectors_or_detection": [
+      "[aria-label='{visual_type} chart']",
+      "[title='{visual_type}']",
+      "[class*='visualIcon'][aria-label*='{visual_type}']"
+    ],
+    "actions": [
+      { "type": "click", "target": "[aria-label='{visual_type} chart']", "value": "", "reason": "Insert the visual type onto the canvas", "requires_approval": true },
+      { "type": "wait", "target": "visual_created", "value": "600", "reason": "Wait for visual placeholder to appear", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify visual was added", "requires_approval": false }
+    ],
+    "success_detection": ["New visual placeholder visible on canvas"],
+    "failure_detection": ["Canvas unchanged after click"],
+    "risk_level": "medium",
+    "requires_llm": false
+  },
+  {
+    "skill": "change_chart_type",
+    "intent": "Change the chart type of the currently selected visual",
+    "preconditions": ["A visual is selected", "Visualizations pane is open", "Target chart type is known"],
+    "selectors_or_detection": [
+      "[aria-label='{target_chart_type} chart']",
+      "[class*='visualIcon'][aria-label*='{target_chart_type}']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Record current chart type", "requires_approval": false },
+      { "type": "click", "target": "[aria-label='{target_chart_type} chart']", "value": "", "reason": "Switch to target chart type", "requires_approval": true },
+      { "type": "wait", "target": "visual_updated", "value": "500", "reason": "Wait for visual to re-render", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify chart type changed", "requires_approval": false }
+    ],
+    "success_detection": ["Visual renders with new chart type", "Visualizations pane shows new type as active"],
+    "failure_detection": ["Visual type unchanged in screenshot"],
+    "risk_level": "medium",
+    "requires_llm": false
+  },
+  {
+    "skill": "add_field_to_visual",
+    "intent": "Drag a field from the Fields pane into a specific field well of the selected visual",
+    "preconditions": ["A visual is selected", "Target field is visible in Fields pane", "Target well is known (axis, values, legend)"],
+    "selectors_or_detection": [
+      "[class*='fieldItem'][aria-label*='{field_name}']",
+      "[class*='bucket'][aria-label*='{well_name}']"
+    ],
+    "actions": [
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Record state before adding field", "requires_approval": false },
+      { "type": "drag", "target": "[aria-label*='{field_name}']", "value": "[aria-label*='{well_name}']", "reason": "Drag field into the target well", "requires_approval": true },
+      { "type": "wait", "target": "visual_updated", "value": "700", "reason": "Wait for visual to render with new field", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify field was added to well", "requires_approval": false }
+    ],
+    "success_detection": ["Field name appears in the target well in the Visualizations pane"],
+    "failure_detection": ["Well unchanged after drag"],
+    "risk_level": "medium",
+    "requires_llm": false
+  },
+  {
+    "skill": "wait_for_ui_to_stabilize",
+    "intent": "Wait until the Power BI UI stops loading and all visuals have rendered",
+    "preconditions": ["A navigation or data change has been triggered"],
+    "selectors_or_detection": [
+      "[class*='loadingIndicator']",
+      "[class*='spinner']",
+      "[aria-busy='true']",
+      "[class*='progress-ring']"
+    ],
+    "actions": [
+      { "type": "wait", "target": "spinner_gone", "value": "500", "reason": "Initial buffer after action", "requires_approval": false },
+      { "type": "wait", "target": "dom_mutation_settled", "value": "300", "reason": "Wait for DOM mutations to cease", "requires_approval": false },
+      { "type": "screenshot", "target": "visible_tab", "value": "", "reason": "Verify stable UI state", "requires_approval": false }
+    ],
+    "success_detection": ["No spinner elements visible", "No aria-busy=true attributes", "Screenshot is stable across two captures"],
+    "failure_detection": ["Spinner still visible after 8000ms — possible data error or slow query"],
+    "risk_level": "low",
+    "requires_llm": false
+  }
+]

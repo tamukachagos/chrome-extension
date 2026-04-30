@@ -1,0 +1,206 @@
+{
+  "implemented": [
+    "Screenshot capture via chrome.tabs.captureVisibleTab()",
+    "Screenshot preview in extension panel",
+    "Vision analysis prompt templates and send-to-proxy flow",
+    "Action planner with step approval UI",
+    "Label-based click with fuzzy scoring",
+    "Coordinate-based left/right/double-click via document.elementFromPoint()",
+    "Type into React inputs using native value setter",
+    "Type into Monaco contenteditable DAX editor",
+    "Keyboard shortcut dispatch with modifier keys",
+    "Page scroll by direction and amount",
+    "Right-click and double-click via MouseEvent dispatch",
+    "DOM scanner for interactive elements (all and Power BI only modes)",
+    "Per-row click buttons in DOM scanner results",
+    "Action log with timestamp, type, target, result (60 entries)",
+    "Power BI shortcuts: Format pane, Fields list, New measure, Save measure, Refresh, Select all",
+    "Deterministic skill engine with 9 skills and 107 rules",
+    "DAX measure generator with 16 patterns",
+    "DAX reviewer with rule-based pattern matching",
+    "Visual recommender and report page designer",
+    "Model reviewer and relationship checklist",
+    "Training knowledge base in chrome.storage.local",
+    "Anthropic API fallback via configurable proxy endpoint",
+    "Wait action in action plan steps",
+    "Screenshot before/after in action plan execution",
+    "Approval mode for individual action plan steps"
+  ],
+  "partially_implemented": [
+    {
+      "feature": "Loading state detection",
+      "status": "Partially implemented via fixed wait_ms in action plan steps",
+      "gap": "No automatic MutationObserver watching for Power BI spinner elements — fixed delays may be too short or too long"
+    },
+    {
+      "feature": "Error state detection",
+      "status": "Vision AI can detect errors from screenshots",
+      "gap": "No automatic DOM polling for [class*='visual-error'] or [aria-label*='Something went wrong'] before proceeding with next step"
+    },
+    {
+      "feature": "DAX deploy workflow",
+      "status": "Individual buttons exist for New measure, Type, Save",
+      "gap": "No single 'Deploy DAX' button that chains all steps with proper waits and verification"
+    },
+    {
+      "feature": "Drag and drop",
+      "status": "Drag action included in automation skill schema",
+      "gap": "Not implemented in contentScript.js executor — left_mouse_down + mousemove + left_mouse_up sequence not coded"
+    },
+    {
+      "feature": "Page navigation",
+      "status": "Generic click can click page tabs if label matches exactly",
+      "gap": "No dedicated page list UI in panel, no auto-discovery of available pages"
+    },
+    {
+      "feature": "Selected visual inspector",
+      "status": "Vision AI can analyze selected visual from screenshot",
+      "gap": "No DOM-based extraction of selected visual's field wells without screenshot"
+    },
+    {
+      "feature": "Field well reader",
+      "status": "Vision AI prompt exists for field well detection",
+      "gap": "No DOM-based field well reader; depends entirely on screenshot + vision"
+    }
+  ],
+  "missing_priority_1": [
+    {
+      "feature": "Proxy server / backend",
+      "description": "No proxy exists in the repo. Vision AI and action planner silently fail without it. Extension posts to localhost:8787/fallback with no server running.",
+      "impact": "All AI-powered Act tab features are non-functional without a proxy",
+      "build_effort": "2-4 hours: Node/Cloudflare Worker that receives extension JSON, calls Anthropic API with image blocks for vision requests, returns {text: string}"
+    },
+    {
+      "feature": "Automatic loading state detection",
+      "description": "MutationObserver watching for Power BI spinner elements. Expose waitForStable() function that action plan executor calls between every step.",
+      "impact": "Without this, action plans fail on slow reports — steps fire before previous action has rendered",
+      "build_effort": "2-3 hours in contentScript.js"
+    },
+    {
+      "feature": "Drag and drop action executor",
+      "description": "Implement left_mouse_down + mousemove sequence + left_mouse_up in contentScript.js to enable drag operations for moving/resizing visuals and dragging fields into wells",
+      "impact": "Cannot automate field-to-well assignment or visual repositioning without drag",
+      "build_effort": "3-4 hours including cross-browser event dispatch"
+    },
+    {
+      "feature": "Single 'Deploy DAX' button",
+      "description": "Chained workflow button: New measure click → wait for editor → select all → type DAX → screenshot to verify → user approves → save → wait → screenshot to confirm",
+      "impact": "The most common use case requires 8 separate manual steps across two tabs",
+      "build_effort": "2 hours in contentScript.js"
+    },
+    {
+      "feature": "Undo / safety checkpoint",
+      "description": "Before any model-modifying action, capture screenshot + current DOM state. After action, allow rollback by re-opening editor and restoring previous DAX from state.lastDeployedDax",
+      "impact": "No recovery path if a deployed measure breaks a visual",
+      "build_effort": "3-4 hours"
+    }
+  ],
+  "missing_priority_2": [
+    {
+      "feature": "Report page navigator",
+      "description": "Auto-discover page tabs from the DOM, show list in Act tab, one-click page switching",
+      "impact": "Users must manually click page tabs or know exact tab label for generic click",
+      "build_effort": "1-2 hours"
+    },
+    {
+      "feature": "Visual error auto-detection",
+      "description": "Automatic DOM poll for error selectors before and after each action plan step. Abort and report if an error state appears.",
+      "impact": "Action plans proceed even when a visual breaks mid-sequence",
+      "build_effort": "2 hours"
+    },
+    {
+      "feature": "DOM-based field well reader",
+      "description": "Scan [class*='fieldWell'] and [class*='bucket'] elements to extract field names without a screenshot. More reliable and faster than vision.",
+      "impact": "Field well reading requires vision AI call today, adds latency and proxy dependency",
+      "build_effort": "2-3 hours"
+    },
+    {
+      "feature": "Cross-session action log persistence",
+      "description": "Save actLog to chrome.storage.local. Persist last action plan. Persist last deployed DAX.",
+      "impact": "Page refresh wipes the action log and plan — no audit trail",
+      "build_effort": "1 hour"
+    },
+    {
+      "feature": "Browser notifications",
+      "description": "Add 'notifications' permission to manifest. Fire chrome.notifications.create() when action plan completes or errors.",
+      "impact": "Users must watch the panel during long action plan execution",
+      "build_effort": "1 hour"
+    },
+    {
+      "feature": "Filter state DOM reader",
+      "description": "Scan [class*='slicer'] and [class*='filter-card'] to read active filter values without a screenshot",
+      "impact": "Filter context detection relies on vision AI, adds latency",
+      "build_effort": "2-3 hours"
+    }
+  ],
+  "missing_priority_3": [
+    {
+      "feature": "Power BI REST API backend",
+      "description": "Proxy endpoints to list workspaces, reports, and datasets using Power BI REST API with OAuth token",
+      "impact": "Cannot enumerate reports or navigate to a workspace without user manually browsing",
+      "build_effort": "8-16 hours including OAuth flow"
+    },
+    {
+      "feature": "XMLA / TMDL measure writer",
+      "description": "Write measures directly to the semantic model using XMLA endpoint or TMDL via REST API, bypassing the UI entirely",
+      "impact": "UI-based measure creation is fragile; XMLA is the production-grade approach",
+      "build_effort": "16-24 hours including auth, error handling, and rollback"
+    },
+    {
+      "feature": "DAX query validator",
+      "description": "Run a DAX EVALUATE query against the semantic model via XMLA or Analyze in Excel endpoint to validate measure results before deployment",
+      "impact": "Cannot verify measure correctness without opening DAX Studio externally",
+      "build_effort": "8-12 hours"
+    },
+    {
+      "feature": "Version / history store",
+      "description": "Before/after screenshots, DAX before/after diff, timestamp, and author stored per deployment in chrome.storage.local or a backend",
+      "impact": "No audit trail for measure changes made through the extension",
+      "build_effort": "4-6 hours"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "Power BI Web DOM selectors change with product updates",
+      "severity": "high",
+      "mitigation": "Use aria-label and role selectors instead of class names. Maintain a selector fallback list per action. Add automated selector validation tests."
+    },
+    {
+      "risk": "Vision AI returns hallucinated field names or incorrect visual type",
+      "severity": "medium",
+      "mitigation": "Cross-reference vision output with DOM-based element scan. Always require user approval before acting on vision-derived action plans."
+    },
+    {
+      "risk": "Action plan executing without user reviewing each step",
+      "severity": "high",
+      "mitigation": "Every step that modifies the model has requires_approval true. Run-all only executes approved steps. Screenshot before and after every model change."
+    },
+    {
+      "risk": "Proxy endpoint storing or logging sensitive report data",
+      "severity": "high",
+      "mitigation": "Proxy should be user-hosted. Screenshots sent to proxy contain report data and should never be logged to disk or third-party services."
+    },
+    {
+      "risk": "RLS bypass if ALL(FactTable) is deployed without review",
+      "severity": "critical",
+      "mitigation": "Rules adv-perf-038 and adv-model-075 flag these patterns with fix_type needs_review and requires_user_approval true in the fallback contract."
+    },
+    {
+      "risk": "contentScript.js grows too large for a single file",
+      "severity": "low",
+      "mitigation": "Split into contentScript.js (UI + event binding), actExecutor.js (action execution), and actPlanner.js (vision + planner calls). Load all in manifest content_scripts."
+    }
+  ],
+  "recommended_build_order": [
+    "1. Build and deploy the proxy server — without it, 80% of Act tab features are non-functional",
+    "2. Implement waitForStable() with MutationObserver for loading detection",
+    "3. Implement the Deploy DAX single-button workflow",
+    "4. Implement drag-and-drop action executor (mousedown + mousemove + mouseup)",
+    "5. Add cross-session persistence for actLog and last plan to chrome.storage.local",
+    "6. Add browser notifications permission and completion alerts",
+    "7. Implement report page navigator in the Act tab",
+    "8. Implement DOM-based field well reader",
+    "9. Implement undo/checkpoint for model-modifying actions",
+    "10. Implement Power BI REST API workspace/report enumeration in the proxy"
+  ]
+}
