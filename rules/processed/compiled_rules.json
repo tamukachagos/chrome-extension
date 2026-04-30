@@ -1,0 +1,958 @@
+[
+  {
+    "pattern": "Missing aggregation in measure",
+    "bad_dax": "Revenue = Sales[Amount]",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "artifact_type_measure",
+        "raw_column_reference_returned",
+        "has_aggregation_false"
+      ],
+      "context": "measure_definition"
+    },
+    "fixed_dax": "Revenue = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using ALL removes required filters",
+    "bad_dax": "Total Sales = CALCULATE(SUM(Sales[Amount]), ALL(Sales))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "ALL"
+      ],
+      "conditions": [
+        "all_scope_fact_table",
+        "measure_context_unexpected_total"
+      ],
+      "context": "total_measure"
+    },
+    "fixed_dax": "Total Sales = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "VALUES used where scalar expected",
+    "bad_dax": "Selected Product = VALUES(Product[Name])",
+    "detection_logic": {
+      "functions": [
+        "VALUES"
+      ],
+      "conditions": [
+        "scalar_required",
+        "multi_value_table_function_returned"
+      ],
+      "context": "selected_label_measure"
+    },
+    "fixed_dax": "Selected Product = SELECTEDVALUE(Product[Name])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "COUNT used on table instead of COUNTROWS",
+    "bad_dax": "Orders = COUNT(Sales)",
+    "detection_logic": {
+      "functions": [
+        "COUNT"
+      ],
+      "conditions": [
+        "argument_type_table",
+        "row_count_intended"
+      ],
+      "context": "count_measure"
+    },
+    "fixed_dax": "Orders = COUNTROWS(Sales)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "SUM used on non-numeric column",
+    "bad_dax": "Total IDs = SUM(Sales[OrderID])",
+    "detection_logic": {
+      "functions": [
+        "SUM"
+      ],
+      "conditions": [
+        "column_name_matches_id_or_key",
+        "column_data_type_non_numeric_or_identifier"
+      ],
+      "context": "identifier_count_measure"
+    },
+    "fixed_dax": "Total IDs = COUNT(Sales[OrderID])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect filter context with CALCULATE and ALL",
+    "bad_dax": "Filtered Sales = CALCULATE(SUM(Sales[Amount]), ALL(Product))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "ALL"
+      ],
+      "conditions": [
+        "all_scope_dimension_table",
+        "dimension_affects_measure"
+      ],
+      "context": "filtered_measure"
+    },
+    "fixed_dax": "Filtered Sales = CALCULATE(SUM(Sales[Amount]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Missing relationship causing wrong results",
+    "bad_dax": "Sales by Category = SUM(Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "SUM"
+      ],
+      "conditions": [
+        "dimension_used_for_grouping",
+        "active_relationship_missing"
+      ],
+      "context": "visual_grouped_by_dimension"
+    },
+    "fixed_dax": "Create relationship between Sales and Category table",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Using MAX instead of SELECTEDVALUE",
+    "bad_dax": "Year Selected = MAX(Date[Year])",
+    "detection_logic": {
+      "functions": [
+        "MAX"
+      ],
+      "conditions": [
+        "single_selection_expected",
+        "column_used_as_label_or_parameter"
+      ],
+      "context": "selected_value_measure"
+    },
+    "fixed_dax": "Year Selected = SELECTEDVALUE(Date[Year])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Division without zero handling",
+    "bad_dax": "Ratio = SUM(Sales[Profit]) / SUM(Sales[Revenue])",
+    "detection_logic": {
+      "functions": [
+        "SUM"
+      ],
+      "conditions": [
+        "division_operator_used",
+        "no_zero_handling",
+        "denominator_is_expression"
+      ],
+      "context": "ratio_measure"
+    },
+    "fixed_dax": "Ratio = DIVIDE(SUM(Sales[Profit]), SUM(Sales[Revenue]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "DISTINCT used where scalar expected",
+    "bad_dax": "Customer = DISTINCT(Sales[CustomerID])",
+    "detection_logic": {
+      "functions": [
+        "DISTINCT"
+      ],
+      "conditions": [
+        "scalar_required",
+        "table_function_returned"
+      ],
+      "context": "selected_identifier_measure"
+    },
+    "fixed_dax": "Customer = SELECTEDVALUE(Sales[CustomerID])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Multiple filters overriding unintentionally",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\", Sales[Region] = \"EU\")",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE"
+      ],
+      "conditions": [
+        "same_column_filtered_multiple_times",
+        "conflicting_values"
+      ],
+      "context": "multi_value_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"US\", \"EU\"})",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect use of EARLIER in measure",
+    "bad_dax": "Rank = CALCULATE(COUNTROWS(Sales), FILTER(Sales, Sales[Amount] > EARLIER(Sales[Amount])))",
+    "detection_logic": {
+      "functions": [
+        "EARLIER",
+        "FILTER",
+        "CALCULATE"
+      ],
+      "conditions": [
+        "earlier_used_in_measure_context",
+        "rank_pattern_detected"
+      ],
+      "context": "ranking_measure"
+    },
+    "fixed_dax": "Rank = RANKX(ALL(Sales), SUM(Sales[Amount]))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using FILTER incorrectly for scalar comparison",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Amount] > 100))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER"
+      ],
+      "conditions": [
+        "simple_scalar_comparison",
+        "filter_iterates_fact_table"
+      ],
+      "context": "threshold_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Amount] > 100)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Missing context transition in calculated column",
+    "bad_dax": "Total = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "SUM"
+      ],
+      "conditions": [
+        "artifact_type_calculated_column",
+        "aggregation_used"
+      ],
+      "context": "calculated_column_definition"
+    },
+    "fixed_dax": "Use measure instead: Total = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Ambiguous many-to-many relationship",
+    "bad_dax": "Model with many-to-many between Sales and Products",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "relationship_type_many_to_many",
+        "no_bridge_table"
+      ],
+      "context": "semantic_model_relationships"
+    },
+    "fixed_dax": "Introduce bridge table to resolve many-to-many relationship",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Incorrect time intelligence using manual filter",
+    "bad_dax": "Sales YTD = CALCULATE(SUM(Sales[Amount]), FILTER(ALL(Date), Date[Date] <= TODAY()))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER",
+        "ALL",
+        "TODAY"
+      ],
+      "conditions": [
+        "manual_time_filter",
+        "date_table_available"
+      ],
+      "context": "ytd_measure"
+    },
+    "fixed_dax": "Sales YTD = TOTALYTD(SUM(Sales[Amount]), Date[Date])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using SUMX without row context need",
+    "bad_dax": "Total = SUMX(Sales, Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "SUMX"
+      ],
+      "conditions": [
+        "expression_type_direct_column",
+        "row_context_required_false"
+      ],
+      "context": "additive_measure"
+    },
+    "fixed_dax": "Total = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect use of CALCULATE without filters",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE"
+      ],
+      "conditions": [
+        "filter_arguments_count_zero",
+        "context_transition_required_false"
+      ],
+      "context": "simple_measure"
+    },
+    "fixed_dax": "Sales = SUM(Sales[Amount])",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using HASONEVALUE incorrectly",
+    "bad_dax": "Flag = HASONEVALUE(Sales[Region])",
+    "detection_logic": {
+      "functions": [
+        "HASONEVALUE"
+      ],
+      "conditions": [
+        "boolean_returned_directly",
+        "numeric_flag_expected"
+      ],
+      "context": "flag_measure"
+    },
+    "fixed_dax": "Flag = IF(HASONEVALUE(Sales[Region]), 1, 0)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect logical comparison with BLANK",
+    "bad_dax": "Check = IF(Sales[Amount] = BLANK(), 0, 1)",
+    "detection_logic": {
+      "functions": [
+        "IF",
+        "BLANK"
+      ],
+      "conditions": [
+        "blank_compared_with_equals_operator"
+      ],
+      "context": "blank_check_expression"
+    },
+    "fixed_dax": "Check = IF(ISBLANK(Sales[Amount]), 0, 1)",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect OR condition using multiple filters",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\" || Sales[Region] = \"EU\")",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE"
+      ],
+      "conditions": [
+        "or_operator_inside_filter_argument",
+        "same_column_multi_value_filter"
+      ],
+      "context": "multi_value_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] IN {\"US\", \"EU\"})",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using RELATED without relationship",
+    "bad_dax": "Category = RELATED(Product[Category])",
+    "detection_logic": {
+      "functions": [
+        "RELATED"
+      ],
+      "conditions": [
+        "relationship_exists_false",
+        "lookup_column_from_related_table"
+      ],
+      "context": "calculated_column_lookup"
+    },
+    "fixed_dax": "Create relationship between tables or use LOOKUPVALUE",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Incorrect use of LOOKUPVALUE with multiple matches",
+    "bad_dax": "Price = LOOKUPVALUE(Product[Price], Product[ID], Sales[ProductID])",
+    "detection_logic": {
+      "functions": [
+        "LOOKUPVALUE"
+      ],
+      "conditions": [
+        "lookup_key_not_unique",
+        "multiple_matches_possible"
+      ],
+      "context": "lookup_expression"
+    },
+    "fixed_dax": "Ensure unique key or use aggregation like MAXX/FILTER",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Incorrect use of ALLSELECTED for totals",
+    "bad_dax": "Total = CALCULATE(SUM(Sales[Amount]), ALLSELECTED(Sales))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "ALLSELECTED"
+      ],
+      "conditions": [
+        "allselected_scope_fact_table",
+        "grand_total_intended"
+      ],
+      "context": "total_measure"
+    },
+    "fixed_dax": "Total = CALCULATE(SUM(Sales[Amount]), REMOVEFILTERS(Sales))",
+    "category": "correctness"
+  },
+  {
+    "pattern": "Using SUMMARIZE incorrectly for aggregation",
+    "bad_dax": "Table = SUMMARIZE(Sales, Sales[Region], \"Total\", SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": [
+        "SUMMARIZE",
+        "SUM"
+      ],
+      "conditions": [
+        "used_for_measure_logic",
+        "visual_can_group"
+      ],
+      "context": "calculated_table_or_measure_logic"
+    },
+    "fixed_dax": "Use measure: Total = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "FILTER inside CALCULATE for simple equality",
+    "bad_dax": "Sales Blue = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Color] = \"Blue\"))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER"
+      ],
+      "conditions": [
+        "filter_simple_equality",
+        "filter_iterates_fact_table"
+      ],
+      "context": "simple_equality_filter_measure"
+    },
+    "fixed_dax": "Sales Blue = CALCULATE(SUM(Sales[Amount]), Sales[Color] = \"Blue\")",
+    "category": "performance"
+  },
+  {
+    "pattern": "IF instead of DIVIDE",
+    "bad_dax": "Ratio = IF(SUM(Sales[A]) = 0, 0, SUM(Sales[B]) / SUM(Sales[A]))",
+    "detection_logic": {
+      "functions": [
+        "IF"
+      ],
+      "conditions": [
+        "manual_division_with_zero_check"
+      ],
+      "context": "ratio_measure"
+    },
+    "fixed_dax": "Ratio = DIVIDE(SUM(Sales[B]), SUM(Sales[A]), 0)",
+    "category": "performance"
+  },
+  {
+    "pattern": "Using COUNTROWS(VALUES()) instead of DISTINCTCOUNT",
+    "bad_dax": "Orders = COUNTROWS(VALUES(Sales[OrderID]))",
+    "detection_logic": {
+      "functions": [
+        "COUNTROWS",
+        "VALUES"
+      ],
+      "conditions": [
+        "countrows_values_pattern"
+      ],
+      "context": "distinct_count_measure"
+    },
+    "fixed_dax": "Orders = DISTINCTCOUNT(Sales[OrderID])",
+    "category": "performance"
+  },
+  {
+    "pattern": "Nested CALCULATE calls",
+    "bad_dax": "Sales = CALCULATE(CALCULATE(SUM(Sales[Amount])))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE"
+      ],
+      "conditions": [
+        "nested_calculate"
+      ],
+      "context": "measure_definition"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "Using FILTER on entire table unnecessarily",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, TRUE()))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER"
+      ],
+      "conditions": [
+        "filter_condition_true"
+      ],
+      "context": "redundant_filter_measure"
+    },
+    "fixed_dax": "Sales = SUM(Sales[Amount])",
+    "category": "performance"
+  },
+  {
+    "pattern": "Redundant filters in CALCULATE",
+    "bad_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\", Sales[Region] = \"US\")",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE"
+      ],
+      "conditions": [
+        "duplicate_same_column_same_value"
+      ],
+      "context": "duplicate_filter_measure"
+    },
+    "fixed_dax": "Sales = CALCULATE(SUM(Sales[Amount]), Sales[Region] = \"US\")",
+    "category": "performance"
+  },
+  {
+    "pattern": "LASTDATE used as scalar date value",
+    "bad_dax": "Last Sale Date = LASTDATE(Sales[OrderDate])",
+    "detection_logic": {
+      "functions": [
+        "LASTDATE"
+      ],
+      "conditions": [
+        "result_used_as_scalar",
+        "argument_is_fact_date_column"
+      ],
+      "context": "measure_returning_single_date"
+    },
+    "fixed_dax": "Last Sale Date = MAX(Sales[OrderDate])",
+    "category": "performance"
+  },
+  {
+    "pattern": "Fact date used in time-intelligence function",
+    "bad_dax": "Rolling 30 Sales = CALCULATE(SUM(Sales[Amount]), DATESINPERIOD(Sales[OrderDate], MAX(Sales[OrderDate]), -30, DAY))",
+    "detection_logic": {
+      "functions": [
+        "DATESINPERIOD"
+      ],
+      "conditions": [
+        "date_argument_from_fact_table",
+        "marked_date_table_available"
+      ],
+      "context": "rolling_period_measure"
+    },
+    "fixed_dax": "Rolling 30 Sales = CALCULATE(SUM(Sales[Amount]), DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -30, DAY))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Context transition inside FILTER predicate",
+    "bad_dax": "High Revenue Products = CALCULATE([Revenue], FILTER(Product, [Revenue] > CALCULATE(AVERAGE(Sales[Amount]))))",
+    "detection_logic": {
+      "functions": [
+        "FILTER",
+        "CALCULATE"
+      ],
+      "conditions": [
+        "CALCULATE_nested_inside_FILTER_predicate",
+        "predicate_evaluated_per_row"
+      ],
+      "context": "dimension_filter_with_measure_threshold"
+    },
+    "fixed_dax": "High Revenue Products = VAR AvgAmount = AVERAGE(Sales[Amount]) RETURN CALCULATE([Revenue], FILTER(Product, [Revenue] > AvgAmount))",
+    "category": "performance"
+  },
+  {
+    "pattern": "Measure evaluated repeatedly inside SWITCH branches",
+    "bad_dax": "Segment = SWITCH(TRUE(), [Revenue] > 1000000, \"High\", [Revenue] > 500000, \"Medium\", [Revenue] > 0, \"Low\", \"None\")",
+    "detection_logic": {
+      "functions": [
+        "SWITCH"
+      ],
+      "conditions": [
+        "same_measure_reference_repeated_in_multiple_branches",
+        "no_VAR_cache"
+      ],
+      "context": "classification_measure"
+    },
+    "fixed_dax": "Segment = VAR RevenueValue = [Revenue] RETURN SWITCH(TRUE(), RevenueValue > 1000000, \"High\", RevenueValue > 500000, \"Medium\", RevenueValue > 0, \"Low\", \"None\")",
+    "category": "performance"
+  },
+  {
+    "pattern": "Bi-directional virtual relationship using INTERSECT",
+    "bad_dax": "Matched Sales = CALCULATE([Revenue], INTERSECT(VALUES(Customer[CustomerID]), VALUES(Sales[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "INTERSECT",
+        "VALUES",
+        "CALCULATE"
+      ],
+      "conditions": [
+        "virtual_relationship_between_dimension_and_fact",
+        "physical_relationship_possible"
+      ],
+      "context": "relationship_filtering_measure"
+    },
+    "fixed_dax": "Matched Sales = [Revenue]",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Virtual relationship using CONTAINS",
+    "bad_dax": "Customer Sales = CALCULATE([Revenue], FILTER(Sales, CONTAINS(VALUES(Customer[CustomerID]), Customer[CustomerID], Sales[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "FILTER",
+        "CONTAINS",
+        "VALUES"
+      ],
+      "conditions": [
+        "row_by_row_membership_test",
+        "relationship_key_columns_detected"
+      ],
+      "context": "virtual_relationship_measure"
+    },
+    "fixed_dax": "Customer Sales = [Revenue]",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Overuse of ALLEXCEPT on wide fact table",
+    "bad_dax": "Customer Total = CALCULATE([Revenue], ALLEXCEPT(Sales, Sales[CustomerID]))",
+    "detection_logic": {
+      "functions": [
+        "ALLEXCEPT"
+      ],
+      "conditions": [
+        "first_argument_is_fact_table",
+        "preserved_column_is_key_or_dimension_attribute"
+      ],
+      "context": "total_recalculation_measure"
+    },
+    "fixed_dax": "Customer Total = CALCULATE([Revenue], REMOVEFILTERS(Sales), VALUES(Customer[CustomerID]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "SUMMARIZE used before TOPN ranking",
+    "bad_dax": "Top Product Sales = SUMX(TOPN(10, SUMMARIZE(Sales, Product[ProductName], \"Sales\", [Revenue]), [Sales], DESC), [Sales])",
+    "detection_logic": {
+      "functions": [
+        "SUMX",
+        "TOPN",
+        "SUMMARIZE"
+      ],
+      "conditions": [
+        "ranking_dimension_from_related_table",
+        "measure_materialized_in_virtual_table"
+      ],
+      "context": "top_n_measure"
+    },
+    "fixed_dax": "Top Product Sales = SUMX(TOPN(10, ALL(Product[ProductName]), [Revenue], DESC), [Revenue])",
+    "category": "performance"
+  },
+  {
+    "pattern": "GROUPBY with CURRENTGROUP for simple aggregation",
+    "bad_dax": "Grouped Sales = SUMX(GROUPBY(Sales, Sales[Region], \"Amt\", SUMX(CURRENTGROUP(), Sales[Amount])), [Amt])",
+    "detection_logic": {
+      "functions": [
+        "GROUPBY",
+        "CURRENTGROUP",
+        "SUMX"
+      ],
+      "conditions": [
+        "simple_additive_aggregation",
+        "visual_or_dimension_can_group"
+      ],
+      "context": "measure_aggregation_over_virtual_group"
+    },
+    "fixed_dax": "Grouped Sales = SUM(Sales[Amount])",
+    "category": "performance"
+  },
+  {
+    "pattern": "ALL used inside RANKX scope without limiting dimension",
+    "bad_dax": "Customer Rank = RANKX(ALL(Customer), [Revenue])",
+    "detection_logic": {
+      "functions": [
+        "RANKX",
+        "ALL"
+      ],
+      "conditions": [
+        "ALL_called_on_entire_dimension_table",
+        "rank_display_uses_single_column"
+      ],
+      "context": "ranking_measure"
+    },
+    "fixed_dax": "Customer Rank = RANKX(ALL(Customer[CustomerName]), [Revenue])",
+    "category": "performance"
+  },
+  {
+    "pattern": "Dynamic segmentation using disconnected table without range pruning",
+    "bad_dax": "Segment Customers = COUNTROWS(FILTER(Customer, [Revenue] >= MIN(Segment[Min]) && [Revenue] < MAX(Segment[Max])))",
+    "detection_logic": {
+      "functions": [
+        "COUNTROWS",
+        "FILTER",
+        "MIN",
+        "MAX"
+      ],
+      "conditions": [
+        "measure_evaluated_per_customer",
+        "disconnected_segment_table",
+        "range_bounds_not_cached"
+      ],
+      "context": "dynamic_segmentation"
+    },
+    "fixed_dax": "Segment Customers = VAR MinValue = MIN(Segment[Min]) VAR MaxValue = MAX(Segment[Max]) RETURN COUNTROWS(FILTER(VALUES(Customer[CustomerID]), [Revenue] >= MinValue && [Revenue] < MaxValue))",
+    "category": "performance"
+  },
+  {
+    "pattern": "ISINSCOPE logic missing cached base measure",
+    "bad_dax": "Display Sales = SWITCH(TRUE(), ISINSCOPE(Product[SKU]), [Revenue], ISINSCOPE(Product[Category]), [Revenue], [Revenue])",
+    "detection_logic": {
+      "functions": [
+        "SWITCH",
+        "ISINSCOPE"
+      ],
+      "conditions": [
+        "same_measure_returned_in_multiple_branches",
+        "branch_logic_redundant"
+      ],
+      "context": "hierarchy_display_measure"
+    },
+    "fixed_dax": "Display Sales = [Revenue]",
+    "category": "performance"
+  },
+  {
+    "pattern": "USERELATIONSHIP inside iterator",
+    "bad_dax": "Ship Sales = SUMX(Sales, CALCULATE(Sales[Amount], USERELATIONSHIP(Sales[ShipDate], 'Date'[Date])))",
+    "detection_logic": {
+      "functions": [
+        "SUMX",
+        "CALCULATE",
+        "USERELATIONSHIP"
+      ],
+      "conditions": [
+        "relationship_activation_inside_row_iterator",
+        "expression_is_additive"
+      ],
+      "context": "inactive_date_relationship_measure"
+    },
+    "fixed_dax": "Ship Sales = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP(Sales[ShipDate], 'Date'[Date]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "Role-playing date logic duplicated instead of base measure",
+    "bad_dax": "Ship Sales YoY = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP(Sales[ShipDate], 'Date'[Date]), SAMEPERIODLASTYEAR('Date'[Date]))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "USERELATIONSHIP",
+        "SAMEPERIODLASTYEAR"
+      ],
+      "conditions": [
+        "same_USERELATIONSHIP_repeated_across_time_measures",
+        "base_role_measure_missing"
+      ],
+      "context": "role_playing_date_measure"
+    },
+    "fixed_dax": "Ship Sales = CALCULATE(SUM(Sales[Amount]), USERELATIONSHIP(Sales[ShipDate], 'Date'[Date]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "CALCULATETABLE used where CALCULATE scalar is sufficient",
+    "bad_dax": "Filtered Revenue = SUMX(CALCULATETABLE(Sales, Sales[Status] = \"Closed\"), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "SUMX",
+        "CALCULATETABLE"
+      ],
+      "conditions": [
+        "scalar_additive_result",
+        "table_materialization_unnecessary"
+      ],
+      "context": "filtered_additive_measure"
+    },
+    "fixed_dax": "Filtered Revenue = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Closed\")",
+    "category": "performance"
+  },
+  {
+    "pattern": "EXCEPT used for anti-join against fact table",
+    "bad_dax": "Customers Without Sales = COUNTROWS(EXCEPT(VALUES(Customer[CustomerID]), VALUES(Sales[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "EXCEPT",
+        "VALUES",
+        "COUNTROWS"
+      ],
+      "conditions": [
+        "anti_join_between_dimension_and_fact",
+        "relationship_exists"
+      ],
+      "context": "missing_activity_count"
+    },
+    "fixed_dax": "Customers Without Sales = COUNTROWS(FILTER(VALUES(Customer[CustomerID]), ISBLANK([Revenue])))",
+    "category": "performance"
+  },
+  {
+    "pattern": "NATURALINNERJOIN used in measure",
+    "bad_dax": "Joined Sales = SUMX(NATURALINNERJOIN(Customer, Sales), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "NATURALINNERJOIN",
+        "SUMX"
+      ],
+      "conditions": [
+        "join_between_model_tables_inside_measure",
+        "relationship_should_exist"
+      ],
+      "context": "measure_with_runtime_join"
+    },
+    "fixed_dax": "Joined Sales = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "NATURALLEFTOUTERJOIN used in measure",
+    "bad_dax": "Customer Revenue = SUMX(NATURALLEFTOUTERJOIN(Customer, Sales), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "NATURALLEFTOUTERJOIN",
+        "SUMX"
+      ],
+      "conditions": [
+        "runtime_left_join_inside_measure",
+        "relationship_should_exist"
+      ],
+      "context": "measure_with_runtime_join"
+    },
+    "fixed_dax": "Customer Revenue = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "PATH functions used in high-cardinality measure",
+    "bad_dax": "Org Depth Sales = CALCULATE([Revenue], FILTER(Employee, PATHCONTAINS(Employee[Path], SELECTEDVALUE(Employee[EmployeeID]))))",
+    "detection_logic": {
+      "functions": [
+        "FILTER",
+        "PATHCONTAINS",
+        "SELECTEDVALUE"
+      ],
+      "conditions": [
+        "path_filter_evaluated_at_query_time",
+        "hierarchy_large_or_ragged"
+      ],
+      "context": "parent_child_security_or_hierarchy_measure"
+    },
+    "fixed_dax": "Org Depth Sales = CALCULATE([Revenue], EmployeeBridge[AncestorEmployeeID] IN VALUES(Employee[EmployeeID]))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "GENERATESERIES created inside measure",
+    "bad_dax": "Bucket Count = COUNTROWS(FILTER(GENERATESERIES(0, MAX(Sales[Amount]), 10), [Value] <= [Revenue]))",
+    "detection_logic": {
+      "functions": [
+        "GENERATESERIES",
+        "FILTER",
+        "MAX"
+      ],
+      "conditions": [
+        "series_generated_at_query_time",
+        "upper_bound_depends_on_fact_measure"
+      ],
+      "context": "dynamic_bucket_measure"
+    },
+    "fixed_dax": "Bucket Count = COUNTROWS(FILTER(Bucket, Bucket[Value] <= [Revenue]))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "UNION of filtered fact tables inside measure",
+    "bad_dax": "Open Or Closed Sales = SUMX(UNION(FILTER(Sales, Sales[Status] = \"Open\"), FILTER(Sales, Sales[Status] = \"Closed\")), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "UNION",
+        "FILTER",
+        "SUMX"
+      ],
+      "conditions": [
+        "same_fact_table_filtered_multiple_times",
+        "filters_can_be_combined"
+      ],
+      "context": "multi_status_measure"
+    },
+    "fixed_dax": "Open Or Closed Sales = CALCULATE(SUM(Sales[Amount]), Sales[Status] IN {\"Open\", \"Closed\"})",
+    "category": "performance"
+  },
+  {
+    "pattern": "INTERSECT of fact-key sets inside measure",
+    "bad_dax": "Repeat Buyers = COUNTROWS(INTERSECT(VALUES(Sales[CustomerID]), VALUES(Returns[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "INTERSECT",
+        "VALUES",
+        "COUNTROWS"
+      ],
+      "conditions": [
+        "set_operation_between_fact_tables",
+        "bridge_or_dimension_available"
+      ],
+      "context": "customer_overlap_measure"
+    },
+    "fixed_dax": "Repeat Buyers = COUNTROWS(FILTER(VALUES(Customer[CustomerID]), [Sales Count] > 0 && [Return Count] > 0))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Measure uses bidirectional CROSSFILTER override",
+    "bad_dax": "Bi Sales = CALCULATE([Revenue], CROSSFILTER(Customer[CustomerID], Sales[CustomerID], BOTH))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "CROSSFILTER"
+      ],
+      "conditions": [
+        "crossfilter_direction_is_BOTH",
+        "relationship_override_inside_measure"
+      ],
+      "context": "relationship_override_measure"
+    },
+    "fixed_dax": "Bi Sales = [Revenue]",
+    "category": "modeling"
+  },
+  {
+    "pattern": "REMOVEFILTERS applied to entire model table unnecessarily",
+    "bad_dax": "All Customer Sales = CALCULATE([Revenue], REMOVEFILTERS(Customer))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "REMOVEFILTERS"
+      ],
+      "conditions": [
+        "removefilters_scope_entire_dimension_table",
+        "only_one_column_needs_clearance"
+      ],
+      "context": "ratio_or_total_measure"
+    },
+    "fixed_dax": "All Customer Sales = CALCULATE([Revenue], REMOVEFILTERS(Customer[CustomerName]))",
+    "category": "performance"
+  },
+  {
+    "pattern": "SUMX over filtered fact table with direct additive column",
+    "bad_dax": "High Sales = SUMX(FILTER(Sales, Sales[Amount] > 100), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "SUMX",
+        "FILTER"
+      ],
+      "conditions": [
+        "sumx_over_filtered_table",
+        "sumx_expression_direct_column",
+        "filter_simple_scalar_comparison"
+      ],
+      "context": "filtered_additive_measure"
+    },
+    "fixed_dax": "High Sales = CALCULATE(SUM(Sales[Amount]), Sales[Amount] > 100)",
+    "category": "performance"
+  },
+  {
+    "pattern": "SELECTCOLUMNS projection used before simple count",
+    "bad_dax": "Projected Orders = COUNTROWS(SELECTCOLUMNS(Sales, \"Order\", Sales[OrderID]))",
+    "detection_logic": {
+      "functions": [
+        "COUNTROWS",
+        "SELECTCOLUMNS"
+      ],
+      "conditions": [
+        "projection_only_no_transformation",
+        "source_table_count_available"
+      ],
+      "context": "count_measure"
+    },
+    "fixed_dax": "Projected Orders = COUNTROWS(Sales)",
+    "category": "performance"
+  }
+]

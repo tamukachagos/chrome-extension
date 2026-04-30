@@ -1,0 +1,239 @@
+[
+  {
+    "pattern": "Missing relationship causing wrong results",
+    "bad_dax": "Sales by Category = SUM(Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "SUM"
+      ],
+      "conditions": [
+        "dimension_used_for_grouping",
+        "active_relationship_missing"
+      ],
+      "context": "visual_grouped_by_dimension"
+    },
+    "fixed_dax": "Create relationship between Sales and Category table",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Missing context transition in calculated column",
+    "bad_dax": "Total = CALCULATE(SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "SUM"
+      ],
+      "conditions": [
+        "artifact_type_calculated_column",
+        "aggregation_used"
+      ],
+      "context": "calculated_column_definition"
+    },
+    "fixed_dax": "Use measure instead: Total = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Ambiguous many-to-many relationship",
+    "bad_dax": "Model with many-to-many between Sales and Products",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "relationship_type_many_to_many",
+        "no_bridge_table"
+      ],
+      "context": "semantic_model_relationships"
+    },
+    "fixed_dax": "Introduce bridge table to resolve many-to-many relationship",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Using RELATED without relationship",
+    "bad_dax": "Category = RELATED(Product[Category])",
+    "detection_logic": {
+      "functions": [
+        "RELATED"
+      ],
+      "conditions": [
+        "relationship_exists_false",
+        "lookup_column_from_related_table"
+      ],
+      "context": "calculated_column_lookup"
+    },
+    "fixed_dax": "Create relationship between tables or use LOOKUPVALUE",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Using SUMMARIZE incorrectly for aggregation",
+    "bad_dax": "Table = SUMMARIZE(Sales, Sales[Region], \"Total\", SUM(Sales[Amount]))",
+    "detection_logic": {
+      "functions": [
+        "SUMMARIZE",
+        "SUM"
+      ],
+      "conditions": [
+        "used_for_measure_logic",
+        "visual_can_group"
+      ],
+      "context": "calculated_table_or_measure_logic"
+    },
+    "fixed_dax": "Use measure: Total = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Fact date used in time-intelligence function",
+    "bad_dax": "Rolling 30 Sales = CALCULATE(SUM(Sales[Amount]), DATESINPERIOD(Sales[OrderDate], MAX(Sales[OrderDate]), -30, DAY))",
+    "detection_logic": {
+      "functions": [
+        "DATESINPERIOD"
+      ],
+      "conditions": [
+        "date_argument_from_fact_table",
+        "marked_date_table_available"
+      ],
+      "context": "rolling_period_measure"
+    },
+    "fixed_dax": "Rolling 30 Sales = CALCULATE(SUM(Sales[Amount]), DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -30, DAY))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Bi-directional virtual relationship using INTERSECT",
+    "bad_dax": "Matched Sales = CALCULATE([Revenue], INTERSECT(VALUES(Customer[CustomerID]), VALUES(Sales[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "INTERSECT",
+        "VALUES",
+        "CALCULATE"
+      ],
+      "conditions": [
+        "virtual_relationship_between_dimension_and_fact",
+        "physical_relationship_possible"
+      ],
+      "context": "relationship_filtering_measure"
+    },
+    "fixed_dax": "Matched Sales = [Revenue]",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Virtual relationship using CONTAINS",
+    "bad_dax": "Customer Sales = CALCULATE([Revenue], FILTER(Sales, CONTAINS(VALUES(Customer[CustomerID]), Customer[CustomerID], Sales[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "FILTER",
+        "CONTAINS",
+        "VALUES"
+      ],
+      "conditions": [
+        "row_by_row_membership_test",
+        "relationship_key_columns_detected"
+      ],
+      "context": "virtual_relationship_measure"
+    },
+    "fixed_dax": "Customer Sales = [Revenue]",
+    "category": "modeling"
+  },
+  {
+    "pattern": "NATURALINNERJOIN used in measure",
+    "bad_dax": "Joined Sales = SUMX(NATURALINNERJOIN(Customer, Sales), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "NATURALINNERJOIN",
+        "SUMX"
+      ],
+      "conditions": [
+        "join_between_model_tables_inside_measure",
+        "relationship_should_exist"
+      ],
+      "context": "measure_with_runtime_join"
+    },
+    "fixed_dax": "Joined Sales = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "NATURALLEFTOUTERJOIN used in measure",
+    "bad_dax": "Customer Revenue = SUMX(NATURALLEFTOUTERJOIN(Customer, Sales), Sales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "NATURALLEFTOUTERJOIN",
+        "SUMX"
+      ],
+      "conditions": [
+        "runtime_left_join_inside_measure",
+        "relationship_should_exist"
+      ],
+      "context": "measure_with_runtime_join"
+    },
+    "fixed_dax": "Customer Revenue = SUM(Sales[Amount])",
+    "category": "modeling"
+  },
+  {
+    "pattern": "PATH functions used in high-cardinality measure",
+    "bad_dax": "Org Depth Sales = CALCULATE([Revenue], FILTER(Employee, PATHCONTAINS(Employee[Path], SELECTEDVALUE(Employee[EmployeeID]))))",
+    "detection_logic": {
+      "functions": [
+        "FILTER",
+        "PATHCONTAINS",
+        "SELECTEDVALUE"
+      ],
+      "conditions": [
+        "path_filter_evaluated_at_query_time",
+        "hierarchy_large_or_ragged"
+      ],
+      "context": "parent_child_security_or_hierarchy_measure"
+    },
+    "fixed_dax": "Org Depth Sales = CALCULATE([Revenue], EmployeeBridge[AncestorEmployeeID] IN VALUES(Employee[EmployeeID]))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "GENERATESERIES created inside measure",
+    "bad_dax": "Bucket Count = COUNTROWS(FILTER(GENERATESERIES(0, MAX(Sales[Amount]), 10), [Value] <= [Revenue]))",
+    "detection_logic": {
+      "functions": [
+        "GENERATESERIES",
+        "FILTER",
+        "MAX"
+      ],
+      "conditions": [
+        "series_generated_at_query_time",
+        "upper_bound_depends_on_fact_measure"
+      ],
+      "context": "dynamic_bucket_measure"
+    },
+    "fixed_dax": "Bucket Count = COUNTROWS(FILTER(Bucket, Bucket[Value] <= [Revenue]))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "INTERSECT of fact-key sets inside measure",
+    "bad_dax": "Repeat Buyers = COUNTROWS(INTERSECT(VALUES(Sales[CustomerID]), VALUES(Returns[CustomerID])))",
+    "detection_logic": {
+      "functions": [
+        "INTERSECT",
+        "VALUES",
+        "COUNTROWS"
+      ],
+      "conditions": [
+        "set_operation_between_fact_tables",
+        "bridge_or_dimension_available"
+      ],
+      "context": "customer_overlap_measure"
+    },
+    "fixed_dax": "Repeat Buyers = COUNTROWS(FILTER(VALUES(Customer[CustomerID]), [Sales Count] > 0 && [Return Count] > 0))",
+    "category": "modeling"
+  },
+  {
+    "pattern": "Measure uses bidirectional CROSSFILTER override",
+    "bad_dax": "Bi Sales = CALCULATE([Revenue], CROSSFILTER(Customer[CustomerID], Sales[CustomerID], BOTH))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "CROSSFILTER"
+      ],
+      "conditions": [
+        "crossfilter_direction_is_BOTH",
+        "relationship_override_inside_measure"
+      ],
+      "context": "relationship_override_measure"
+    },
+    "fixed_dax": "Bi Sales = [Revenue]",
+    "category": "modeling"
+  }
+]
