@@ -18,7 +18,7 @@
     fallbackEnabled: false,
     fallbackEndpoint: "http://localhost:8787/fallback",
     fallbackThreshold: 72,
-    anthropicModel: "claude-sonnet-4-20250514",
+    anthropicModel: "claude-sonnet-4-6",
     activeSkills: [
       "architect-mode",
       "dax-expert",
@@ -656,7 +656,7 @@
               </div>
               <div class="field">
                 <label for="anthropicModel">Anthropic model</label>
-                <input id="anthropicModel" placeholder="claude-sonnet-4-20250514">
+                <input id="anthropicModel" placeholder="claude-sonnet-4-6">
               </div>
             </div>
             <div class="actions">

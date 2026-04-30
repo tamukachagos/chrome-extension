@@ -24,7 +24,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://app.powerbi.com/*"
+        "https://app.powerbi.com/*",
+        "https://*.powerbi.com/*"
       ],
       "js": [
         "src/daxEngine.js",
@@ -40,15 +41,14 @@
       "resources": [
         "rules/processed/final_rules.json",
         "rules/processed/compiled_rules.json",
-        "rules/processed/performance_rules.json",
-        "rules/processed/correctness_rules.json",
-        "rules/processed/modeling_rules.json",
         "rules/performance_rules.json",
         "rules/correctness_rules.json",
+        "rules/modeling_rules.json",
         "src/daxEngine.js"
       ],
       "matches": [
-        "https://app.powerbi.com/*"
+        "https://app.powerbi.com/*",
+        "https://*.powerbi.com/*"
       ]
     }
   ]
