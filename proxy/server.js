@@ -9,7 +9,7 @@ const VISION_MODEL = process.env.VISION_MODEL || "llava";
 const PORT         = parseInt(process.env.PORT || "8787", 10);
 
 // Maximum tokens for responses
-const MAX_TOKENS   = parseInt(process.env.MAX_TOKENS || "4096", 10);
+const MAX_TOKENS   = parseInt(process.env.MAX_TOKENS || "512", 10);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ function postJson(targetUrl, body) {
     });
 
     req.on("error", reject);
-    req.setTimeout(120000, () => { req.destroy(new Error("Ollama request timed out")); });
+    req.setTimeout(300000, () => { req.destroy(new Error("Ollama request timed out")); });
     req.write(payload);
     req.end();
   });
