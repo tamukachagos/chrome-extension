@@ -16,8 +16,8 @@
     aiEndpoint: "",
     aiMode: "local",
     fallbackEnabled: false,
-    fallbackEndpoint: "http://localhost:8787/fallback",
-    fallbackThreshold: 72,
+    fallbackEndpoint: "http://localhost:3003/fallback",
+    fallbackThreshold: 92,
     anthropicModel: "claude-sonnet-4-6",
     activeSkills: [
       "architect-mode",
@@ -48,7 +48,43 @@
 
   const rootHost = document.createElement("div");
   rootHost.id = "pbi-copilot-root";
-  document.documentElement.appendChild(rootHost);
+  rootHost.style.cssText = "all:unset;position:fixed;z-index:2147483647;top:0;left:0;pointer-events:none;";
+
+  // Mount the panel into the DOM
+  function mountPanel() {
+    const target = document.body || document.documentElement;
+    if (!target) return;
+    if (!document.getElementById("pbi-copilot-root")) {
+      target.appendChild(rootHost);
+    }
+  }
+  mountPanel();
+
+  // MutationObserver: re-mount if Power BI strips our element
+  const bodyObserver = new MutationObserver(() => {
+    if (!document.getElementById("pbi-copilot-root")) {
+      mountPanel();
+    }
+  });
+  function startObserver() {
+    bodyObserver.disconnect();
+    if (document.documentElement) {
+      bodyObserver.observe(document.documentElement, { childList: true, subtree: false });
+    }
+    if (document.body) {
+      bodyObserver.observe(document.body, { childList: true, subtree: false });
+    }
+  }
+  startObserver();
+
+  // Polling fallback: every 800ms, re-mount if missing (catches cases observer misses)
+  setInterval(() => {
+    if (!document.getElementById("pbi-copilot-root")) {
+      mountPanel();
+      startObserver(); // re-attach observer in case body was replaced
+    }
+  }, 800);
+
   const root = rootHost.attachShadow({ mode: "open" });
 
   root.innerHTML = `
@@ -56,31 +92,26 @@
       :host {
         all: initial;
         color-scheme: light;
-        --pbi-bg: #fbfaf7;
-        --pbi-panel: #ffffff;
-        --pbi-ink: #171717;
-        --pbi-muted: #626262;
-        --pbi-line: #dfd8c8;
-        --pbi-accent: #f2c811;
-        --pbi-accent-2: #2563eb;
-        --pbi-green: #138a5b;
-        --pbi-red: #b42318;
-        --pbi-soft: #f6f2e7;
-        --pbi-code: #111827;
+        --pbi-bg: #FAF9F7;
+        --pbi-panel: #FFFFFF;
+        --pbi-ink: #1A1A1A;
+        --pbi-muted: #6B6B6B;
+        --pbi-line: #E8E5DF;
+        --pbi-accent: #DA7756;
+        --pbi-accent-hover: #C96644;
+        --pbi-accent-2: #DA7756;
+        --pbi-green: #16803C;
+        --pbi-red: #B91C1C;
+        --pbi-soft: #F3F1EC;
+        --pbi-code: #1A1A1A;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
 
-      button,
-      input,
-      textarea,
-      select {
-        font: inherit;
-      }
+      button, input, textarea, select { font: inherit; }
 
+      /* ── Launcher ── */
       .launcher {
         position: fixed;
         top: 45%;
@@ -88,39 +119,44 @@
         z-index: 2147483646;
         display: grid;
         place-items: center;
-        width: 44px;
-        height: 74px;
-        border: 1px solid rgba(0, 0, 0, 0.16);
-        border-right: 0;
-        border-radius: 8px 0 0 8px;
+        width: 40px;
+        height: 40px;
+        border: none;
+        border-radius: 50% 0 0 50%;
         background: var(--pbi-accent);
-        color: #111;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+        color: #fff;
+        box-shadow: -2px 0 16px rgba(218,119,86,0.35);
         cursor: pointer;
-        font-weight: 800;
-        letter-spacing: 0;
+        transition: background 0.15s;
+        pointer-events: auto;
       }
+
+      .launcher:hover { background: var(--pbi-accent-hover); }
 
       .launcher span {
-        writing-mode: vertical-rl;
-        transform: rotate(180deg);
-        font-size: 13px;
+        font-size: 16px;
+        font-weight: 700;
+        writing-mode: horizontal-tb;
+        transform: none;
+        letter-spacing: -0.5px;
       }
 
+      /* ── Shell ── */
       .shell {
         position: fixed;
-        top: 20px;
-        right: 20px;
+        top: 16px;
+        right: 16px;
         z-index: 2147483647;
         display: none;
-        width: min(460px, calc(100vw - 28px));
-        height: min(760px, calc(100vh - 40px));
+        width: min(480px, calc(100vw - 24px));
+        height: min(780px, calc(100vh - 32px));
         overflow: hidden;
-        border: 1px solid rgba(0, 0, 0, 0.18);
-        border-radius: 8px;
+        border: 1px solid var(--pbi-line);
+        border-radius: 16px;
         background: var(--pbi-bg);
         color: var(--pbi-ink);
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
+        box-shadow: 0 8px 48px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+        pointer-events: auto;
       }
 
       .shell.open {
@@ -128,145 +164,161 @@
         flex-direction: column;
       }
 
+      /* ── Header ── */
       .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        padding: 14px 14px 12px;
+        padding: 16px 16px 14px;
         border-bottom: 1px solid var(--pbi-line);
-        background: #fffdf7;
+        background: var(--pbi-bg);
       }
 
-      .brand {
-        min-width: 0;
+      .brand { min-width: 0; display: flex; align-items: center; gap: 10px; }
+
+      .brand::before {
+        content: "✦";
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: var(--pbi-accent);
+        color: #fff;
+        font-size: 14px;
+        flex: 0 0 auto;
       }
 
       .brand strong {
         display: block;
-        font-size: 15px;
+        font-size: 14px;
+        font-weight: 700;
         line-height: 1.2;
+        color: var(--pbi-ink);
       }
 
       .brand span {
         display: block;
-        margin-top: 2px;
+        margin-top: 1px;
         color: var(--pbi-muted);
-        font-size: 12px;
-        line-height: 1.35;
+        font-size: 11px;
+        line-height: 1.3;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 320px;
+        max-width: 280px;
       }
 
       .icon-row {
         display: flex;
-        gap: 6px;
+        gap: 4px;
         flex: 0 0 auto;
       }
 
       .icon-btn {
         display: grid;
         place-items: center;
-        width: 32px;
-        height: 32px;
-        border: 1px solid var(--pbi-line);
-        border-radius: 6px;
-        background: #fff;
-        color: var(--pbi-ink);
+        width: 30px;
+        height: 30px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--pbi-muted);
         cursor: pointer;
+        font-size: 16px;
+        transition: background 0.12s, color 0.12s;
       }
 
       .icon-btn:hover {
         background: var(--pbi-soft);
+        color: var(--pbi-ink);
       }
 
+      /* ── Tabs ── */
       .tabs {
-        display: grid;
-        grid-template-columns: repeat(6, 1fr);
+        display: flex;
+        gap: 0;
+        padding: 0 12px;
         border-bottom: 1px solid var(--pbi-line);
-        background: #fff;
+        background: var(--pbi-bg);
+        overflow-x: auto;
+        scrollbar-width: none;
       }
+
+      .tabs::-webkit-scrollbar { display: none; }
 
       .tab {
-        min-width: 0;
-        border: 0;
-        border-right: 1px solid var(--pbi-line);
-        background: #fff;
+        flex: 0 0 auto;
+        border: none;
+        border-bottom: 2px solid transparent;
+        background: transparent;
         color: var(--pbi-muted);
         cursor: pointer;
-        padding: 10px 4px 9px;
+        padding: 10px 12px 9px;
         font-size: 12px;
-        font-weight: 700;
+        font-weight: 600;
+        transition: color 0.12s, border-color 0.12s;
+        margin-bottom: -1px;
+        white-space: nowrap;
       }
 
-      .tab:last-child {
-        border-right: 0;
-      }
+      .tab:hover { color: var(--pbi-ink); }
 
       .tab.active {
-        background: var(--pbi-accent);
-        color: #111;
+        color: var(--pbi-accent);
+        border-bottom-color: var(--pbi-accent);
+        font-weight: 700;
+        background: transparent;
       }
 
+      /* ── Body ── */
       .body {
         flex: 1;
         overflow: auto;
-        padding: 14px;
+        padding: 16px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--pbi-line) transparent;
       }
 
-      .section {
-        display: none;
-      }
+      .section { display: none; }
+      .section.active { display: block; }
 
-      .section.active {
-        display: block;
-      }
-
-      .field {
-        margin-bottom: 12px;
-      }
+      .field { margin-bottom: 14px; }
 
       label {
         display: flex;
         justify-content: space-between;
         gap: 8px;
         margin-bottom: 6px;
-        color: #2f2f2f;
+        color: var(--pbi-ink);
         font-size: 12px;
-        font-weight: 800;
-      }
-
-      label span {
-        color: var(--pbi-muted);
         font-weight: 600;
       }
 
-      input,
-      textarea,
-      select {
+      label span { color: var(--pbi-muted); font-weight: 400; }
+
+      input, textarea, select {
         width: 100%;
-        border: 1px solid #cfc7b7;
-        border-radius: 6px;
-        background: #fff;
+        border: 1px solid var(--pbi-line);
+        border-radius: 10px;
+        background: var(--pbi-panel);
         color: var(--pbi-ink);
-        padding: 9px 10px;
+        padding: 10px 12px;
         outline: none;
         font-size: 13px;
+        transition: border-color 0.12s, box-shadow 0.12s;
       }
 
       textarea {
-        min-height: 92px;
+        min-height: 96px;
         resize: vertical;
-        line-height: 1.42;
+        line-height: 1.5;
       }
 
-      input:focus,
-      textarea:focus,
-      select:focus {
-        border-color: var(--pbi-accent-2);
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+      input:focus, textarea:focus, select:focus {
+        border-color: var(--pbi-accent);
+        box-shadow: 0 0 0 3px rgba(218,119,86,0.15);
       }
 
       .grid-2 {
@@ -279,43 +331,44 @@
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin: 12px 0;
+        margin: 14px 0;
       }
 
+      /* ── Buttons ── */
       .btn {
-        border: 1px solid #b9ad95;
-        border-radius: 6px;
-        background: #fff;
-        color: #171717;
+        border: 1px solid var(--pbi-line);
+        border-radius: 10px;
+        background: var(--pbi-panel);
+        color: var(--pbi-ink);
         cursor: pointer;
-        padding: 9px 11px;
+        padding: 9px 14px;
         font-size: 13px;
-        font-weight: 800;
+        font-weight: 600;
+        transition: background 0.12s, border-color 0.12s;
       }
+
+      .btn:hover { background: var(--pbi-soft); }
 
       .btn.primary {
         background: var(--pbi-accent);
-        border-color: #d7b100;
+        border-color: var(--pbi-accent);
+        color: #fff;
+        font-weight: 700;
       }
 
+      .btn.primary:hover { background: var(--pbi-accent-hover); border-color: var(--pbi-accent-hover); }
+
       .btn.blue {
-        background: var(--pbi-accent-2);
-        border-color: var(--pbi-accent-2);
+        background: var(--pbi-accent);
+        border-color: var(--pbi-accent);
         color: #fff;
       }
 
-      .btn:hover {
-        filter: brightness(0.98);
-      }
+      .btn.blue:hover { background: var(--pbi-accent-hover); }
 
-      .result {
-        display: none;
-        margin-top: 12px;
-      }
-
-      .result.visible {
-        display: block;
-      }
+      /* ── Result ── */
+      .result { display: none; margin-top: 14px; }
+      .result.visible { display: block; }
 
       .result-header {
         display: flex;
@@ -325,56 +378,55 @@
         margin-bottom: 8px;
       }
 
-      .result-header strong {
-        font-size: 13px;
-      }
+      .result-header strong { font-size: 12px; font-weight: 600; color: var(--pbi-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
       pre {
-        max-height: 300px;
+        max-height: 320px;
         overflow: auto;
         margin: 0;
-        border: 1px solid #cfc7b7;
-        border-radius: 6px;
-        background: var(--pbi-code);
-        color: #f8fafc;
-        padding: 12px;
-        font: 12px/1.5 Consolas, "Cascadia Mono", "SFMono-Regular", Menlo, monospace;
-        white-space: pre-wrap;
-      }
-
-      .note {
-        border: 1px solid #d6e4f7;
-        border-left: 4px solid var(--pbi-accent-2);
-        border-radius: 6px;
-        background: #f3f8ff;
-        color: #17324d;
-        padding: 10px 11px;
-        font-size: 12px;
-        line-height: 1.45;
-      }
-
-      .context-card,
-      .knowledge-card {
         border: 1px solid var(--pbi-line);
-        border-radius: 6px;
-        background: #fff;
-        padding: 10px 11px;
-        margin-bottom: 10px;
+        border-radius: 12px;
+        background: var(--pbi-code);
+        color: #F5F5F0;
+        padding: 14px;
+        font: 12px/1.6 "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+        white-space: pre-wrap;
+        scrollbar-width: thin;
+        scrollbar-color: #444 transparent;
       }
 
-      .context-card strong,
-      .knowledge-card strong {
+      /* ── Cards ── */
+      .note {
+        border: 1px solid rgba(218,119,86,0.25);
+        border-left: 3px solid var(--pbi-accent);
+        border-radius: 10px;
+        background: rgba(218,119,86,0.06);
+        color: var(--pbi-ink);
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .context-card, .knowledge-card {
+        border: 1px solid var(--pbi-line);
+        border-radius: 12px;
+        background: var(--pbi-panel);
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      .context-card strong, .knowledge-card strong {
         display: block;
         margin-bottom: 4px;
         font-size: 12px;
+        font-weight: 600;
       }
 
-      .context-card p,
-      .knowledge-card p {
+      .context-card p, .knowledge-card p {
         margin: 0;
         color: var(--pbi-muted);
         font-size: 12px;
-        line-height: 1.45;
+        line-height: 1.5;
       }
 
       .pill-row {
@@ -387,13 +439,14 @@
       .pill {
         border: 1px solid var(--pbi-line);
         border-radius: 999px;
-        background: #fffdf7;
-        color: #3f3f3f;
-        padding: 4px 8px;
+        background: var(--pbi-soft);
+        color: var(--pbi-ink);
+        padding: 3px 9px;
         font-size: 11px;
-        font-weight: 700;
+        font-weight: 600;
       }
 
+      /* ── Skill cards ── */
       .skill-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -403,103 +456,60 @@
 
       .skill-card {
         border: 1px solid var(--pbi-line);
-        border-radius: 6px;
-        background: #fff;
-        padding: 9px 10px;
+        border-radius: 10px;
+        background: var(--pbi-panel);
+        padding: 10px 12px;
+        transition: border-color 0.12s;
       }
 
+      .skill-card:hover { border-color: rgba(218,119,86,0.4); }
+
+      /* ── Checkbox ── */
       .checkbox-row {
         display: flex;
         align-items: flex-start;
-        gap: 8px;
-        color: #262626;
+        gap: 10px;
+        color: var(--pbi-ink);
         font-size: 12px;
-        line-height: 1.35;
+        line-height: 1.4;
       }
 
-      .checkbox-row input {
-        width: 16px;
-        height: 16px;
-        margin-top: 1px;
-        flex: 0 0 auto;
-      }
+      .checkbox-row input { width: 15px; height: 15px; margin-top: 2px; flex: 0 0 auto; accent-color: var(--pbi-accent); }
+      .checkbox-row strong { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 600; }
+      .checkbox-row span { display: block; color: var(--pbi-muted); }
 
-      .checkbox-row strong {
-        display: block;
-        margin-bottom: 2px;
-        font-size: 12px;
-      }
-
-      .checkbox-row span {
-        display: block;
-        color: var(--pbi-muted);
-      }
-
-      .act-screenshot {
-        width: 100%;
-        border-radius: 6px;
-        border: 1px solid #cfc7b7;
-        display: none;
-        margin-top: 10px;
-      }
+      /* ── Act tab ── */
+      .act-screenshot { width: 100%; border-radius: 10px; border: 1px solid var(--pbi-line); display: none; margin-top: 10px; }
 
       .el-row {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 5px 0;
+        padding: 6px 0;
         border-bottom: 1px solid var(--pbi-line);
         font-size: 12px;
       }
 
-      .el-row:last-child {
-        border-bottom: 0;
-      }
+      .el-row:last-child { border-bottom: 0; }
+      .el-tag { flex: 0 0 auto; color: var(--pbi-muted); font-family: Consolas, monospace; font-size: 11px; }
+      .el-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .el-list { max-height: 180px; overflow: auto; margin-top: 8px; }
 
-      .el-tag {
-        flex: 0 0 auto;
-        color: var(--pbi-muted);
-        font-family: Consolas, monospace;
-        font-size: 11px;
-      }
-
-      .el-label {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .el-list {
-        max-height: 180px;
-        overflow: auto;
-        margin-top: 8px;
-      }
-
+      /* ── Step cards ── */
       .step-card {
         border: 1px solid var(--pbi-line);
-        border-radius: 6px;
-        background: #fff;
-        padding: 9px 10px;
+        border-radius: 10px;
+        background: var(--pbi-panel);
+        padding: 10px 12px;
         margin-bottom: 6px;
         display: flex;
-        gap: 8px;
+        gap: 10px;
         align-items: flex-start;
       }
 
-      .step-card.step-running {
-        border-color: var(--pbi-accent-2);
-        background: #f3f8ff;
-      }
-
-      .step-card.step-done {
-        border-color: var(--pbi-green);
-        opacity: 0.7;
-      }
-
-      .step-card.step-skipped {
-        opacity: 0.45;
-      }
+      .step-card.step-running { border-color: var(--pbi-accent); background: rgba(218,119,86,0.05); }
+      .step-card.step-done { border-color: var(--pbi-green); opacity: 0.65; }
+      .step-card.step-skipped { opacity: 0.4; }
 
       .step-num {
         flex: 0 0 auto;
@@ -509,53 +519,31 @@
         background: var(--pbi-soft);
         color: var(--pbi-muted);
         font-size: 11px;
-        font-weight: 800;
+        font-weight: 700;
         display: grid;
         place-items: center;
       }
 
-      .step-body {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .step-desc {
-        font-size: 12px;
-        font-weight: 700;
-        margin-bottom: 2px;
-      }
-
-      .step-detail {
-        font-size: 11px;
-        color: var(--pbi-muted);
-      }
-
-      .step-actions {
-        display: flex;
-        gap: 4px;
-        flex: 0 0 auto;
-      }
+      .step-body { flex: 1; min-width: 0; }
+      .step-desc { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+      .step-detail { font-size: 11px; color: var(--pbi-muted); }
+      .step-actions { display: flex; gap: 4px; flex: 0 0 auto; }
 
       .step-btn {
-        border: 1px solid #b9ad95;
-        border-radius: 5px;
-        background: #fff;
-        color: #171717;
+        border: 1px solid var(--pbi-line);
+        border-radius: 7px;
+        background: var(--pbi-panel);
+        color: var(--pbi-ink);
         cursor: pointer;
-        padding: 3px 7px;
+        padding: 3px 8px;
         font-size: 11px;
-        font-weight: 700;
+        font-weight: 600;
       }
 
-      .step-btn.approve {
-        background: var(--pbi-accent);
-        border-color: #d7b100;
-      }
+      .step-btn.approve { background: var(--pbi-accent); border-color: var(--pbi-accent); color: #fff; }
+      .step-btn.skip { color: var(--pbi-muted); }
 
-      .step-btn.skip {
-        color: var(--pbi-muted);
-      }
-
+      /* ── Log ── */
       .log-entry {
         display: flex;
         gap: 8px;
@@ -565,83 +553,340 @@
         font-size: 11px;
       }
 
-      .log-entry:last-child {
-        border-bottom: 0;
-      }
-
-      .log-time {
-        flex: 0 0 auto;
-        color: var(--pbi-muted);
-        font-family: Consolas, monospace;
-      }
-
-      .log-type {
-        flex: 0 0 auto;
-        font-weight: 700;
-      }
-
-      .log-msg {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--pbi-muted);
-      }
-
+      .log-entry:last-child { border-bottom: 0; }
+      .log-time { flex: 0 0 auto; color: var(--pbi-muted); font-family: Consolas, monospace; }
+      .log-type { flex: 0 0 auto; font-weight: 700; }
+      .log-msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pbi-muted); }
       .log-ok { color: var(--pbi-green); }
       .log-err { color: var(--pbi-red); }
 
+      /* ── Footer ── */
       .footer {
         border-top: 1px solid var(--pbi-line);
-        background: #fffdf7;
+        background: var(--pbi-bg);
         color: var(--pbi-muted);
-        padding: 8px 12px;
+        padding: 9px 14px;
         font-size: 11px;
-        line-height: 1.35;
+        line-height: 1.4;
       }
 
+      /* ── Toast ── */
       .toast {
         position: fixed;
-        right: 28px;
+        right: 24px;
         bottom: 24px;
         z-index: 2147483647;
         display: none;
         max-width: 320px;
-        border-radius: 6px;
-        background: #111827;
-        color: #fff;
-        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
-        padding: 10px 12px;
+        border-radius: 12px;
+        background: #1A1A1A;
+        color: #FAFAF8;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+        padding: 10px 14px;
         font: 12px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
       }
 
-      .toast.visible {
-        display: block;
-      }
+      .toast.visible { display: block; }
 
       @media (max-width: 560px) {
-        .shell {
-          inset: 8px;
-          width: auto;
-          height: auto;
-        }
+        .shell { inset: 8px; width: auto; height: auto; border-radius: 12px; }
+        .grid-2 { grid-template-columns: 1fr; }
+      }
 
-        .grid-2 {
-          grid-template-columns: 1fr;
-        }
+      /* ── Chat interface ── */
+      .body:has(> .section.active[data-section="ask"]) {
+        padding: 0;
+        overflow: hidden;
+      }
 
-        .tabs {
-          grid-template-columns: repeat(3, 1fr);
-          grid-template-rows: repeat(2, auto);
-        }
+      .section[data-section="ask"].active {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
 
-        .tab {
-          border-bottom: 1px solid var(--pbi-line);
-        }
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--pbi-line) transparent;
+      }
+
+      .chat-welcome {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 24px 12px 8px;
+        gap: 8px;
+      }
+
+      .chat-welcome-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--pbi-accent);
+        color: #fff;
+        font-size: 22px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 4px;
+      }
+
+      .chat-welcome-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--pbi-ink);
+      }
+
+      .chat-welcome-sub {
+        margin: 0;
+        font-size: 12px;
+        color: var(--pbi-muted);
+        line-height: 1.5;
+        max-width: 320px;
+      }
+
+      .suggestion-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 8px;
+      }
+
+      .suggestion-chip {
+        border: 1px solid var(--pbi-line);
+        border-radius: 999px;
+        background: var(--pbi-panel);
+        color: var(--pbi-ink);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 6px 12px;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+      }
+
+      .suggestion-chip:hover {
+        background: var(--pbi-soft);
+        border-color: rgba(218,119,86,0.35);
+      }
+
+      .chat-msg {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        max-width: 100%;
+      }
+
+      .chat-msg.user {
+        flex-direction: row-reverse;
+      }
+
+      .chat-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--pbi-accent);
+        color: #fff;
+        font-size: 13px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        font-weight: 700;
+      }
+
+      .chat-msg.user .chat-avatar {
+        background: var(--pbi-soft);
+        color: var(--pbi-ink);
+        font-size: 11px;
+      }
+
+      .chat-bubble {
+        max-width: calc(100% - 44px);
+        border-radius: 14px;
+        padding: 10px 14px;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .chat-msg.user .chat-bubble {
+        background: var(--pbi-accent);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+      }
+
+      .chat-msg.assistant .chat-bubble {
+        background: var(--pbi-panel);
+        border: 1px solid var(--pbi-line);
+        color: var(--pbi-ink);
+        border-bottom-left-radius: 4px;
+      }
+
+      .chat-bubble h2, .chat-bubble h3, .chat-bubble h4 {
+        margin: 10px 0 4px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .chat-bubble h2:first-child, .chat-bubble h3:first-child, .chat-bubble h4:first-child {
+        margin-top: 0;
+      }
+
+      .chat-bubble p { margin: 0 0 8px; }
+      .chat-bubble p:last-child { margin-bottom: 0; }
+
+      .chat-bubble ul, .chat-bubble ol {
+        margin: 4px 0 8px;
+        padding-left: 18px;
+      }
+
+      .chat-bubble li { margin-bottom: 3px; }
+
+      .chat-bubble pre {
+        max-height: 260px;
+        border-radius: 8px;
+        margin: 8px 0;
+        font-size: 11.5px;
+      }
+
+      .chat-bubble code.inline-code {
+        background: rgba(0,0,0,0.08);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font: 12px/1.4 "Cascadia Mono", Consolas, monospace;
+      }
+
+      .chat-msg.user .chat-bubble code.inline-code {
+        background: rgba(255,255,255,0.2);
+      }
+
+      .chat-bubble hr {
+        border: none;
+        border-top: 1px solid var(--pbi-line);
+        margin: 10px 0;
+      }
+
+      .chat-bubble strong { font-weight: 700; }
+
+      .chat-msg.assistant .chat-bubble .chat-copy {
+        display: block;
+        margin-top: 10px;
+        text-align: right;
+      }
+
+      .chat-copy-btn {
+        border: 1px solid var(--pbi-line);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--pbi-muted);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 8px;
+        cursor: pointer;
+      }
+
+      .chat-copy-btn:hover { background: var(--pbi-soft); color: var(--pbi-ink); }
+
+      .chat-thinking {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        padding: 10px 14px;
+      }
+
+      .chat-thinking span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--pbi-muted);
+        animation: chat-dot 1.2s infinite;
+      }
+
+      .chat-thinking span:nth-child(2) { animation-delay: 0.2s; }
+      .chat-thinking span:nth-child(3) { animation-delay: 0.4s; }
+
+      @keyframes chat-dot {
+        0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+        40% { opacity: 1; transform: scale(1); }
+      }
+
+      .chat-input-area {
+        border-top: 1px solid var(--pbi-line);
+        padding: 10px 12px 8px;
+        background: var(--pbi-bg);
+        flex: 0 0 auto;
+      }
+
+      .chat-input-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        border: 1px solid var(--pbi-line);
+        border-radius: 12px;
+        background: var(--pbi-panel);
+        padding: 8px 8px 8px 12px;
+        transition: border-color 0.12s, box-shadow 0.12s;
+      }
+
+      .chat-input-row:focus-within {
+        border-color: var(--pbi-accent);
+        box-shadow: 0 0 0 3px rgba(218,119,86,0.12);
+      }
+
+      .chat-input-row textarea {
+        flex: 1;
+        border: none;
+        background: transparent;
+        resize: none;
+        outline: none;
+        padding: 0;
+        font-size: 13px;
+        line-height: 1.5;
+        min-height: 22px;
+        max-height: 120px;
+        overflow-y: auto;
+        box-shadow: none;
+        border-radius: 0;
+      }
+
+      .chat-input-row textarea:focus {
+        border: none;
+        box-shadow: none;
+      }
+
+      .chat-send-btn {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        border: none;
+        background: var(--pbi-accent);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        flex: 0 0 auto;
+        transition: background 0.12s;
+      }
+
+      .chat-send-btn:hover { background: var(--pbi-accent-hover); }
+      .chat-send-btn:disabled { background: var(--pbi-line); cursor: not-allowed; }
+
+      .chat-hint {
+        margin: 6px 0 0;
+        font-size: 10px;
+        color: var(--pbi-muted);
+        text-align: center;
+        line-height: 1.4;
       }
     </style>
 
-    <button class="launcher" id="launcher" title="Open Power BI Copilot"><span>BI</span></button>
+    <button class="launcher" id="launcher" title="Open Power BI Copilot"><span>✦</span></button>
 
     <aside class="shell" id="shell" aria-label="Power BI Web Copilot">
       <header class="header">
@@ -666,21 +911,29 @@
 
       <main class="body">
         <section class="section active" data-section="ask">
-          <div class="field">
-            <label for="askPrompt">Power BI task <span>visual, DAX, model, debug</span></label>
-            <textarea id="askPrompt" placeholder="Example: Create a measure for YoY revenue growth and recommend a visual by region."></textarea>
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-welcome" id="chatWelcome">
+              <div class="chat-welcome-icon">✦</div>
+              <p class="chat-welcome-title">Power BI Copilot</p>
+              <p class="chat-welcome-sub">Ask me anything — DAX measures, visuals, model design, or describe a dashboard and I'll help you build it.</p>
+              <div class="suggestion-chips">
+                <button class="suggestion-chip" data-prompt="Build me a sales overview dashboard with KPIs for total revenue, gross margin %, and units sold, plus a trend line by month and a regional breakdown map">Build a sales dashboard</button>
+                <button class="suggestion-chip" data-prompt="Write a year-over-year revenue growth measure with proper time intelligence using a marked date table">YoY revenue measure</button>
+                <button class="suggestion-chip" data-prompt="What visual should I use to compare category performance over time and identify outliers?">Choose a visual</button>
+                <button class="suggestion-chip" data-prompt="I have Sales, Date, Product, and Customer tables. Review my star schema design and tell me what relationships and measures I need">Review my model</button>
+              </div>
+            </div>
           </div>
-          <div class="actions">
-            <button class="btn primary" id="askGenerate">Generate expert answer</button>
-            <button class="btn" data-fill="measure">Measure prompt</button>
-            <button class="btn" data-fill="visual">Visual prompt</button>
+          <div class="chat-input-area">
+            <div class="chat-input-row">
+              <textarea id="askPrompt" placeholder="Message Power BI Copilot…" rows="1"></textarea>
+              <button class="chat-send-btn" id="askGenerate" title="Send">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <p class="chat-hint">Rules run locally first · Claude handles complex questions · Always verify DAX</p>
           </div>
-          <div class="context-card">
-            <strong>Current page</strong>
-            <p id="contextSummary">No context captured yet.</p>
-            <div class="pill-row" id="contextPills"></div>
-          </div>
-          <div class="result" id="askResult">
+          <div class="result" id="askResult" style="display:none">
             <div class="result-header">
               <strong>Recommendation</strong>
               <button class="btn" data-copy="#askOutput">Copy</button>
@@ -818,7 +1071,7 @@
             </div>
             <div class="field">
               <label for="fallbackEndpoint">Fallback endpoint</label>
-              <input id="fallbackEndpoint" placeholder="http://localhost:8787/fallback">
+              <input id="fallbackEndpoint" placeholder="http://localhost:3003/fallback">
             </div>
             <div class="grid-2">
               <div class="field">
@@ -967,21 +1220,164 @@
       button.addEventListener("click", () => setActiveTab(button.dataset.tab));
     });
 
-    $$("[data-fill]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const prompt = button.dataset.fill === "measure"
-          ? "Create a reusable DAX measure for total revenue, then explain how to validate it."
-          : "Recommend a Power BI visual for comparing performance across categories and over time.";
-        $("#askPrompt").value = prompt;
+    // ── Chat state & helpers ─────────────────────────────────────────────
+    state.messages = [];
+
+    function renderMd(text) {
+      let h = text
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      // fenced code blocks
+      h = h.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) =>
+        `<pre><code>${c.trimEnd()}</code></pre>`);
+      // inline code
+      h = h.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+      // bold
+      h = h.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+      // headers
+      h = h.replace(/^### (.+)$/gm, "<h4>$1</h4>");
+      h = h.replace(/^## (.+)$/gm,  "<h3>$1</h3>");
+      h = h.replace(/^# (.+)$/gm,   "<h2>$1</h2>");
+      // hr
+      h = h.replace(/^---+$/gm, "<hr>");
+      // lists — collect consecutive - lines
+      h = h.replace(/((?:^[-*] .+\n?)+)/gm, (block) => {
+        const items = block.trim().split(/\n/).map(l => `<li>${l.replace(/^[-*] /, "")}</li>`).join("");
+        return `<ul>${items}</ul>`;
+      });
+      // paragraphs
+      const parts = h.split(/\n\n+/);
+      h = parts.map(p => {
+        p = p.trim();
+        if (!p) return "";
+        if (/^<(pre|ul|ol|h[2-4]|hr)/.test(p)) return p;
+        return `<p>${p.replace(/\n/g, "<br>")}</p>`;
+      }).join("\n");
+      return h;
+    }
+
+    function appendChatMessage(role, content) {
+      state.messages.push({ role, content, ts: Date.now() });
+      renderChat();
+    }
+
+    function renderChat() {
+      const container = $("#chatMessages");
+      const welcome = $("#chatWelcome");
+      if (welcome) welcome.style.display = state.messages.length ? "none" : "flex";
+
+      // Remove old bubbles (keep welcome)
+      $$(".chat-msg").forEach(el => el.remove());
+
+      state.messages.forEach((msg, idx) => {
+        const div = document.createElement("div");
+        div.className = `chat-msg ${msg.role}`;
+
+        const avatar = document.createElement("div");
+        avatar.className = "chat-avatar";
+        avatar.textContent = msg.role === "assistant" ? "✦" : "You";
+
+        const bubble = document.createElement("div");
+        bubble.className = "chat-bubble";
+
+        if (msg.role === "assistant") {
+          bubble.innerHTML = renderMd(msg.content);
+          // add copy button
+          const copyRow = document.createElement("div");
+          copyRow.className = "chat-copy";
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "chat-copy-btn";
+          copyBtn.textContent = "Copy";
+          copyBtn.onclick = async () => {
+            await navigator.clipboard.writeText(msg.content);
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+          };
+          copyRow.appendChild(copyBtn);
+          bubble.appendChild(copyRow);
+        } else {
+          bubble.textContent = msg.content;
+        }
+
+        div.appendChild(avatar);
+        div.appendChild(bubble);
+        container.appendChild(div);
+      });
+
+      // Scroll to bottom
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function showChatThinking() {
+      const container = $("#chatMessages");
+      const div = document.createElement("div");
+      div.className = "chat-msg assistant";
+      div.id = "chatThinking";
+      const avatar = document.createElement("div");
+      avatar.className = "chat-avatar";
+      avatar.textContent = "✦";
+      const bubble = document.createElement("div");
+      bubble.className = "chat-bubble chat-thinking";
+      bubble.innerHTML = "<span></span><span></span><span></span>";
+      div.appendChild(avatar);
+      div.appendChild(bubble);
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function hideChatThinking() {
+      const el = $("#chatThinking");
+      if (el) el.remove();
+    }
+
+    async function sendChatMessage(prompt) {
+      if (!prompt.trim()) return;
+      const ta = $("#askPrompt");
+      const sendBtn = $("#askGenerate");
+      if (ta) ta.value = "";
+      if (ta) ta.style.height = "22px";
+      if (sendBtn) sendBtn.disabled = true;
+
+      appendChatMessage("user", prompt);
+      showChatThinking();
+
+      try {
+        const output = await generateExpertAnswer(prompt);
+        hideChatThinking();
+        appendChatMessage("assistant", output);
+      } catch (err) {
+        hideChatThinking();
+        appendChatMessage("assistant", "Something went wrong: " + err.message);
+      } finally {
+        if (sendBtn) sendBtn.disabled = false;
+        if (ta) ta.focus();
+      }
+    }
+
+    // Suggestion chips
+    $$(".suggestion-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        sendChatMessage(chip.dataset.prompt);
       });
     });
 
-    $("#askGenerate").addEventListener("click", async () => {
-      const prompt = $("#askPrompt").value.trim();
-      if (!prompt) return toast("Tell the copilot what you want to build.");
-      showResult("#askResult", "#askOutput", "Working through deterministic skills...");
-      const output = await generateExpertAnswer(prompt);
-      showResult("#askResult", "#askOutput", output);
+    // Send on click
+    $("#askGenerate").addEventListener("click", () => {
+      sendChatMessage($("#askPrompt")?.value?.trim() || "");
+    });
+
+    // Send on Enter (Shift+Enter for newline)
+    $("#askPrompt")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendChatMessage(e.target.value.trim());
+      }
+    });
+
+    // Auto-resize textarea
+    $("#askPrompt")?.addEventListener("input", (e) => {
+      const ta = e.target;
+      ta.style.height = "22px";
+      ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
     });
 
     $("#generateMeasure").addEventListener("click", () => {
@@ -1370,10 +1766,11 @@
     const localPattern = buildExpertAnswer(prompt);
     const localAnswer = deterministic.text;
 
+    const _threshold = Number(state.settings.fallbackThreshold || DEFAULT_SETTINGS.fallbackThreshold);
     const shouldFallback =
       state.settings.fallbackEnabled
       && state.settings.fallbackEndpoint
-      && deterministic.confidence < Number(state.settings.fallbackThreshold || DEFAULT_SETTINGS.fallbackThreshold);
+      && deterministic.confidence < _threshold;
 
     if (!shouldFallback) return localAnswer;
 
@@ -1416,29 +1813,36 @@
   }
 
   async function callFallback(prompt, deterministic, localPattern) {
-    const response = await fetch(state.settings.fallbackEndpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        provider: "anthropic",
-        model: state.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
-        prompt,
-        deterministic,
-        localPattern,
-        context: state.context,
-        knowledge: state.knowledge,
-        activeSkills: state.settings.activeSkills
-      })
+    const bodyObj = {
+      type: "fallback",
+      model: state.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
+      prompt,
+      deterministic,
+      localPattern,
+      context: state.context,
+      knowledge: state.knowledge,
+      activeSkills: state.settings.activeSkills
+    };
+
+
+    // Route through the background service worker to avoid mixed-content blocks
+    // (content scripts on HTTPS pages cannot directly fetch http://localhost)
+    const result = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { type: "PBI_PROXY_FETCH", url: state.settings.fallbackEndpoint, body: bodyObj },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (!response?.ok) {
+            reject(new Error(response?.error || "Proxy fetch failed"));
+          } else {
+            resolve(response.data);
+          }
+        }
+      );
     });
 
-    if (!response.ok) {
-      throw new Error(`Fallback endpoint returned HTTP ${response.status}.`);
-    }
-
-    const data = await response.json();
-    const text = data.text || data.content || data.message;
+    const text = result.text || result.content || result.message;
     if (!text) throw new Error("Fallback endpoint did not return a text field.");
     return text;
   }

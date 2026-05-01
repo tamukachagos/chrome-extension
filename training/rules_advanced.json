@@ -3123,5 +3123,455 @@
     "confidence": 0.91,
     "fix_type": "needs_review",
     "requires_llm": false
+  },
+  {
+    "id": "dash-001",
+    "pattern": "Dashboard missing executive KPI cards — no card/multi-row card visual for headline metrics",
+    "bad_dax": "// Report has only bar charts and tables, no KPI cards",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["user asks to build dashboard", "no card or KPI visual mentioned", "sales or revenue context"],
+      "context": "dashboard_design"
+    },
+    "fixed_dax": "// Recommended dashboard layout:\n// Row 1: Card — Total Revenue | Card — Gross Margin % | Card — Units Sold | Card — YoY Growth %\n// Row 2: Line chart — Revenue by Month (trend)\n// Row 3 left: Bar chart — Revenue by Category\n// Row 3 right: Map — Revenue by Region\n// Page-level slicers: Date range, Region, Product Category",
+    "category": "visual",
+    "confidence": 0.95,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dash-002",
+    "pattern": "Sales dashboard design — recommended visuals and layout for sales reporting",
+    "bad_dax": "// User asking how to build sales dashboard",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["sales dashboard", "build dashboard", "create dashboard", "design dashboard"],
+      "context": "dashboard_design"
+    },
+    "fixed_dax": "SALES DASHBOARD BLUEPRINT\n\n1. HEADER ROW (Cards)\n   - Total Revenue = SUM(Sales[Revenue])\n   - Gross Margin % = DIVIDE([Total Revenue] - [Total COGS], [Total Revenue])\n   - Total Units = SUM(Sales[Quantity])\n   - YoY Growth % = DIVIDE([Revenue TY] - [Revenue LY], [Revenue LY])\n\n2. TREND (Line Chart)\n   - X-axis: Date[MonthYear]\n   - Y-axis: [Total Revenue], [Revenue LY]\n   - Title: Revenue Trend vs Prior Year\n\n3. BREAKDOWN (Clustered Bar)\n   - Axis: Product[Category]\n   - Value: [Total Revenue]\n   - Small multiples or legend by Region\n\n4. GEOGRAPHY (Filled Map or Shape Map)\n   - Location: Geography[State/Country]\n   - Color saturation: [Total Revenue]\n\n5. DETAIL (Matrix)\n   - Rows: Product[Category] > Product[Name]\n   - Columns: Date[Quarter]\n   - Values: [Total Revenue], [Gross Margin %]\n\n6. SLICERS\n   - Date range slicer (between)\n   - Region dropdown\n   - Product category list\n\nDAX MEASURES NEEDED:\nTotal Revenue = SUM(Sales[Revenue])\nTotal COGS = SUM(Sales[Cost])\nGross Margin = [Total Revenue] - [Total COGS]\nGross Margin % = DIVIDE([Gross Margin], [Total Revenue])\nRevenue LY = CALCULATE([Total Revenue], SAMEPERIODLASTYEAR('Date'[Date]))\nYoY Growth % = DIVIDE([Total Revenue] - [Revenue LY], [Revenue LY])\nRevenue YTD = TOTALYTD([Total Revenue], 'Date'[Date])",
+    "category": "visual",
+    "confidence": 0.96,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dash-003",
+    "pattern": "KPI dashboard — operational metrics with targets and variance",
+    "bad_dax": "// User wants KPI or performance dashboard",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["kpi dashboard", "performance dashboard", "target", "variance", "scorecard"],
+      "context": "dashboard_design"
+    },
+    "fixed_dax": "KPI DASHBOARD BLUEPRINT\n\n1. KPI VISUALS (use Power BI KPI visual or card)\n   - Metric vs Target: use KPI visual with trend axis\n   - Color coding: green >= 100% of target, amber 80-99%, red < 80%\n\n2. KEY MEASURES:\n   Target Attainment % = DIVIDE([Actual], [Target])\n   Variance to Target = [Actual] - [Target]\n   Variance % = DIVIDE([Variance to Target], [Target])\n\n3. CONDITIONAL FORMATTING:\n   - Apply background color rule: \n     >= 1 = green (#107C10), >= 0.8 = amber (#FF8C00), else red (#D13438)\n\n4. GAUGE CHART: for single metric vs target (e.g., quota attainment)\n\n5. BULLET CHART ALTERNATIVE: clustered bar with target as constant line\n   - Add Analytics pane > Constant Line for target",
+    "category": "visual",
+    "confidence": 0.93,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "vis-001",
+    "pattern": "Wrong visual type — using bar chart for time trend (should be line chart)",
+    "bad_dax": "// Bar chart used with Date on axis showing trend over time",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["bar chart", "trend", "over time", "by month", "by quarter", "by year", "time series"],
+      "context": "visual_selection"
+    },
+    "fixed_dax": "VISUAL RECOMMENDATION: Line Chart\n\nUse a LINE CHART for trends over continuous time periods.\n- X-axis: Date hierarchy (Year > Quarter > Month)\n- Y-axis: Your metric\n- Enable drill-down for date hierarchy\n- Add a second line for comparison (prior year)\n\nWhen to use Bar vs Line:\n- Bar chart: comparing DISCRETE categories (products, regions, sales reps)\n- Line chart: showing CHANGE OVER TIME (months, quarters, years)\n- Combination: clustered bar for categories + line for trend overlay",
+    "category": "visual",
+    "confidence": 0.94,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "vis-002",
+    "pattern": "Visual selection — which chart to use for comparison across categories",
+    "bad_dax": "// User asking which visual for category comparison",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["which visual", "what visual", "compare", "category", "best chart", "recommend visual"],
+      "context": "visual_selection"
+    },
+    "fixed_dax": "VISUAL SELECTION GUIDE\n\nCOMPARISON (categories vs a metric):\n→ Clustered Bar Chart — side-by-side comparison of 2-4 series\n→ Stacked Bar Chart — part-to-whole + comparison (use sparingly)\n→ Column Chart — same as bar but vertical; good for fewer categories\n\nTREND OVER TIME:\n→ Line Chart — single or multiple metrics over time\n→ Area Chart — emphasize volume/magnitude change\n\nPART-TO-WHOLE:\n→ Donut/Pie — max 5 slices, when exact values matter less\n→ Treemap — hierarchical part-to-whole (category > subcategory)\n→ 100% Stacked Bar — proportion over time or across categories\n\nRANKING:\n→ Bar Chart (sorted descending) — clear winner/loser view\n→ Matrix with conditional formatting — detailed ranking table\n\nRELATIONSHIP / CORRELATION:\n→ Scatter Chart — two continuous measures; add Play Axis for time\n→ Bubble Chart — three measures (X, Y, size)\n\nGEOGRAPHY:\n→ Filled Map — aggregate by region/country\n→ Map (bubble) — point data with size encoding\n→ Shape Map — custom regions with custom shapes\n\nHEADLINE METRICS:\n→ Card — single KPI\n→ Multi-row Card — 3-6 metrics in one visual\n→ KPI Visual — metric vs target with trend\n→ Gauge — progress to a single target\n\nDETAIL / DRILL-THROUGH:\n→ Matrix — cross-tab with drill-down, subtotals\n→ Table — flat list with conditional formatting",
+    "category": "visual",
+    "confidence": 0.97,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "vis-003",
+    "pattern": "Scatter chart for relationship or outlier analysis between two measures",
+    "bad_dax": "// User wants to find relationship, correlation, or outliers",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["scatter", "relationship", "correlation", "outlier", "bubble chart", "two measures"],
+      "context": "visual_selection"
+    },
+    "fixed_dax": "SCATTER CHART SETUP\n\nField wells:\n- X Axis: Continuous measure (e.g., [Total Revenue])\n- Y Axis: Continuous measure (e.g., [Gross Margin %])\n- Details: Dimension (e.g., Product[Category]) — creates one dot per member\n- Size: Optional third measure (creates bubble chart)\n- Play Axis: Date field for animated time progression\n\nAnalytics pane:\n- Add Trend Line to see overall correlation direction\n- Add Constant Line to mark thresholds (e.g., margin target)\n\nConditional formatting:\n- Color by a categorical field to group clusters visually\n\nDAX for outlier flagging:\nIs Outlier = \nVAR AvgRevenue = AVERAGEX(ALL(Product), [Total Revenue])\nVAR AvgMargin = AVERAGEX(ALL(Product), [Gross Margin %])\nRETURN\n  IF([Total Revenue] > AvgRevenue * 1.5 || [Gross Margin %] < AvgMargin * 0.7, \"Outlier\", \"Normal\")",
+    "category": "visual",
+    "confidence": 0.92,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-ti-001",
+    "pattern": "Year-to-date calculation without TOTALYTD or DATESYTD",
+    "bad_dax": "Revenue YTD = CALCULATE([Total Revenue], FILTER('Date', 'Date'[Date] <= TODAY() && YEAR('Date'[Date]) = YEAR(TODAY())))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER"],
+      "conditions": ["YTD", "year to date", "cumulative by year", "running total year"],
+      "context": "time_intelligence"
+    },
+    "fixed_dax": "Revenue YTD = TOTALYTD([Total Revenue], 'Date'[Date])\n\n-- Or equivalently:\nRevenue YTD = CALCULATE([Total Revenue], DATESYTD('Date'[Date]))\n\n-- Custom fiscal year end (e.g., June 30):\nRevenue YTD = TOTALYTD([Total Revenue], 'Date'[Date], \"06/30\")\n\n-- Requirements: Date table must be marked as Date Table in Power BI Desktop",
+    "category": "correctness",
+    "confidence": 0.96,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-ti-002",
+    "pattern": "Year-over-year comparison without SAMEPERIODLASTYEAR or DATEADD",
+    "bad_dax": "Revenue LY = CALCULATE([Total Revenue], FILTER('Date', YEAR('Date'[Date]) = YEAR(TODAY()) - 1))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER"],
+      "conditions": ["last year", "prior year", "previous year", "YoY", "year over year"],
+      "context": "time_intelligence"
+    },
+    "fixed_dax": "-- Prior Year Revenue:\nRevenue LY = CALCULATE([Total Revenue], SAMEPERIODLASTYEAR('Date'[Date]))\n\n-- YoY Growth Amount:\nYoY Growth = [Total Revenue] - [Revenue LY]\n\n-- YoY Growth %:\nYoY Growth % = DIVIDE([YoY Growth], [Revenue LY])\n\n-- Alternative with DATEADD (more flexible):\nRevenue LY = CALCULATE([Total Revenue], DATEADD('Date'[Date], -1, YEAR))\n\n-- Rolling 12 months vs prior rolling 12:\nRevenue R12M = CALCULATE([Total Revenue], DATESINPERIOD('Date'[Date], LASTDATE('Date'[Date]), -12, MONTH))\nRevenue Prior R12M = CALCULATE([Revenue R12M], DATEADD('Date'[Date], -12, MONTH))",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-ti-003",
+    "pattern": "Month-to-date or quarter-to-date without DATESMTD/DATESQTD",
+    "bad_dax": "Revenue MTD = CALCULATE([Total Revenue], FILTER('Date', 'Date'[Date] <= TODAY() && MONTH('Date'[Date]) = MONTH(TODAY())))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER"],
+      "conditions": ["MTD", "month to date", "QTD", "quarter to date"],
+      "context": "time_intelligence"
+    },
+    "fixed_dax": "-- Month-to-date:\nRevenue MTD = TOTALMTD([Total Revenue], 'Date'[Date])\n-- Equivalent: CALCULATE([Total Revenue], DATESMTD('Date'[Date]))\n\n-- Quarter-to-date:\nRevenue QTD = TOTALQTD([Total Revenue], 'Date'[Date])\n-- Equivalent: CALCULATE([Total Revenue], DATESQTD('Date'[Date]))\n\n-- Prior month MTD for comparison:\nRevenue Prior MTD = CALCULATE(TOTALMTD([Total Revenue], 'Date'[Date]), DATEADD('Date'[Date], -1, MONTH))",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-rank-001",
+    "pattern": "Ranking items within a category without RANKX",
+    "bad_dax": "// User wants to rank products, customers, or regions by a metric",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["rank", "top 10", "top N", "ranking", "best", "worst", "largest", "smallest by"],
+      "context": "ranking"
+    },
+    "fixed_dax": "-- Rank all products by revenue (1 = highest):\nProduct Rank = RANKX(ALL(Product[ProductName]), [Total Revenue], , DESC, DENSE)\n\n-- Top 10 products filter (use in visual-level filter or as a measure):\nIs Top 10 = IF([Product Rank] <= 10, 1, 0)\n\n-- Rank within category:\nRank in Category = \nRANKX(\n  ALLEXCEPT(Product, Product[Category]),\n  [Total Revenue], , DESC, DENSE\n)\n\n-- Dynamic Top N using a What-If parameter:\n-- 1. Create What-If parameter: TopN (1 to 20, default 10)\n-- 2. Measure:\nTop N Filter = IF([Product Rank] <= [TopN Value], 1, 0)\n-- 3. Add to visual-level filter: Top N Filter = 1",
+    "category": "correctness",
+    "confidence": 0.94,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-pct-001",
+    "pattern": "Percentage of total without ALL() to remove filters",
+    "bad_dax": "Revenue % = DIVIDE([Total Revenue], SUM(Sales[Revenue]))",
+    "detection_logic": {
+      "functions": ["DIVIDE", "SUM"],
+      "conditions": ["percent of total", "% of total", "share", "proportion", "contribution"],
+      "context": "percentage"
+    },
+    "fixed_dax": "-- % of grand total (ignores all filters):\nRevenue % of Total = DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALL(Sales)))\n\n-- % of category total (ignores product filter but keeps category):\nRevenue % of Category = DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALLEXCEPT(Product, Product[Category])))\n\n-- % of column total in matrix (respects row context, removes column):\nRevenue % of Column = DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALLSELECTED()))\n\nNote: Use ALLSELECTED() when you want % of whatever is currently visible (respects slicers but ignores the row/column filter in the matrix).",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-running-001",
+    "pattern": "Running total or cumulative sum calculation",
+    "bad_dax": "// User wants cumulative revenue, running total, or waterfall values",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["running total", "cumulative", "waterfall", "accumulate", "rolling sum"],
+      "context": "running_total"
+    },
+    "fixed_dax": "-- Running total by date:\nRevenue Running Total = \nCALCULATE(\n  [Total Revenue],\n  FILTER(\n    ALL('Date'),\n    'Date'[Date] <= MAX('Date'[Date])\n  )\n)\n\n-- Running total YTD (resets each year):\nRevenue Running Total YTD = \nCALCULATE(\n  [Total Revenue],\n  FILTER(\n    ALLSELECTED('Date'),\n    'Date'[Date] <= MAX('Date'[Date])\n    && YEAR('Date'[Date]) = YEAR(MAX('Date'[Date]))\n  )\n)\n\n-- Waterfall: use a dedicated Waterfall chart visual\n-- Field wells: Category axis, Breakdown, Y-axis (your base measure)",
+    "category": "correctness",
+    "confidence": 0.93,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-var-001",
+    "pattern": "Repeated expression evaluated multiple times — should use VAR",
+    "bad_dax": "Margin % = DIVIDE(SUM(Sales[Revenue]) - SUM(Sales[Cost]), SUM(Sales[Revenue]))",
+    "detection_logic": {
+      "functions": ["SUM", "DIVIDE"],
+      "conditions": ["same aggregation referenced twice", "SUM repeated", "CALCULATE repeated"],
+      "context": "measure_optimization"
+    },
+    "fixed_dax": "Margin % = \nVAR Revenue = SUM(Sales[Revenue])\nVAR Cost = SUM(Sales[Cost])\nVAR Margin = Revenue - Cost\nRETURN\n  DIVIDE(Margin, Revenue)\n\nBenefits of VAR:\n- Expression evaluated once (performance)\n- Easier to read and debug\n- VAR captures filter context at declaration point\n- Can be reused multiple times in RETURN",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-calculate-001",
+    "pattern": "CALCULATE with multiple filter arguments — correct behavior explanation",
+    "bad_dax": "// User confused about CALCULATE with multiple arguments",
+    "detection_logic": {
+      "functions": ["CALCULATE"],
+      "conditions": ["CALCULATE", "multiple filters", "how CALCULATE works", "filter context"],
+      "context": "dax_explanation"
+    },
+    "fixed_dax": "HOW CALCULATE WORKS\n\nCALCULATE(Expression, Filter1, Filter2, ...)\n\n1. Evaluates each filter argument\n2. Applies them to the filter context using AND logic (intersection)\n3. Then evaluates the expression in the new context\n\nEXAMPLE:\nEast Region Sales 2024 = \nCALCULATE(\n  [Total Revenue],\n  Geography[Region] = \"East\",  -- Filter 1\n  'Date'[Year] = 2024           -- Filter 2\n)\n-- Result: Revenue where Region=East AND Year=2024\n\nKEY BEHAVIORS:\n- Direct column filter: Geography[Region] = \"East\" REPLACES any existing filter on that column\n- Table filter: FILTER(table, condition) can extend or combine filters\n- REMOVEFILTERS() / ALL() inside CALCULATE removes specific filters\n- KEEPFILTERS() makes the filter INTERSECT instead of replace\n\nCOMMON PATTERN — Calculate with context transition:\nProduct Revenue = CALCULATE(SUM(Sales[Revenue]))  -- creates row context transition in calculated column",
+    "category": "correctness",
+    "confidence": 0.96,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-switch-001",
+    "pattern": "Long IF chain instead of SWITCH for multiple condition branches",
+    "bad_dax": "Category Label = IF([Score]>=90,\"A\",IF([Score]>=80,\"B\",IF([Score]>=70,\"C\",\"D\")))",
+    "detection_logic": {
+      "functions": ["IF"],
+      "conditions": ["nested IF", "multiple IF", "IF IF IF", "rating", "category label", "grade"],
+      "context": "measure_optimization"
+    },
+    "fixed_dax": "-- Replace nested IF with SWITCH TRUE:\nCategory Label = \nSWITCH(\n  TRUE(),\n  [Score] >= 90, \"A — Excellent\",\n  [Score] >= 80, \"B — Good\",\n  [Score] >= 70, \"C — Average\",\n  [Score] >= 60, \"D — Below Average\",\n  \"F — Failing\"\n)\n\n-- SWITCH for exact match (more readable than IF for discrete values):\nRegion Label = \nSWITCH(\n  Geography[RegionCode],\n  \"N\", \"North\",\n  \"S\", \"South\",\n  \"E\", \"East\",\n  \"W\", \"West\",\n  \"Unknown\"\n)",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "model-star-001",
+    "pattern": "Star schema design — tables and relationships for a new model",
+    "bad_dax": "// User asking how to design model, tables, or relationships",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["star schema", "model design", "fact table", "dimension table", "relationships", "tables I need", "model for"],
+      "context": "modeling"
+    },
+    "fixed_dax": "STAR SCHEMA DESIGN GUIDE\n\nFACT TABLE (one per business process):\n- Contains foreign keys (IDs) + additive measures (amounts, quantities)\n- Each row = one transaction/event at the grain\n- Example columns: DateKey, CustomerKey, ProductKey, SalesAmount, Quantity, Cost\n- NO descriptive attributes (names, addresses — those go in dimensions)\n\nDIMENSION TABLES (who, what, where, when):\n- Date: DateKey, Date, Year, Quarter, Month, MonthName, WeekNum, DayOfWeek, IsWeekend, IsFiscalYear...\n- Customer: CustomerKey, Name, Email, Segment, City, State, Country\n- Product: ProductKey, Name, Category, SubCategory, Brand, Color, Size, Cost, ListPrice\n- Geography: GeoKey, City, State, Region, Country, PostalCode\n- Employee/Sales Rep: EmpKey, Name, Department, Region, Manager\n\nRELATIONSHIPS:\n- Fact → Dimension: many-to-one, single direction, active\n- Date table: MUST be marked as Date Table (Modeling > Mark as Date Table)\n- Cardinality: always Many(*) on fact side, One(1) on dimension side\n\nCHECKLIST:\n✓ No spaces or special chars in table/column names\n✓ All integer keys (not GUIDs) for performance\n✓ Date table covers all dates in fact table + future dates for targets\n✓ Hide all key columns from report view\n✓ Create a measures table (blank table) for all DAX measures",
+    "category": "modeling",
+    "confidence": 0.97,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "model-date-001",
+    "pattern": "Missing or misconfigured date table for time intelligence",
+    "bad_dax": "// Time intelligence functions not working or user has no date table",
+    "detection_logic": {
+      "functions": ["TOTALYTD", "SAMEPERIODLASTYEAR", "DATEADD"],
+      "conditions": ["date table", "time intelligence", "mark as date table", "calendar table", "date dimension"],
+      "context": "modeling"
+    },
+    "fixed_dax": "DATE TABLE — POWER QUERY M CODE:\n\nlet\n  StartDate = #date(2020, 1, 1),\n  EndDate = Date.EndOfYear(DateTime.Date(DateTime.LocalNow())),\n  DayCount = Duration.Days(EndDate - StartDate) + 1,\n  Source = List.Dates(StartDate, DayCount, #duration(1, 0, 0, 0)),\n  DateTable = Table.FromList(Source, Splitter.SplitByNothing(), {\"Date\"}, null, ExtraValues.Error),\n  DateType = Table.TransformColumnTypes(DateTable, {{\"Date\", type date}}),\n  AddYear = Table.AddColumn(DateType, \"Year\", each Date.Year([Date]), Int64.Type),\n  AddQuarter = Table.AddColumn(AddYear, \"Quarter\", each \"Q\" & Text.From(Date.QuarterOfYear([Date])), type text),\n  AddMonth = Table.AddColumn(AddQuarter, \"MonthNum\", each Date.Month([Date]), Int64.Type),\n  AddMonthName = Table.AddColumn(AddMonth, \"MonthName\", each Date.ToText([Date], \"MMMM\"), type text),\n  AddMonthYear = Table.AddColumn(AddMonthName, \"MonthYear\", each Date.ToText([Date], \"MMM yyyy\"), type text),\n  AddWeek = Table.AddColumn(AddMonthYear, \"WeekNum\", each Date.WeekOfYear([Date]), Int64.Type),\n  AddDOW = Table.AddColumn(AddWeek, \"DayOfWeek\", each Date.ToText([Date], \"dddd\"), type text),\n  AddIsWeekend = Table.AddColumn(AddDOW, \"IsWeekend\", each Date.DayOfWeek([Date]) >= 5, type logical)\nin\n  AddIsWeekend\n\nAFTER LOADING:\n1. Modeling tab > Mark as Date Table > select Date column\n2. Create relationship: Date[Date] → YourFact[DateColumn]\n3. Sort MonthName column by MonthNum\n4. Sort MonthYear column by a YYYYMM number column",
+    "category": "modeling",
+    "confidence": 0.96,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "model-m2m-001",
+    "pattern": "Many-to-many relationship — bidirectional cross-filter issues",
+    "bad_dax": "// User has many-to-many relationship or bidirectional filter causing unexpected results",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["many to many", "bidirectional", "both directions", "cross filter", "ambiguous relationship"],
+      "context": "modeling"
+    },
+    "fixed_dax": "MANY-TO-MANY RELATIONSHIP SOLUTIONS\n\nOPTION 1: Bridge/Junction Table (recommended)\n- Create a bridge table with unique combinations: Product[Key], Store[Key]\n- Relate: Product → Bridge (1:*), Store → Bridge (1:*)\n- Keep all relationships single-direction\n\nOPTION 2: Power BI native M:M relationship\n- Set cardinality to Many:Many in relationship dialog\n- Use single-direction filtering unless you specifically need both\n- Warning: can cause double-counting if not set up correctly\n\nOPTION 3: TREATAS for virtual relationships\nSales with Override = \nCALCULATE(\n  [Total Sales],\n  TREATAS(VALUES(Segment[SegmentKey]), Customer[SegmentKey])\n)\n\nCOMMON MISTAKE: Bidirectional filters cause fan-trap double counting.\nFIX: Use CROSSFILTER() in a measure to temporarily enable cross-filter:\nSales by Store Category = \nCALCULATE(\n  [Total Sales],\n  CROSSFILTER(Store[StoreKey], Sales[StoreKey], Both)\n)",
+    "category": "modeling",
+    "confidence": 0.92,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "pq-001",
+    "pattern": "Power Query — removing duplicates and deduplicating data",
+    "bad_dax": "// User wants to remove duplicates in Power Query",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["remove duplicates", "deduplicate", "unique rows", "distinct rows", "power query", "M code"],
+      "context": "power_query"
+    },
+    "fixed_dax": "POWER QUERY — DEDUPLICATION\n\n1. Remove duplicate rows (keep first occurrence):\n   Home > Remove Rows > Remove Duplicates\n   M: Table.Distinct(Source)\n\n2. Remove duplicates on specific columns only:\n   Select columns > right-click > Remove Duplicates\n   M: Table.Distinct(Source, {\"CustomerID\", \"OrderDate\"})\n\n3. Keep last occurrence (most recent record per key):\n   M code:\n   let\n     Sorted = Table.Sort(Source, {{\"Date\", Order.Descending}}),\n     Deduped = Table.Distinct(Sorted, {\"CustomerID\"})\n   in Deduped\n\n4. Flag duplicates without removing (for review):\n   Add Column > Custom Column:\n   = Table.RowCount(Table.SelectRows(Source, each [CustomerID] = [CustomerID])) > 1",
+    "category": "power_query",
+    "confidence": 0.94,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "pq-002",
+    "pattern": "Power Query — merging or joining tables",
+    "bad_dax": "// User wants to join or merge tables in Power Query",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["merge queries", "join tables", "left join", "inner join", "lookup", "vlookup power query"],
+      "context": "power_query"
+    },
+    "fixed_dax": "POWER QUERY — MERGING TABLES (Joins)\n\nHome > Merge Queries > Merge Queries as New\n\nJOIN TYPES:\n- Left Outer: All rows from left, matching from right (like VLOOKUP)\n- Inner: Only matching rows from both tables\n- Right Outer: All rows from right, matching from left  \n- Full Outer: All rows from both tables\n- Left Anti: Rows in left with NO match in right (find missing)\n- Right Anti: Rows in right with NO match in left\n\nM CODE (Left Outer Join):\nlet\n  Merged = Table.NestedJoin(\n    Sales, {\"ProductID\"},          -- left table, key column\n    Products, {\"ProductID\"},        -- right table, key column\n    \"Products\",                     -- new column name\n    JoinKind.LeftOuter\n  ),\n  Expanded = Table.ExpandTableColumn(\n    Merged, \"Products\",\n    {\"ProductName\", \"Category\"},    -- columns to bring over\n    {\"Product.Name\", \"Product.Category\"}\n  )\nin\n  Expanded\n\nPERFORMANCE TIP: Merge after filtering both tables to reduce row count first.",
+    "category": "power_query",
+    "confidence": 0.95,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "pq-003",
+    "pattern": "Power Query — unpivoting columns to rows for tidy data format",
+    "bad_dax": "// User has wide table with months/years as columns, wants to unpivot",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["unpivot", "pivot columns", "wide table", "months as columns", "years as columns"],
+      "context": "power_query"
+    },
+    "fixed_dax": "POWER QUERY — UNPIVOTING\n\nPROBLEM: Wide table with Jan, Feb, Mar... as separate columns\nSOLUTION: Unpivot to get Date column + Value column\n\nSTEPS:\n1. Select the ID/category columns you want to KEEP\n2. Transform > Unpivot Columns > Unpivot Other Columns\n   (This keeps your selected columns and unpivots everything else)\n\nM CODE:\nTable.UnpivotOtherColumns(\n  Source,\n  {\"ProductID\", \"ProductName\"},  -- columns to keep\n  \"Month\",                        -- new attribute column name  \n  \"Revenue\"                       -- new value column name\n)\n\nAFTER UNPIVOTING:\n- Rename Attribute column to \"Month\"\n- Parse month string to a proper date:\n  = Date.FromText(\"01 \" & [Month] & \" 2024\") -- if month is \"January\"\n- Or: add a Year parameter and use Date.From(DateTime.From([Month] & \" \" & Text.From([Year])))",
+    "category": "power_query",
+    "confidence": 0.94,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "rls-001",
+    "pattern": "Row-level security — basic RLS setup for user-based filtering",
+    "bad_dax": "// User wants to restrict data by user, region, or department",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["row level security", "RLS", "user filter", "security", "restrict data", "user sees only"],
+      "context": "security"
+    },
+    "fixed_dax": "ROW-LEVEL SECURITY (RLS) SETUP\n\n1. IN POWER BI DESKTOP — Modeling > Manage Roles:\n\n   Role: SalesRep\n   Table: Sales\n   DAX Filter: [SalesRepEmail] = USERPRINCIPALNAME()\n\n   Role: RegionManager  \n   Table: Geography\n   DAX Filter: [Region] = LOOKUPVALUE(SecurityTable[Region], SecurityTable[Email], USERPRINCIPALNAME())\n\n2. DYNAMIC RLS (recommended — one role for all users):\n   Create a UserSecurity table: Email | Region | Department | IsAdmin\n   \n   Role: DynamicSecurity\n   Table: UserSecurity\n   DAX Filter: [Email] = USERPRINCIPALNAME()\n   \n   Then relate UserSecurity[Region] → Geography[Region]\n   Set Geography filter direction to cascade to fact table\n\n3. IN POWER BI SERVICE:\n   - Dataset > Security > Add members to roles\n   - Test as role to verify\n\n4. USEFUL FUNCTIONS:\n   USERPRINCIPALNAME() — returns logged-in user's email\n   USERNAME() — returns domain\\\\username (for on-prem)\n   CUSTOMDATA() — passes custom string from embedded token\n\n5. TESTING:\n   Modeling > View As Role — test in Desktop before publishing",
+    "category": "security",
+    "confidence": 0.96,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "perf-001",
+    "pattern": "SUMX with row-by-row calculation that could use SUM of calculated column or simpler aggregation",
+    "bad_dax": "Total Revenue = SUMX(Sales, Sales[Quantity] * Sales[UnitPrice])",
+    "detection_logic": {
+      "functions": ["SUMX"],
+      "conditions": ["SUMX with simple multiplication", "SUMX without filter", "SUMX on base table"],
+      "context": "performance"
+    },
+    "fixed_dax": "-- Option 1: Pre-calculate in Power Query (best performance)\n-- Add a Revenue column in PQ: = [Quantity] * [UnitPrice]\n-- Then in DAX: Total Revenue = SUM(Sales[Revenue])\n\n-- Option 2: If you must use DAX, SUMX is correct here but consider:\n-- - SUMX is fine for small-to-medium tables\n-- - For 10M+ rows, calculated column + SUM is faster\n\n-- Option 3: If there's already a Revenue column:\nTotal Revenue = SUM(Sales[Revenue])\n\n-- WHEN SUMX IS NECESSARY (not avoidable):\n-- When you need row-by-row context (e.g., conditional logic per row)\n-- When denominator or multiplier varies per row and is not pre-stored",
+    "category": "performance",
+    "confidence": 0.88,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "perf-002",
+    "pattern": "Using FILTER(ALL(Table), condition) when a simpler column filter would work",
+    "bad_dax": "Online Sales = CALCULATE([Total Revenue], FILTER(ALL(Sales), Sales[Channel] = \"Online\"))",
+    "detection_logic": {
+      "functions": ["CALCULATE", "FILTER", "ALL"],
+      "conditions": ["FILTER ALL", "FILTER on single column equality"],
+      "context": "performance"
+    },
+    "fixed_dax": "-- Simpler and faster — use direct column filter:\nOnline Sales = CALCULATE([Total Revenue], Sales[Channel] = \"Online\")\n\n-- The direct filter is equivalent here and performs better\n-- because it lets the engine use column indexes\n\n-- Use FILTER(ALL(Table),...) ONLY when:\n-- 1. You need to remove an existing filter AND apply a complex filter\n-- 2. The condition references multiple columns in a row-by-row way\n-- 3. You need OR conditions across multiple columns",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-blank-001",
+    "pattern": "Division or subtraction returning BLANK instead of 0 causing visual gaps",
+    "bad_dax": "Growth Rate = DIVIDE([Current], [Prior])",
+    "detection_logic": {
+      "functions": ["DIVIDE"],
+      "conditions": ["blank", "gaps in chart", "missing data", "null values", "zero instead of blank"],
+      "context": "blank_handling"
+    },
+    "fixed_dax": "-- Return 0 instead of BLANK when denominator is zero/blank:\nGrowth Rate = DIVIDE([Current], [Prior], 0)\n\n-- Return BLANK only when there's genuinely no data:\nGrowth Rate = \nVAR Prior = [Prior Period Revenue]\nRETURN\n  IF(ISBLANK(Prior) || Prior = 0, BLANK(), DIVIDE([Total Revenue] - Prior, Prior))\n\n-- Force zero for missing months to avoid line chart gaps:\nRevenue (No Gaps) = IF(ISBLANK([Total Revenue]), 0, [Total Revenue])\n\n-- BLANK() vs 0 in visuals:\n-- BLANK: row/column hidden in tables, line chart gaps, card shows blank\n-- 0: row visible in tables, line connects through zero, card shows 0",
+    "category": "correctness",
+    "confidence": 0.92,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-measure-naming-001",
+    "pattern": "DAX measure naming conventions and organization best practices",
+    "bad_dax": "// User asking about measure naming, organization, or best practices",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["naming convention", "measure organization", "best practice", "folder", "display folder", "measure table"],
+      "context": "modeling"
+    },
+    "fixed_dax": "MEASURE NAMING & ORGANIZATION BEST PRACTICES\n\nNAMING CONVENTIONS:\n- Use business-friendly names: [Total Revenue] not [SumRev] or [revenue_sum]\n- Prefix helper/base measures: [_Base Revenue] (hidden, starts with underscore)\n- Use % suffix for ratios: [Gross Margin %]\n- Use prefix for time intel: [Revenue YTD], [Revenue LY], [Revenue R12M]\n- Avoid table name prefix in measures (it's redundant)\n\nORGANIZATION:\n1. Create a dedicated Measures table:\n   - Modeling > New Table: _Measures = ROW(\"x\", 1)\n   - Hide the auto-generated column\n   - Move all measures here\n   - Hide the Fact table columns you don't want in reports\n\n2. Use Display Folders (Properties pane):\n   - Revenue Measures\n   - Margin Measures  \n   - Time Intelligence\n   - _Internal (helper measures)\n\n3. Measure hierarchy:\n   [Total Revenue] → [Revenue LY] → [YoY Growth] → [YoY Growth %]\n   Build derived from base, never repeat aggregations\n\n4. Add measure descriptions (Modeling > Properties > Description)\n   for business documentation inside the model",
+    "category": "modeling",
+    "confidence": 0.95,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-coalesce-001",
+    "pattern": "Using IF(ISBLANK()) pattern that should use COALESCE",
+    "bad_dax": "Result = IF(ISBLANK([Measure A]), [Measure B], [Measure A])",
+    "detection_logic": {
+      "functions": ["IF", "ISBLANK"],
+      "conditions": ["IF ISBLANK", "null coalesce", "fallback value", "default value"],
+      "context": "measure_optimization"
+    },
+    "fixed_dax": "-- Use COALESCE for cleaner null-fallback logic:\nResult = COALESCE([Measure A], [Measure B], 0)\n\n-- COALESCE returns the first non-BLANK value\n-- Equivalent to: IF(NOT ISBLANK([A]), [A], IF(NOT ISBLANK([B]), [B], 0))\n\n-- Common use cases:\nActual or Budget = COALESCE([Actual Revenue], [Budget Revenue])\nPrice with Fallback = COALESCE([Override Price], [Standard Price], [List Price])\nSafe Division Result = COALESCE(DIVIDE([A], [B]), 0)",
+    "category": "performance",
+    "confidence": 0.92,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "vis-format-001",
+    "pattern": "Report formatting and design best practices",
+    "bad_dax": "// User asking about report design, formatting, colors, or layout",
+    "detection_logic": {
+      "functions": [],
+      "conditions": ["format", "design", "color", "theme", "layout", "font", "spacing", "report page"],
+      "context": "visual_design"
+    },
+    "fixed_dax": "REPORT DESIGN BEST PRACTICES\n\nLAYOUT:\n- Use a 16:9 canvas (1280×720 default) for widescreen displays\n- Apply consistent margins: 16px padding from canvas edges\n- Group related visuals with background shapes (subtle gray fill)\n- Place most important KPIs top-left (reading order)\n- Reserve top strip for title + slicers\n\nCOLORS:\n- Choose a 5-6 color palette; stick to it throughout\n- Use your brand primary for the most important metric\n- Gray for reference/comparison lines and secondary data\n- Red/green only for explicit good/bad (avoid for colorblind accessibility)\n- Accessible palette: blue (#0070C0), orange (#FF8C00), gray (#595959)\n\nTYPOGRAPHY:\n- Titles: 14-16px bold\n- Axis labels: 10-12px regular\n- Data labels: 10-11px, only enable when values matter\n- Avoid ALL CAPS for long text\n\nBEST PRACTICES:\n- Remove gridlines from bar/column charts (reduce chart junk)\n- Disable axis titles when the slicer/visual title is descriptive\n- Show data labels only on card visuals and when < 10 bars\n- Use consistent visual borders: none or subtle 1px\n- Add tooltips with additional context (tooltip report page)\n- Enable drill-through for detail pages",
+    "category": "visual",
+    "confidence": 0.95,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-inactive-rel-001",
+    "pattern": "Using USERELATIONSHIP for inactive relationship in CALCULATE",
+    "bad_dax": "// User has multiple date relationships (order date, ship date, delivery date)",
+    "detection_logic": {
+      "functions": ["USERELATIONSHIP"],
+      "conditions": ["inactive relationship", "multiple dates", "ship date", "delivery date", "order date", "role playing dimension"],
+      "context": "modeling"
+    },
+    "fixed_dax": "USERELATIONSHIP — ROLE-PLAYING DATE DIMENSION\n\nSCENARIO: Sales fact has OrderDate, ShipDate, DeliveryDate\nAll should relate to the same Date dimension\n\nSETUP:\n1. Create ONE active relationship: Date[Date] → Sales[OrderDate]\n2. Create TWO inactive relationships: Date[Date] → Sales[ShipDate] and Sales[DeliveryDate]\n\nDAX MEASURES:\n-- Revenue by Order Date (uses active relationship, no change needed):\nRevenue by Order = [Total Revenue]\n\n-- Revenue by Ship Date (activates inactive relationship):\nRevenue by Ship Date = \nCALCULATE([Total Revenue], USERELATIONSHIP('Date'[Date], Sales[ShipDate]))\n\n-- Revenue by Delivery Date:\nRevenue by Delivery = \nCALCULATE([Total Revenue], USERELATIONSHIP('Date'[Date], Sales[DeliveryDate]))\n\n-- Use in the same visual to compare:\n-- Matrix: Rows = Date[MonthYear], Values = all three measures",
+    "category": "modeling",
+    "confidence": 0.94,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-allselected-001",
+    "pattern": "ALLSELECTED vs ALL — when to use each for percentage calculations",
+    "bad_dax": "// User confused about ALL vs ALLSELECTED in percentage measures",
+    "detection_logic": {
+      "functions": ["ALL", "ALLSELECTED"],
+      "conditions": ["ALL vs ALLSELECTED", "percentage with slicer", "slicer total", "respect slicer"],
+      "context": "percentage"
+    },
+    "fixed_dax": "ALL vs ALLSELECTED GUIDE\n\nALL(table/column):\n- Removes ALL filters, including slicers\n- Use for: % of absolute grand total (regardless of what's selected)\n- Example: Revenue % of All Products = DIVIDE([Revenue], CALCULATE([Revenue], ALL(Product)))\n- Result: Always sums to 100% of the entire dataset\n\nALLSELECTED(table/column):\n- Removes row/column context filters BUT keeps slicer filters\n- Use for: % of total within current slicer selection\n- Example: Revenue % of Selection = DIVIDE([Revenue], CALCULATE([Revenue], ALLSELECTED(Product)))\n- Result: Sums to 100% of what the user has sliced to\n\nPRACTICAL RULE:\n- User filtering a region and wants % within that region → ALLSELECTED\n- User wants % of entire business always → ALL\n- In matrix, want % of column total → ALLSELECTED on the row dimension\n- In matrix, want % of row total → ALLSELECTED on the column dimension",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "guidance",
+    "requires_llm": false
   }
 ]

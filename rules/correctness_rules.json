@@ -128,6 +128,53 @@
     "requires_llm": false
   },
   {
+    "id": "dax-calculate-001",
+    "priority": 1,
+    "pattern": "CALCULATE with multiple filter arguments — correct behavior explanation",
+    "bad_dax": "// User confused about CALCULATE with multiple arguments",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE"
+      ],
+      "conditions": [
+        "CALCULATE",
+        "multiple filters",
+        "how CALCULATE works",
+        "filter context"
+      ],
+      "context": "dax_explanation"
+    },
+    "fixed_dax": "HOW CALCULATE WORKS\n\nCALCULATE(Expression, Filter1, Filter2, ...)\n\n1. Evaluates each filter argument\n2. Applies them to the filter context using AND logic (intersection)\n3. Then evaluates the expression in the new context\n\nEXAMPLE:\nEast Region Sales 2024 = \nCALCULATE(\n  [Total Revenue],\n  Geography[Region] = \"East\",  -- Filter 1\n  'Date'[Year] = 2024           -- Filter 2\n)\n-- Result: Revenue where Region=East AND Year=2024\n\nKEY BEHAVIORS:\n- Direct column filter: Geography[Region] = \"East\" REPLACES any existing filter on that column\n- Table filter: FILTER(table, condition) can extend or combine filters\n- REMOVEFILTERS() / ALL() inside CALCULATE removes specific filters\n- KEEPFILTERS() makes the filter INTERSECT instead of replace\n\nCOMMON PATTERN — Calculate with context transition:\nProduct Revenue = CALCULATE(SUM(Sales[Revenue]))  -- creates row context transition in calculated column",
+    "category": "correctness",
+    "confidence": 0.96,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-ti-001",
+    "priority": 1,
+    "pattern": "Year-to-date calculation without TOTALYTD or DATESYTD",
+    "bad_dax": "Revenue YTD = CALCULATE([Total Revenue], FILTER('Date', 'Date'[Date] <= TODAY() && YEAR('Date'[Date]) = YEAR(TODAY())))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER"
+      ],
+      "conditions": [
+        "YTD",
+        "year to date",
+        "cumulative by year",
+        "running total year"
+      ],
+      "context": "time_intelligence"
+    },
+    "fixed_dax": "Revenue YTD = TOTALYTD([Total Revenue], 'Date'[Date])\n\n-- Or equivalently:\nRevenue YTD = CALCULATE([Total Revenue], DATESYTD('Date'[Date]))\n\n-- Custom fiscal year end (e.g., June 30):\nRevenue YTD = TOTALYTD([Total Revenue], 'Date'[Date], \"06/30\")\n\n-- Requirements: Date table must be marked as Date Table in Power BI Desktop",
+    "category": "correctness",
+    "confidence": 0.96,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
     "id": "adv-cor-006",
     "priority": 1,
     "pattern": "EARLIER() used inside CALCULATE — EARLIER breaks when CALCULATE resets row context",
@@ -183,6 +230,104 @@
       ]
     },
     "fixed_dax": "// In Power BI Desktop: select MonthName column → Column Tools → Sort by Column → Month (integer)",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-allselected-001",
+    "priority": 1,
+    "pattern": "ALLSELECTED vs ALL — when to use each for percentage calculations",
+    "bad_dax": "// User confused about ALL vs ALLSELECTED in percentage measures",
+    "detection_logic": {
+      "functions": [
+        "ALL",
+        "ALLSELECTED"
+      ],
+      "conditions": [
+        "ALL vs ALLSELECTED",
+        "percentage with slicer",
+        "slicer total",
+        "respect slicer"
+      ],
+      "context": "percentage"
+    },
+    "fixed_dax": "ALL vs ALLSELECTED GUIDE\n\nALL(table/column):\n- Removes ALL filters, including slicers\n- Use for: % of absolute grand total (regardless of what's selected)\n- Example: Revenue % of All Products = DIVIDE([Revenue], CALCULATE([Revenue], ALL(Product)))\n- Result: Always sums to 100% of the entire dataset\n\nALLSELECTED(table/column):\n- Removes row/column context filters BUT keeps slicer filters\n- Use for: % of total within current slicer selection\n- Example: Revenue % of Selection = DIVIDE([Revenue], CALCULATE([Revenue], ALLSELECTED(Product)))\n- Result: Sums to 100% of what the user has sliced to\n\nPRACTICAL RULE:\n- User filtering a region and wants % within that region → ALLSELECTED\n- User wants % of entire business always → ALL\n- In matrix, want % of column total → ALLSELECTED on the row dimension\n- In matrix, want % of row total → ALLSELECTED on the column dimension",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-pct-001",
+    "priority": 1,
+    "pattern": "Percentage of total without ALL() to remove filters",
+    "bad_dax": "Revenue % = DIVIDE([Total Revenue], SUM(Sales[Revenue]))",
+    "detection_logic": {
+      "functions": [
+        "DIVIDE",
+        "SUM"
+      ],
+      "conditions": [
+        "percent of total",
+        "% of total",
+        "share",
+        "proportion",
+        "contribution"
+      ],
+      "context": "percentage"
+    },
+    "fixed_dax": "-- % of grand total (ignores all filters):\nRevenue % of Total = DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALL(Sales)))\n\n-- % of category total (ignores product filter but keeps category):\nRevenue % of Category = DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALLEXCEPT(Product, Product[Category])))\n\n-- % of column total in matrix (respects row context, removes column):\nRevenue % of Column = DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALLSELECTED()))\n\nNote: Use ALLSELECTED() when you want % of whatever is currently visible (respects slicers but ignores the row/column filter in the matrix).",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-ti-002",
+    "priority": 1,
+    "pattern": "Year-over-year comparison without SAMEPERIODLASTYEAR or DATEADD",
+    "bad_dax": "Revenue LY = CALCULATE([Total Revenue], FILTER('Date', YEAR('Date'[Date]) = YEAR(TODAY()) - 1))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER"
+      ],
+      "conditions": [
+        "last year",
+        "prior year",
+        "previous year",
+        "YoY",
+        "year over year"
+      ],
+      "context": "time_intelligence"
+    },
+    "fixed_dax": "-- Prior Year Revenue:\nRevenue LY = CALCULATE([Total Revenue], SAMEPERIODLASTYEAR('Date'[Date]))\n\n-- YoY Growth Amount:\nYoY Growth = [Total Revenue] - [Revenue LY]\n\n-- YoY Growth %:\nYoY Growth % = DIVIDE([YoY Growth], [Revenue LY])\n\n-- Alternative with DATEADD (more flexible):\nRevenue LY = CALCULATE([Total Revenue], DATEADD('Date'[Date], -1, YEAR))\n\n-- Rolling 12 months vs prior rolling 12:\nRevenue R12M = CALCULATE([Total Revenue], DATESINPERIOD('Date'[Date], LASTDATE('Date'[Date]), -12, MONTH))\nRevenue Prior R12M = CALCULATE([Revenue R12M], DATEADD('Date'[Date], -12, MONTH))",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-ti-003",
+    "priority": 1,
+    "pattern": "Month-to-date or quarter-to-date without DATESMTD/DATESQTD",
+    "bad_dax": "Revenue MTD = CALCULATE([Total Revenue], FILTER('Date', 'Date'[Date] <= TODAY() && MONTH('Date'[Date]) = MONTH(TODAY())))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER"
+      ],
+      "conditions": [
+        "MTD",
+        "month to date",
+        "QTD",
+        "quarter to date"
+      ],
+      "context": "time_intelligence"
+    },
+    "fixed_dax": "-- Month-to-date:\nRevenue MTD = TOTALMTD([Total Revenue], 'Date'[Date])\n-- Equivalent: CALCULATE([Total Revenue], DATESMTD('Date'[Date]))\n\n-- Quarter-to-date:\nRevenue QTD = TOTALQTD([Total Revenue], 'Date'[Date])\n-- Equivalent: CALCULATE([Total Revenue], DATESQTD('Date'[Date]))\n\n-- Prior month MTD for comparison:\nRevenue Prior MTD = CALCULATE(TOTALMTD([Total Revenue], 'Date'[Date]), DATEADD('Date'[Date], -1, MONTH))",
     "category": "correctness",
     "confidence": 0.95,
     "fix_type": "safe",
@@ -252,6 +397,31 @@
     "requires_llm": false
   },
   {
+    "id": "dax-rank-001",
+    "priority": 1,
+    "pattern": "Ranking items within a category without RANKX",
+    "bad_dax": "// User wants to rank products, customers, or regions by a metric",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "rank",
+        "top 10",
+        "top N",
+        "ranking",
+        "best",
+        "worst",
+        "largest",
+        "smallest by"
+      ],
+      "context": "ranking"
+    },
+    "fixed_dax": "-- Rank all products by revenue (1 = highest):\nProduct Rank = RANKX(ALL(Product[ProductName]), [Total Revenue], , DESC, DENSE)\n\n-- Top 10 products filter (use in visual-level filter or as a measure):\nIs Top 10 = IF([Product Rank] <= 10, 1, 0)\n\n-- Rank within category:\nRank in Category = \nRANKX(\n  ALLEXCEPT(Product, Product[Category]),\n  [Total Revenue], , DESC, DENSE\n)\n\n-- Dynamic Top N using a What-If parameter:\n-- 1. Create What-If parameter: TopN (1 to 20, default 10)\n-- 2. Measure:\nTop N Filter = IF([Product Rank] <= [TopN Value], 1, 0)\n-- 3. Add to visual-level filter: Top N Filter = 1",
+    "category": "correctness",
+    "confidence": 0.94,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
     "id": "adv-cor-088",
     "priority": 1,
     "pattern": "EARLIER used in nested iterator — use VAR to capture outer row context instead",
@@ -312,6 +482,28 @@
     "requires_llm": false
   },
   {
+    "id": "dax-running-001",
+    "priority": 1,
+    "pattern": "Running total or cumulative sum calculation",
+    "bad_dax": "// User wants cumulative revenue, running total, or waterfall values",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "running total",
+        "cumulative",
+        "waterfall",
+        "accumulate",
+        "rolling sum"
+      ],
+      "context": "running_total"
+    },
+    "fixed_dax": "-- Running total by date:\nRevenue Running Total = \nCALCULATE(\n  [Total Revenue],\n  FILTER(\n    ALL('Date'),\n    'Date'[Date] <= MAX('Date'[Date])\n  )\n)\n\n-- Running total YTD (resets each year):\nRevenue Running Total YTD = \nCALCULATE(\n  [Total Revenue],\n  FILTER(\n    ALLSELECTED('Date'),\n    'Date'[Date] <= MAX('Date'[Date])\n    && YEAR('Date'[Date]) = YEAR(MAX('Date'[Date]))\n  )\n)\n\n-- Waterfall: use a dedicated Waterfall chart visual\n-- Field wells: Category axis, Breakdown, Y-axis (your base measure)",
+    "category": "correctness",
+    "confidence": 0.93,
+    "fix_type": "guidance",
+    "requires_llm": false
+  },
+  {
     "id": "adv-cor-010",
     "priority": 1,
     "pattern": "FORMAT() used in a measure for display — causes implicit text conversion breaking aggregation",
@@ -352,6 +544,30 @@
     "category": "correctness",
     "confidence": 0.92,
     "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-blank-001",
+    "priority": 1,
+    "pattern": "Division or subtraction returning BLANK instead of 0 causing visual gaps",
+    "bad_dax": "Growth Rate = DIVIDE([Current], [Prior])",
+    "detection_logic": {
+      "functions": [
+        "DIVIDE"
+      ],
+      "conditions": [
+        "blank",
+        "gaps in chart",
+        "missing data",
+        "null values",
+        "zero instead of blank"
+      ],
+      "context": "blank_handling"
+    },
+    "fixed_dax": "-- Return 0 instead of BLANK when denominator is zero/blank:\nGrowth Rate = DIVIDE([Current], [Prior], 0)\n\n-- Return BLANK only when there's genuinely no data:\nGrowth Rate = \nVAR Prior = [Prior Period Revenue]\nRETURN\n  IF(ISBLANK(Prior) || Prior = 0, BLANK(), DIVIDE([Total Revenue] - Prior, Prior))\n\n-- Force zero for missing months to avoid line chart gaps:\nRevenue (No Gaps) = IF(ISBLANK([Total Revenue]), 0, [Total Revenue])\n\n-- BLANK() vs 0 in visuals:\n-- BLANK: row/column hidden in tables, line chart gaps, card shows blank\n-- 0: row visible in tables, line connects through zero, card shows 0",
+    "category": "correctness",
+    "confidence": 0.92,
+    "fix_type": "needs_review",
     "requires_llm": false
   },
   {

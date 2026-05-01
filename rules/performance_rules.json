@@ -245,6 +245,77 @@
     "requires_llm": true
   },
   {
+    "id": "dax-switch-001",
+    "priority": 2,
+    "pattern": "Long IF chain instead of SWITCH for multiple condition branches",
+    "bad_dax": "Category Label = IF([Score]>=90,\"A\",IF([Score]>=80,\"B\",IF([Score]>=70,\"C\",\"D\")))",
+    "detection_logic": {
+      "functions": [
+        "IF"
+      ],
+      "conditions": [
+        "nested IF",
+        "multiple IF",
+        "IF IF IF",
+        "rating",
+        "category label",
+        "grade"
+      ],
+      "context": "measure_optimization"
+    },
+    "fixed_dax": "-- Replace nested IF with SWITCH TRUE:\nCategory Label = \nSWITCH(\n  TRUE(),\n  [Score] >= 90, \"A — Excellent\",\n  [Score] >= 80, \"B — Good\",\n  [Score] >= 70, \"C — Average\",\n  [Score] >= 60, \"D — Below Average\",\n  \"F — Failing\"\n)\n\n-- SWITCH for exact match (more readable than IF for discrete values):\nRegion Label = \nSWITCH(\n  Geography[RegionCode],\n  \"N\", \"North\",\n  \"S\", \"South\",\n  \"E\", \"East\",\n  \"W\", \"West\",\n  \"Unknown\"\n)",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-var-001",
+    "priority": 2,
+    "pattern": "Repeated expression evaluated multiple times — should use VAR",
+    "bad_dax": "Margin % = DIVIDE(SUM(Sales[Revenue]) - SUM(Sales[Cost]), SUM(Sales[Revenue]))",
+    "detection_logic": {
+      "functions": [
+        "SUM",
+        "DIVIDE"
+      ],
+      "conditions": [
+        "same aggregation referenced twice",
+        "SUM repeated",
+        "CALCULATE repeated"
+      ],
+      "context": "measure_optimization"
+    },
+    "fixed_dax": "Margin % = \nVAR Revenue = SUM(Sales[Revenue])\nVAR Cost = SUM(Sales[Cost])\nVAR Margin = Revenue - Cost\nRETURN\n  DIVIDE(Margin, Revenue)\n\nBenefits of VAR:\n- Expression evaluated once (performance)\n- Easier to read and debug\n- VAR captures filter context at declaration point\n- Can be reused multiple times in RETURN",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "perf-002",
+    "priority": 2,
+    "pattern": "Using FILTER(ALL(Table), condition) when a simpler column filter would work",
+    "bad_dax": "Online Sales = CALCULATE([Total Revenue], FILTER(ALL(Sales), Sales[Channel] = \"Online\"))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "FILTER",
+        "ALL"
+      ],
+      "conditions": [
+        "FILTER ALL",
+        "FILTER on single column equality"
+      ],
+      "context": "performance"
+    },
+    "fixed_dax": "-- Simpler and faster — use direct column filter:\nOnline Sales = CALCULATE([Total Revenue], Sales[Channel] = \"Online\")\n\n-- The direct filter is equivalent here and performs better\n-- because it lets the engine use column indexes\n\n-- Use FILTER(ALL(Table),...) ONLY when:\n-- 1. You need to remove an existing filter AND apply a complex filter\n-- 2. The condition references multiple columns in a row-by-row way\n-- 3. You need OR conditions across multiple columns",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
     "id": "adv-perf-039",
     "priority": 2,
     "pattern": "IF inside SUMX where CALCULATE with filter argument is faster",
@@ -325,6 +396,30 @@
       ]
     },
     "fixed_dax": "Table.ExpandTableColumn(joinResult, \"CustomerData\", {\"Name\", \"Email\"})",
+    "category": "performance",
+    "confidence": 0.92,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "dax-coalesce-001",
+    "priority": 2,
+    "pattern": "Using IF(ISBLANK()) pattern that should use COALESCE",
+    "bad_dax": "Result = IF(ISBLANK([Measure A]), [Measure B], [Measure A])",
+    "detection_logic": {
+      "functions": [
+        "IF",
+        "ISBLANK"
+      ],
+      "conditions": [
+        "IF ISBLANK",
+        "null coalesce",
+        "fallback value",
+        "default value"
+      ],
+      "context": "measure_optimization"
+    },
+    "fixed_dax": "-- Use COALESCE for cleaner null-fallback logic:\nResult = COALESCE([Measure A], [Measure B], 0)\n\n-- COALESCE returns the first non-BLANK value\n-- Equivalent to: IF(NOT ISBLANK([A]), [A], IF(NOT ISBLANK([B]), [B], 0))\n\n-- Common use cases:\nActual or Budget = COALESCE([Actual Revenue], [Budget Revenue])\nPrice with Fallback = COALESCE([Override Price], [Standard Price], [List Price])\nSafe Division Result = COALESCE(DIVIDE([A], [B]), 0)",
     "category": "performance",
     "confidence": 0.92,
     "fix_type": "safe",
@@ -718,6 +813,28 @@
     "category": "performance",
     "confidence": 0.88,
     "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "perf-001",
+    "priority": 2,
+    "pattern": "SUMX with row-by-row calculation that could use SUM of calculated column or simpler aggregation",
+    "bad_dax": "Total Revenue = SUMX(Sales, Sales[Quantity] * Sales[UnitPrice])",
+    "detection_logic": {
+      "functions": [
+        "SUMX"
+      ],
+      "conditions": [
+        "SUMX with simple multiplication",
+        "SUMX without filter",
+        "SUMX on base table"
+      ],
+      "context": "performance"
+    },
+    "fixed_dax": "-- Option 1: Pre-calculate in Power Query (best performance)\n-- Add a Revenue column in PQ: = [Quantity] * [UnitPrice]\n-- Then in DAX: Total Revenue = SUM(Sales[Revenue])\n\n-- Option 2: If you must use DAX, SUMX is correct here but consider:\n-- - SUMX is fine for small-to-medium tables\n-- - For 10M+ rows, calculated column + SUM is faster\n\n-- Option 3: If there's already a Revenue column:\nTotal Revenue = SUM(Sales[Revenue])\n\n-- WHEN SUMX IS NECESSARY (not avoidable):\n-- When you need row-by-row context (e.g., conditional logic per row)\n-- When denominator or multiplier varies per row and is not pre-stored",
+    "category": "performance",
+    "confidence": 0.88,
+    "fix_type": "needs_review",
     "requires_llm": false
   },
   {
