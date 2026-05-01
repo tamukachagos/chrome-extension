@@ -906,6 +906,143 @@
       "expected_rule": "adv-model-057",
       "issue": "More than 20 steps in one query makes the query hard to debug, slows the editor, and increases refresh memory usage",
       "fix": "Split into staging queries: source → cleaned → transformed → final. Reference staging queries."
+    },
+    {
+      "scenario": "Table.NestedJoin without expanding result column",
+      "code_pattern": "Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")",
+      "expected_rule": "adv-pq-001",
+      "issue": "Nested join creates a column of tables — without Table.ExpandTableColumn the data is never accessible and the join is wasted",
+      "fix": "Table.ExpandTableColumn(joinResult, \"CustomerData\", {\"Name\", \"Email\"})"
+    },
+    {
+      "scenario": "Text.Contains inside Table.SelectRows breaking query folding",
+      "code_pattern": "Table.SelectRows(Source, each Text.Contains([Description], \"urgent\"))",
+      "expected_rule": "adv-pq-002",
+      "issue": "Text.Contains does not fold to SQL — entire table is loaded to memory before filtering",
+      "fix": "Use Table.SelectRows with a foldable condition or filter in the SQL source query"
+    },
+    {
+      "scenario": "List.Accumulate for running total calculation",
+      "code_pattern": "List.Accumulate(Table.ToRows(Source), 0, (state, row) => state + row{2})",
+      "expected_rule": "adv-pq-003",
+      "issue": "List.Accumulate iterates row-by-row in Power Query engine — extremely slow on large tables",
+      "fix": "Use a DAX running total measure or window function in SQL source instead"
+    },
+    {
+      "scenario": "Table.Distinct on high-cardinality fact table",
+      "code_pattern": "Table.Distinct(FactSales)",
+      "expected_rule": "adv-pq-004",
+      "issue": "Table.Distinct on a large fact table sorts and deduplicates all rows in memory — very expensive",
+      "fix": "Push deduplication to the SQL source with SELECT DISTINCT or identify the true grain"
     }
-  ]
+  ],
+  "healthcare_domain": {
+    "domain": "healthcare",
+    "tables": [
+      {"name": "FactEncounters", "type": "fact", "columns": ["EncounterID","PatientKey","ProviderKey","FacilityKey","DateKey","DischargeKey","DiagnosisKey","AdmissionType","LOS_Days","TotalCharges","TotalCost","ReimbursementAmount","ReadmissionFlag"], "row_count_estimate": 2000000, "grain": "one row per patient encounter"},
+      {"name": "DimPatient", "type": "dimension", "columns": ["PatientKey","PatientID","Age","Gender","ZipCode","InsurancePlan","RiskScore","ChronicConditionCount"], "row_count_estimate": 500000, "grain": "one row per patient"},
+      {"name": "DimProvider", "type": "dimension", "columns": ["ProviderKey","ProviderName","Specialty","NPI","Department","FTE"], "row_count_estimate": 2000, "grain": "one row per provider"},
+      {"name": "DimDiagnosis", "type": "dimension", "columns": ["DiagnosisKey","ICD10Code","Description","Category","Severity","IsChronicCondition"], "row_count_estimate": 15000, "grain": "one row per ICD-10 code"},
+      {"name": "DimFacility", "type": "dimension", "columns": ["FacilityKey","FacilityName","Type","Region","BedCapacity","IsTeachingHospital"], "row_count_estimate": 50, "grain": "one row per facility"}
+    ],
+    "valid_measures": [
+      {"name": "Total Encounters", "dax": "Total Encounters = COUNTROWS(FactEncounters)", "purpose": "Volume of patient encounters"},
+      {"name": "Avg LOS", "dax": "Avg LOS = DIVIDE(SUM(FactEncounters[LOS_Days]), COUNTROWS(FactEncounters))", "purpose": "Average length of stay"},
+      {"name": "Readmission Rate", "dax": "Readmission Rate = DIVIDE(CALCULATE(COUNTROWS(FactEncounters), FactEncounters[ReadmissionFlag] = 1), COUNTROWS(FactEncounters))", "purpose": "30-day readmission rate"},
+      {"name": "Cost per Encounter", "dax": "Cost per Encounter = DIVIDE(SUM(FactEncounters[TotalCost]), COUNTROWS(FactEncounters))", "purpose": "Average cost per visit"},
+      {"name": "Reimbursement Ratio", "dax": "Reimbursement Ratio = DIVIDE(SUM(FactEncounters[ReimbursementAmount]), SUM(FactEncounters[TotalCharges]))", "purpose": "Payer reimbursement rate"}
+    ],
+    "bad_measures": [
+      {"name": "Patient Age Calc Column Bad", "dax": "Patient Age = DATEDIFF(DimPatient[DateOfBirth], TODAY(), YEAR)", "expected_rule": "adv-model-079", "issue": "TODAY() in calculated column — stale between refreshes"},
+      {"name": "High Risk Filter Bad", "dax": "High Risk Patients = COUNTROWS(FILTER(DimPatient, DimPatient[RiskScore] > 7))", "expected_rule": "adv-perf-069", "issue": "COUNTROWS(FILTER()) should be CALCULATE(COUNTROWS(), condition)"},
+      {"name": "LOS Format Bad", "dax": "LOS Display = FORMAT([Avg LOS], \"0.0 days\")", "expected_rule": "adv-cor-008", "issue": "FORMAT returns text — cannot sort or aggregate numerically"},
+      {"name": "Provider OR Filter Bad", "dax": "ER Visits = CALCULATE([Total Encounters], DimProvider[Specialty] = \"Emergency\" || DimProvider[Specialty] = \"Urgent Care\" || DimProvider[Specialty] = \"Trauma\")", "expected_rule": "adv-perf-075", "issue": "Chained OR on same column — use IN operator"}
+    ],
+    "modeling_scenarios": [
+      {"scenario": "FactEncounters snapshot summed across all dates", "issue": "LOS_Days summed without date filter multiplies across all encounter dates", "expected_rule": "adv-model-067", "fix": "Filter to specific date range; LOS is an event fact not a snapshot"},
+      {"scenario": "DimPatient used as both patient and provider via RELATED", "issue": "Self-join risk when provider is also a patient — relationship ambiguity", "expected_rule": "adv-model-066", "fix": "Use separate DimProvider table, never reuse DimPatient as provider"}
+    ],
+    "expected_rules_triggered": ["adv-model-079", "adv-perf-069", "adv-cor-008", "adv-perf-075", "adv-model-067"]
+  },
+  "ecommerce_domain": {
+    "domain": "ecommerce",
+    "tables": [
+      {"name": "FactOrders", "type": "fact", "columns": ["OrderID","CustomerKey","ProductKey","DateKey","ChannelKey","PromoKey","Quantity","UnitPrice","Discount","Revenue","COGS","ShippingCost","ReturnFlag","ReturnDate"], "row_count_estimate": 8000000, "grain": "one row per order line"},
+      {"name": "DimCustomer", "type": "dimension", "columns": ["CustomerKey","CustomerID","Email","AcquisitionChannel","Cohort","LTVBand","Country","DeviceType","IsSubscriber"], "row_count_estimate": 1000000, "grain": "one row per customer"},
+      {"name": "DimPromo", "type": "dimension", "columns": ["PromoKey","PromoCode","PromoType","DiscountPct","StartDate","EndDate","BudgetAmount"], "row_count_estimate": 500, "grain": "one row per promotion"},
+      {"name": "FactReturns", "type": "fact", "columns": ["ReturnID","OrderID","CustomerKey","ProductKey","DateKey","ReturnReason","RefundAmount","RestockFlag"], "row_count_estimate": 800000, "grain": "one row per return"}
+    ],
+    "valid_measures": [
+      {"name": "Gross Revenue", "dax": "Gross Revenue = SUM(FactOrders[Revenue])", "purpose": "Total order revenue before returns"},
+      {"name": "Net Revenue", "dax": "Net Revenue = [Gross Revenue] - SUM(FactReturns[RefundAmount])", "purpose": "Revenue after refunds"},
+      {"name": "Return Rate", "dax": "Return Rate = DIVIDE(COUNTROWS(FactReturns), COUNTROWS(FactOrders))", "purpose": "Percentage of orders returned"},
+      {"name": "Customer LTV", "dax": "Customer LTV = DIVIDE([Net Revenue], DISTINCTCOUNT(FactOrders[CustomerKey]))", "purpose": "Average lifetime value per customer"},
+      {"name": "Repeat Purchase Rate", "dax": "Repeat Purchase Rate = DIVIDE(CALCULATE(DISTINCTCOUNT(FactOrders[CustomerKey]), CALCULATE(COUNTROWS(FactOrders), FactOrders[CustomerKey]) > 1), DISTINCTCOUNT(FactOrders[CustomerKey]))", "purpose": "% of customers with more than one order"}
+    ],
+    "bad_measures": [
+      {"name": "Revenue This Year Bad", "dax": "Revenue 2024 = CALCULATE([Gross Revenue], DimDate[Year] = 2024)", "expected_rule": "adv-model-076", "issue": "Hardcoded year literal"},
+      {"name": "Top Customers Bad", "dax": "Top 10 Revenue = CALCULATE([Net Revenue], TOPN(10, ALL(DimCustomer), [Net Revenue], DESC))", "expected_rule": "adv-cor-070", "issue": "TOPN without tiebreaker — nondeterministic when customers are tied"},
+      {"name": "Channel Concat Bad", "dax": "Channels Used = CONCATENATEX(VALUES(DimCustomer[AcquisitionChannel]), DimCustomer[AcquisitionChannel], \", \")", "expected_rule": "adv-cor-007", "issue": "CONCATENATEX without ORDERBY — nondeterministic order"},
+      {"name": "Return FILTER Bad", "dax": "Returned Items = COUNTROWS(FILTER(FactReturns, FactReturns[RefundAmount] > 0))", "expected_rule": "adv-perf-069", "issue": "COUNTROWS(FILTER()) — use CALCULATE(COUNTROWS(), condition)"},
+      {"name": "RANKX Orders Bad", "dax": "Order Rank = RANKX(ALL(FactOrders), [Gross Revenue])", "expected_rule": "adv-perf-077", "issue": "RANKX over 8M row fact table — rank over DimCustomer or DimProduct"}
+    ],
+    "modeling_scenarios": [
+      {"scenario": "FactOrders and FactReturns both connected to DimCustomer", "issue": "Cross-fact filter on shared dimension — net revenue calculation may include BLANK rows", "expected_rule": "adv-model-063", "fix": "Use TREATAS to apply customer context across both fact tables"},
+      {"scenario": "ReturnFlag column in FactOrders vs separate FactReturns table", "issue": "Double-counting risk when both ReturnFlag and FactReturns used in same visual", "expected_rule": "adv-model-068", "fix": "Pick one pattern — either flag in fact or separate return fact, not both"}
+    ],
+    "expected_rules_triggered": ["adv-model-076", "adv-cor-070", "adv-cor-007", "adv-perf-069", "adv-perf-077", "adv-model-063"]
+  },
+  "manufacturing_domain": {
+    "domain": "manufacturing",
+    "tables": [
+      {"name": "FactProduction", "type": "fact", "columns": ["ProductionID","DateKey","LineKey","ShiftKey","ProductKey","PlannedUnits","ActualUnits","ScrapUnits","CycleTimeSec","DowntimeMinutes","EnergyKWH"], "row_count_estimate": 5000000, "grain": "one row per production run"},
+      {"name": "FactQuality", "type": "fact", "columns": ["QualityID","ProductionID","DateKey","ProductKey","DefectType","DefectCount","SeverityLevel","InspectorKey","IsRework"], "row_count_estimate": 200000, "grain": "one row per quality inspection event"},
+      {"name": "DimLine", "type": "dimension", "columns": ["LineKey","LineName","Plant","Shift","Capacity","Product_Type","CommissionDate"], "row_count_estimate": 100, "grain": "one row per production line"},
+      {"name": "DimShift", "type": "dimension", "columns": ["ShiftKey","ShiftName","StartTime","EndTime","DurationHours","IsWeekend"], "row_count_estimate": 3, "grain": "one row per shift type"}
+    ],
+    "valid_measures": [
+      {"name": "OEE", "dax": "OEE = DIVIDE(SUM(FactProduction[ActualUnits]), SUM(FactProduction[PlannedUnits]))", "purpose": "Overall Equipment Effectiveness"},
+      {"name": "Scrap Rate", "dax": "Scrap Rate = DIVIDE(SUM(FactProduction[ScrapUnits]), SUM(FactProduction[ActualUnits]))", "purpose": "Percentage of units scrapped"},
+      {"name": "Defects Per Million", "dax": "DPMO = DIVIDE(SUM(FactQuality[DefectCount]) * 1000000, SUM(FactProduction[ActualUnits]))", "purpose": "Defects per million opportunities"},
+      {"name": "Avg Cycle Time", "dax": "Avg Cycle Time = DIVIDE(SUM(FactProduction[CycleTimeSec]), COUNTROWS(FactProduction))", "purpose": "Average cycle time in seconds"}
+    ],
+    "bad_measures": [
+      {"name": "Switch Duplicate Severity Bad", "dax": "Severity Label = SWITCH(FactQuality[SeverityLevel], 1, \"Low\", 2, \"Medium\", 3, \"High\", 1, \"Critical\", \"Unknown\")", "expected_rule": "adv-cor-078", "issue": "Severity 1 appears twice — second branch unreachable"},
+      {"name": "Line Age Column Bad", "dax": "Line Age Years = DATEDIFF(DimLine[CommissionDate], TODAY(), YEAR)", "expected_rule": "adv-model-079", "issue": "TODAY() in calculated column — stale between refreshes"},
+      {"name": "Defect SUMMARIZE Bad", "dax": "Defect Summary = SUMMARIZE(FactQuality, DimLine[LineName], \"Total\", [DPMO])", "expected_rule": "adv-perf-037", "issue": "SUMMARIZE with measures — use SUMMARIZECOLUMNS"},
+      {"name": "OEE OR Shifts Bad", "dax": "Day Shift OEE = CALCULATE([OEE], DimShift[ShiftName] = \"Morning\" || DimShift[ShiftName] = \"Day\" || DimShift[ShiftName] = \"AM\")", "expected_rule": "adv-perf-075", "issue": "Chained OR — use IN operator"}
+    ],
+    "modeling_scenarios": [
+      {"scenario": "FactProduction and FactQuality both connected to DimProduct via ProductKey", "issue": "Cross-fact aggregation may produce fan trap overcounting when both tables filtered simultaneously", "expected_rule": "adv-model-063", "fix": "Keep measures in separate visuals or use TREATAS to bridge context"},
+      {"scenario": "Scrap counted from both ScrapUnits column and FactQuality DefectCount", "issue": "Two sources of truth for scrap — ScrapUnits from production and DefectCount from quality inspection may diverge", "expected_rule": "adv-model-068", "fix": "Establish single source of scrap truth; document reconciliation rule"}
+    ],
+    "expected_rules_triggered": ["adv-cor-078", "adv-model-079", "adv-perf-037", "adv-perf-075", "adv-model-063"]
+  },
+  "telecom_domain": {
+    "domain": "telecom",
+    "tables": [
+      {"name": "FactUsage", "type": "fact", "columns": ["UsageID","SubscriberKey","DateKey","PlanKey","DataGB","VoiceMinutes","SMSCount","RoamingFlag","NetworkType","RevenueAmount"], "row_count_estimate": 50000000, "grain": "one row per subscriber per day"},
+      {"name": "FactBilling", "type": "fact", "columns": ["BillID","SubscriberKey","DateKey","BillAmount","PaymentAmount","BalanceDue","PaymentStatus","OverdueFlag"], "row_count_estimate": 5000000, "grain": "one row per monthly bill"},
+      {"name": "DimSubscriber", "type": "dimension", "columns": ["SubscriberKey","MSISDN","ContractType","ActivationDate","ChurnDate","ChurnFlag","Region","AgeGroup","ARPU_Band"], "row_count_estimate": 2000000, "grain": "one row per subscriber"},
+      {"name": "DimPlan", "type": "dimension", "columns": ["PlanKey","PlanName","Tier","MonthlyFee","DataAllowanceGB","VoiceMinutes","IsFiveG","IsRoamingIncluded"], "row_count_estimate": 50, "grain": "one row per plan"}
+    ],
+    "valid_measures": [
+      {"name": "ARPU", "dax": "ARPU = DIVIDE(SUM(FactBilling[BillAmount]), DISTINCTCOUNT(FactBilling[SubscriberKey]))", "purpose": "Average revenue per user"},
+      {"name": "Churn Rate", "dax": "Churn Rate = DIVIDE(CALCULATE(COUNTROWS(DimSubscriber), DimSubscriber[ChurnFlag] = 1), COUNTROWS(DimSubscriber))", "purpose": "Overall churn rate"},
+      {"name": "Data Revenue", "dax": "Data Revenue = CALCULATE(SUM(FactUsage[RevenueAmount]), FactUsage[DataGB] > 0)", "purpose": "Revenue from data usage"},
+      {"name": "Avg Data Usage GB", "dax": "Avg Data GB = DIVIDE(SUM(FactUsage[DataGB]), DISTINCTCOUNT(FactUsage[SubscriberKey]))", "purpose": "Average data consumption per subscriber"}
+    ],
+    "bad_measures": [
+      {"name": "Subscriber Age Bad", "dax": "Account Age Days = DATEDIFF(DimSubscriber[ActivationDate], TODAY(), DAY)", "expected_rule": "adv-model-079", "issue": "TODAY() in calculated column — stale between refreshes"},
+      {"name": "Usage DATEADD Bad", "dax": "Usage PY = CALCULATE([ARPU], DATEADD(DimDate[Date], -365, DAY))", "expected_rule": "adv-perf-074", "issue": "DATEADD -365 DAY ignores leap years — use SAMEPERIODLASTYEAR"},
+      {"name": "Plan OR Filter Bad", "dax": "Premium Revenue = CALCULATE([ARPU], DimPlan[Tier] = \"Gold\" || DimPlan[Tier] = \"Platinum\" || DimPlan[Tier] = \"Diamond\" || DimPlan[Tier] = \"Elite\")", "expected_rule": "adv-perf-075", "issue": "Four OR conditions — use IN operator"},
+      {"name": "Username RLS Bad", "dax": "[RLS] = DimSubscriber[AccountManager] = USERNAME()", "expected_rule": "adv-cor-071", "issue": "USERNAME() deprecated in Power BI Service"},
+      {"name": "Usage Rank Bad", "dax": "Usage Rank = RANKX(ALL(FactUsage), [Avg Data GB])", "expected_rule": "adv-perf-077", "issue": "RANKX over 50M row fact table — rank over DimSubscriber instead"}
+    ],
+    "modeling_scenarios": [
+      {"scenario": "FactUsage (daily) and FactBilling (monthly) both connected to DimDate", "issue": "Daily and monthly grain mixed — billing month filter returns all daily usage rows for that month, inflating daily metrics", "expected_rule": "adv-model-067", "fix": "Use DATESINPERIOD or explicit month filter; keep daily and monthly visuals on separate pages"},
+      {"scenario": "50M row FactUsage without aggregation table", "issue": "No DirectQuery aggregation table configured — all report queries hit full 50M row table", "expected_rule": "adv-model-089", "fix": "Create aggregation table at monthly/plan level; configure Power BI aggregations feature"}
+    ],
+    "expected_rules_triggered": ["adv-model-079", "adv-perf-074", "adv-perf-075", "adv-cor-071", "adv-perf-077", "adv-model-067"]
+  }
 }

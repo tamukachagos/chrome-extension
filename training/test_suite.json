@@ -751,6 +751,482 @@
       "input": "Manager Names = CONCATENATEX(FILTER(DimEmployee, DimEmployee[IsManager] = TRUE()), DimEmployee[FullName], \", \")",
       "expected_issue": "adv-cor-007: CONCATENATEX without ORDERBY — name order varies between queries",
       "expected_fix": "CONCATENATEX(FILTER(DimEmployee, DimEmployee[IsManager] = TRUE()), DimEmployee[FullName], \", \", DimEmployee[FullName], ASC)"
+    },
+    {
+      "name": "[pq] Table.NestedJoin without expanding result column",
+      "input": "Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")",
+      "expected_issue": "adv-pq-001: Nested join creates a column of tables — without Table.ExpandTableColumn the data is never accessible and the join is wasted",
+      "expected_fix": "Table.ExpandTableColumn(joinResult, \"CustomerData\", {\"Name\", \"Email\"})",
+      "domain": "power_query"
+    },
+    {
+      "name": "[pq] Text.Contains inside Table.SelectRows breaking query folding",
+      "input": "Table.SelectRows(Source, each Text.Contains([Description], \"urgent\"))",
+      "expected_issue": "adv-pq-002: Text.Contains does not fold to SQL — entire table is loaded to memory before filtering",
+      "expected_fix": "Use Table.SelectRows with a foldable condition or filter in the SQL source query",
+      "domain": "power_query"
+    },
+    {
+      "name": "[pq] List.Accumulate for running total calculation",
+      "input": "List.Accumulate(Table.ToRows(Source), 0, (state, row) => state + row{2})",
+      "expected_issue": "adv-pq-003: List.Accumulate iterates row-by-row in Power Query engine — extremely slow on large tables",
+      "expected_fix": "Use a DAX running total measure or window function in SQL source instead",
+      "domain": "power_query"
+    },
+    {
+      "name": "[pq] Table.Distinct on high-cardinality fact table",
+      "input": "Table.Distinct(FactSales)",
+      "expected_issue": "adv-pq-004: Table.Distinct on a large fact table sorts and deduplicates all rows in memory — very expensive",
+      "expected_fix": "Push deduplication to the SQL source with SELECT DISTINCT or identify the true grain",
+      "domain": "power_query"
+    },
+    {
+      "name": "[supply_chain] modeling: Role-playing DimLocation with inactive relationship for dest",
+      "input": "Role-playing DimLocation with inactive relationship for destination",
+      "expected_issue": "adv-model-066: Only one relationship can be active — destination analysis requires USERELATIONSHIP in every measure",
+      "expected_fix": "Create DimOrigin and DimDestination as separate views or calculated tables from DimLocation",
+      "domain": "supply_chain"
+    },
+    {
+      "name": "[marketing] modeling: FactCampaigns and FactWebAnalytics both connected to DimChan",
+      "input": "FactCampaigns and FactWebAnalytics both connected to DimChannel",
+      "expected_issue": "adv-model-063: When filtering by channel, both fact tables filter — but campaign spend and web sessions may not have 1:1 granularity causing misaligned aggregations",
+      "expected_fix": "Separate page-level visuals for campaign vs web metrics; avoid mixing fact tables in single visual",
+      "domain": "marketing"
+    },
+    {
+      "name": "[healthcare] Patient Age Calc Column Bad",
+      "input": "Patient Age = DATEDIFF(DimPatient[DateOfBirth], TODAY(), YEAR)",
+      "expected_issue": "adv-model-079: TODAY() in calculated column — stale between refreshes",
+      "expected_fix": "See rule adv-model-079",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] High Risk Filter Bad",
+      "input": "High Risk Patients = COUNTROWS(FILTER(DimPatient, DimPatient[RiskScore] > 7))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER()) should be CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "See rule adv-perf-069",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] LOS Format Bad",
+      "input": "LOS Display = FORMAT([Avg LOS], \"0.0 days\")",
+      "expected_issue": "adv-cor-008: FORMAT returns text — cannot sort or aggregate numerically",
+      "expected_fix": "See rule adv-cor-008",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] Provider OR Filter Bad",
+      "input": "ER Visits = CALCULATE([Total Encounters], DimProvider[Specialty] = \"Emergency\" || DimProvider[Specialty] = \"Urgent Care\" || DimProvider[Specialty] = \"Trauma\")",
+      "expected_issue": "adv-perf-075: Chained OR on same column — use IN operator",
+      "expected_fix": "See rule adv-perf-075",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] modeling: FactEncounters snapshot summed across all dates",
+      "input": "FactEncounters snapshot summed across all dates",
+      "expected_issue": "adv-model-067: LOS_Days summed without date filter multiplies across all encounter dates",
+      "expected_fix": "Filter to specific date range; LOS is an event fact not a snapshot",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] modeling: DimPatient used as both patient and provider via RELATED",
+      "input": "DimPatient used as both patient and provider via RELATED",
+      "expected_issue": "adv-model-066: Self-join risk when provider is also a patient — relationship ambiguity",
+      "expected_fix": "Use separate DimProvider table, never reuse DimPatient as provider",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[ecommerce] Revenue This Year Bad",
+      "input": "Revenue 2024 = CALCULATE([Gross Revenue], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal",
+      "expected_fix": "See rule adv-model-076",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] Top Customers Bad",
+      "input": "Top 10 Revenue = CALCULATE([Net Revenue], TOPN(10, ALL(DimCustomer), [Net Revenue], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without tiebreaker — nondeterministic when customers are tied",
+      "expected_fix": "See rule adv-cor-070",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] Channel Concat Bad",
+      "input": "Channels Used = CONCATENATEX(VALUES(DimCustomer[AcquisitionChannel]), DimCustomer[AcquisitionChannel], \", \")",
+      "expected_issue": "adv-cor-007: CONCATENATEX without ORDERBY — nondeterministic order",
+      "expected_fix": "See rule adv-cor-007",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] Return FILTER Bad",
+      "input": "Returned Items = COUNTROWS(FILTER(FactReturns, FactReturns[RefundAmount] > 0))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER()) — use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "See rule adv-perf-069",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] RANKX Orders Bad",
+      "input": "Order Rank = RANKX(ALL(FactOrders), [Gross Revenue])",
+      "expected_issue": "adv-perf-077: RANKX over 8M row fact table — rank over DimCustomer or DimProduct",
+      "expected_fix": "See rule adv-perf-077",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] modeling: FactOrders and FactReturns both connected to DimCustomer",
+      "input": "FactOrders and FactReturns both connected to DimCustomer",
+      "expected_issue": "adv-model-063: Cross-fact filter on shared dimension — net revenue calculation may include BLANK rows",
+      "expected_fix": "Use TREATAS to apply customer context across both fact tables",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] modeling: ReturnFlag column in FactOrders vs separate FactReturns tabl",
+      "input": "ReturnFlag column in FactOrders vs separate FactReturns table",
+      "expected_issue": "adv-model-068: Double-counting risk when both ReturnFlag and FactReturns used in same visual",
+      "expected_fix": "Pick one pattern — either flag in fact or separate return fact, not both",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[manufacturing] Switch Duplicate Severity Bad",
+      "input": "Severity Label = SWITCH(FactQuality[SeverityLevel], 1, \"Low\", 2, \"Medium\", 3, \"High\", 1, \"Critical\", \"Unknown\")",
+      "expected_issue": "adv-cor-078: Severity 1 appears twice — second branch unreachable",
+      "expected_fix": "See rule adv-cor-078",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] Line Age Column Bad",
+      "input": "Line Age Years = DATEDIFF(DimLine[CommissionDate], TODAY(), YEAR)",
+      "expected_issue": "adv-model-079: TODAY() in calculated column — stale between refreshes",
+      "expected_fix": "See rule adv-model-079",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] Defect SUMMARIZE Bad",
+      "input": "Defect Summary = SUMMARIZE(FactQuality, DimLine[LineName], \"Total\", [DPMO])",
+      "expected_issue": "adv-perf-037: SUMMARIZE with measures — use SUMMARIZECOLUMNS",
+      "expected_fix": "See rule adv-perf-037",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] OEE OR Shifts Bad",
+      "input": "Day Shift OEE = CALCULATE([OEE], DimShift[ShiftName] = \"Morning\" || DimShift[ShiftName] = \"Day\" || DimShift[ShiftName] = \"AM\")",
+      "expected_issue": "adv-perf-075: Chained OR — use IN operator",
+      "expected_fix": "See rule adv-perf-075",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] modeling: FactProduction and FactQuality both connected to DimProduct ",
+      "input": "FactProduction and FactQuality both connected to DimProduct via ProductKey",
+      "expected_issue": "adv-model-063: Cross-fact aggregation may produce fan trap overcounting when both tables filtered simultaneously",
+      "expected_fix": "Keep measures in separate visuals or use TREATAS to bridge context",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] modeling: Scrap counted from both ScrapUnits column and FactQuality De",
+      "input": "Scrap counted from both ScrapUnits column and FactQuality DefectCount",
+      "expected_issue": "adv-model-068: Two sources of truth for scrap — ScrapUnits from production and DefectCount from quality inspection may diverge",
+      "expected_fix": "Establish single source of scrap truth; document reconciliation rule",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[telecom] Subscriber Age Bad",
+      "input": "Account Age Days = DATEDIFF(DimSubscriber[ActivationDate], TODAY(), DAY)",
+      "expected_issue": "adv-model-079: TODAY() in calculated column — stale between refreshes",
+      "expected_fix": "See rule adv-model-079",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] Usage DATEADD Bad",
+      "input": "Usage PY = CALCULATE([ARPU], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD -365 DAY ignores leap years — use SAMEPERIODLASTYEAR",
+      "expected_fix": "See rule adv-perf-074",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] Plan OR Filter Bad",
+      "input": "Premium Revenue = CALCULATE([ARPU], DimPlan[Tier] = \"Gold\" || DimPlan[Tier] = \"Platinum\" || DimPlan[Tier] = \"Diamond\" || DimPlan[Tier] = \"Elite\")",
+      "expected_issue": "adv-perf-075: Four OR conditions — use IN operator",
+      "expected_fix": "See rule adv-perf-075",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] Username RLS Bad",
+      "input": "[RLS] = DimSubscriber[AccountManager] = USERNAME()",
+      "expected_issue": "adv-cor-071: USERNAME() deprecated in Power BI Service",
+      "expected_fix": "See rule adv-cor-071",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] Usage Rank Bad",
+      "input": "Usage Rank = RANKX(ALL(FactUsage), [Avg Data GB])",
+      "expected_issue": "adv-perf-077: RANKX over 50M row fact table — rank over DimSubscriber instead",
+      "expected_fix": "See rule adv-perf-077",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] modeling: FactUsage (daily) and FactBilling (monthly) both connected t",
+      "input": "FactUsage (daily) and FactBilling (monthly) both connected to DimDate",
+      "expected_issue": "adv-model-067: Daily and monthly grain mixed — billing month filter returns all daily usage rows for that month, inflating daily metrics",
+      "expected_fix": "Use DATESINPERIOD or explicit month filter; keep daily and monthly visuals on separate pages",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] modeling: 50M row FactUsage without aggregation table",
+      "input": "50M row FactUsage without aggregation table",
+      "expected_issue": "adv-model-089: No DirectQuery aggregation table configured — all report queries hit full 50M row table",
+      "expected_fix": "Create aggregation table at monthly/plan level; configure Power BI aggregations feature",
+      "domain": "telecom"
+    },
+    {
+      "name": "IF inside AVERAGEX — use CALCULATE+FILTER",
+      "input": "Avg Pos = AVERAGEX(FactSales, IF(FactSales[Amount] > 0, FactSales[Amount], BLANK()))",
+      "expected_issue": "adv-perf-080: IF inside AVERAGEX evaluates per-row — push to CALCULATE filter",
+      "expected_fix": "CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)"
+    },
+    {
+      "name": "MAXX on single column — use MAX instead",
+      "input": "Latest = MAXX(FactSales, FactSales[OrderDate])",
+      "expected_issue": "adv-perf-081: MAXX on direct column — MAX(FactSales[OrderDate]) is faster",
+      "expected_fix": "MAX(FactSales[OrderDate])"
+    },
+    {
+      "name": "AVERAGEX on large fact — use DIVIDE(SUM,COUNT)",
+      "input": "Avg Sale = AVERAGEX(FactSales, FactSales[Amount])",
+      "expected_issue": "adv-perf-082: AVERAGEX on direct column reference — DIVIDE(SUM,COUNTROWS) is equivalent and faster",
+      "expected_fix": "DIVIDE(SUM(FactSales[Amount]), COUNTROWS(FactSales))"
+    },
+    {
+      "name": "Nested SUMX inside SUMX",
+      "input": "Cross = SUMX(Products, SUMX(Customers, [Revenue]))",
+      "expected_issue": "adv-perf-084: Nested SUMX creates O(n²) complexity — redesign with SUMMARIZECOLUMNS",
+      "expected_fix": "SUMMARIZECOLUMNS(Products[Category], Customers[Segment], \"Rev\", [Revenue])"
+    },
+    {
+      "name": "CROSSJOIN in measure materializing cartesian product",
+      "input": "Combos = COUNTROWS(CROSSJOIN(VALUES(DimProduct[Category]), VALUES(DimCustomer[Segment])))",
+      "expected_issue": "adv-perf-085: CROSSJOIN materializes full cartesian product at query time",
+      "expected_fix": "Calculate dimensions separately or use SUMMARIZECOLUMNS"
+    },
+    {
+      "name": "TOPN(1) to get single value — use MAXX",
+      "input": "Best = SELECTCOLUMNS(TOPN(1, ALL(DimCustomer), [Revenue], DESC), \"Name\", DimCustomer[Name])",
+      "expected_issue": "adv-perf-086: TOPN(1) for scalar — MAXX over TOPN(1,...) is cleaner",
+      "expected_fix": "MAXX(TOPN(1, ALL(DimCustomer), [Revenue], DESC), DimCustomer[Name])"
+    },
+    {
+      "name": "HASONEVALUE+SELECTEDVALUE redundant guard",
+      "input": "Label = IF(HASONEVALUE(Product[Name]), SELECTEDVALUE(Product[Name]), \"All\")",
+      "expected_issue": "adv-perf-087: SELECTEDVALUE second arg handles multi-value case — no IF needed",
+      "expected_fix": "SELECTEDVALUE(Product[Name], \"All\")"
+    },
+    {
+      "name": "CALCULATE inside SUMX with constant filter",
+      "input": "Total = SUMX(Sales, CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\"))",
+      "expected_issue": "adv-perf-090: CALCULATE with constant filter inside SUMX — move CALCULATE outside iterator",
+      "expected_fix": "CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\")"
+    },
+    {
+      "name": "IFERROR masking expensive measure error",
+      "input": "Safe = IFERROR(DIVIDE([Complex Measure], [Base]), 0)",
+      "expected_issue": "adv-perf-091: IFERROR still evaluates the measure — use DIVIDE which handles zero natively",
+      "expected_fix": "DIVIDE([Complex Measure], [Base])"
+    },
+    {
+      "name": "SUMX(DISTINCT(col)) — use VALUES()",
+      "input": "Total = SUMX(DISTINCT(Sales[CustomerID]), [Revenue])",
+      "expected_issue": "adv-perf-092: Use VALUES() instead of DISTINCT() as SUMX table arg",
+      "expected_fix": "SUMX(VALUES(Sales[CustomerID]), [Revenue])"
+    },
+    {
+      "name": "GENERATE+ROW instead of ADDCOLUMNS",
+      "input": "D = SUMX(GENERATE(Sales, ROW(\"M\", Sales[Amount]*1.1)), [M])",
+      "expected_issue": "adv-perf-094: GENERATE+ROW overhead — ADDCOLUMNS is cleaner and equivalent",
+      "expected_fix": "SUMX(ADDCOLUMNS(Sales, \"M\", Sales[Amount]*1.1), [M])"
+    },
+    {
+      "name": "VAR declared but never used",
+      "input": "M = VAR x = [Base] VAR y = [Returns] RETURN x",
+      "expected_issue": "adv-cor-081: VAR y declared but never referenced in RETURN — remove dead code",
+      "expected_fix": "M = VAR x = [Base] RETURN x"
+    },
+    {
+      "name": "KEEPFILTERS changing filter semantics unintentionally",
+      "input": "Red Sales = CALCULATE([Sales], KEEPFILTERS(Product[Color] = \"Red\"))",
+      "expected_issue": "adv-cor-083: KEEPFILTERS intersects with existing filters — may produce empty when another color is selected",
+      "expected_fix": "Red Sales = CALCULATE([Sales], Product[Color] = \"Red\")  // replaces filter, not intersects"
+    },
+    {
+      "name": "USERELATIONSHIP outside CALCULATE — has no effect",
+      "input": "Bad = USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey])",
+      "expected_issue": "adv-cor-084: USERELATIONSHIP only works inside CALCULATE — no effect at top level",
+      "expected_fix": "CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))"
+    },
+    {
+      "name": "RLS FILTER() returning table instead of boolean",
+      "input": "[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())",
+      "expected_issue": "adv-cor-085: RLS expression must return TRUE/FALSE — FILTER() returns a table",
+      "expected_fix": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()"
+    },
+    {
+      "name": "IF(ISBLANK()) pattern — use COALESCE instead",
+      "input": "Result = IF(ISBLANK([Revenue]), 0, [Revenue])",
+      "expected_issue": "adv-cor-086: IF(ISBLANK(x), fallback, x) is equivalent to COALESCE(x, fallback)",
+      "expected_fix": "COALESCE([Revenue], 0)"
+    },
+    {
+      "name": "4-level nested IF — use SWITCH(TRUE())",
+      "input": "Band = IF([R]>1000,\"A\",IF([R]>500,\"B\",IF([R]>100,\"C\",IF([R]>0,\"D\",\"E\"))))",
+      "expected_issue": "adv-cor-087: 4-deep nested IF — use SWITCH(TRUE()) for readability and performance",
+      "expected_fix": "SWITCH(TRUE(),[R]>1000,\"A\",[R]>500,\"B\",[R]>100,\"C\",[R]>0,\"D\",\"E\")"
+    },
+    {
+      "name": "EARLIER in iterator — use VAR instead",
+      "input": "RunTotal = CALCULATE(SUM(S[Amt]), FILTER(S, S[Date] <= EARLIER(S[Date])))",
+      "expected_issue": "adv-cor-088: EARLIER is confusing and slower — use VAR currentDate = S[Date]",
+      "expected_fix": "VAR d = S[Date] RETURN CALCULATE(SUM(S[Amt]), S[Date] <= d)"
+    },
+    {
+      "name": "DIVIDE with 0 alternative breaks aggregation",
+      "input": "Ratio = DIVIDE([A], [B], 0)",
+      "expected_issue": "adv-cor-089: DIVIDE with 0 alternative returns 0 instead of BLANK — inflates SUM aggregations",
+      "expected_fix": "DIVIDE([A], [B])  // returns BLANK on zero denominator — correct for aggregation"
+    },
+    {
+      "name": "SWITCH with no ELSE clause",
+      "input": "Label = SWITCH(S[Status], \"A\", \"Active\", \"S\", \"Suspended\")",
+      "expected_issue": "adv-cor-090: No ELSE clause — unmatched values silently return BLANK",
+      "expected_fix": "SWITCH(S[Status], \"A\", \"Active\", \"S\", \"Suspended\", \"Unknown\")"
+    },
+    {
+      "name": "TOTALMTD deprecated wrapper",
+      "input": "MTD = TOTALMTD([Sales], DimDate[Date])",
+      "expected_issue": "adv-cor-091: TOTALMTD is deprecated alias — use CALCULATE([Sales], DATESMTD(DimDate[Date]))",
+      "expected_fix": "CALCULATE([Sales], DATESMTD(DimDate[Date]))"
+    },
+    {
+      "name": "DATESYTD without fiscal year-end argument",
+      "input": "FY YTD = CALCULATE([Rev], DATESYTD(DimDate[Date]))",
+      "expected_issue": "adv-cor-093: Missing year-end argument defaults to Dec 31 on fiscal year models",
+      "expected_fix": "CALCULATE([Rev], DATESYTD(DimDate[Date], \"6/30\"))"
+    },
+    {
+      "name": "NOT ISBLANK vs <> BLANK()",
+      "input": "HasVal = [Measure] <> BLANK()",
+      "expected_issue": "adv-cor-094: Use NOT ISBLANK([Measure]) — <> BLANK() has edge cases with some data types",
+      "expected_fix": "NOT ISBLANK([Measure])"
+    },
+    {
+      "name": "Nested CONCATENATE — use & operator",
+      "input": "Name = CONCATENATE(CONCATENATE([First], \" \"), [Last])",
+      "expected_issue": "adv-cor-098: Nested CONCATENATE — use & operator for chaining: [First] & \" \" & [Last]",
+      "expected_fix": "[First] & \" \" & [Last]"
+    },
+    {
+      "name": "CONTAINS instead of CONTAINSROW",
+      "input": "IsVIP = CONTAINS(VIPList, VIPList[ID], Customer[ID])",
+      "expected_issue": "adv-cor-096: CONTAINS argument order is error-prone — use CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])",
+      "expected_fix": "CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])"
+    },
+    {
+      "name": "IN with single value — use direct equality",
+      "input": "IsRed = Sales[Color] IN {\"Red\"}",
+      "expected_issue": "adv-cor-097: IN with one value — Sales[Color] = \"Red\" is cleaner and equivalent",
+      "expected_fix": "Sales[Color] = \"Red\""
+    },
+    {
+      "name": "Table.NestedJoin without expand step",
+      "input": "Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")",
+      "expected_issue": "adv-pq-001: NestedJoin creates column of tables — no ExpandTableColumn step follows",
+      "expected_fix": "Table.ExpandTableColumn(result, \"CustomerData\", {\"Name\", \"Email\"})"
+    },
+    {
+      "name": "Text.Contains inside Table.SelectRows breaking folding",
+      "input": "Table.SelectRows(Source, each Text.Contains([Desc], \"urgent\"))",
+      "expected_issue": "adv-pq-002: Text.Contains breaks query folding — full table loaded to memory",
+      "expected_fix": "Filter in SQL source: WHERE Desc LIKE '%urgent%'"
+    },
+    {
+      "name": "List.Accumulate for running total",
+      "input": "List.Accumulate(Table.ToRows(Source), 0, (s, r) => s + r{2})",
+      "expected_issue": "adv-pq-003: List.Accumulate iterates row-by-row — very slow on large tables",
+      "expected_fix": "Calculate running total as DAX measure or SQL window function"
+    },
+    {
+      "name": "Table.Buffer on large source table",
+      "input": "Table.Buffer(Source)",
+      "expected_issue": "adv-pq-008: Table.Buffer forces in-memory evaluation and blocks query folding",
+      "expected_fix": "Remove Table.Buffer unless preventing re-evaluation of volatile source"
+    },
+    {
+      "name": "MonthName axis sorts alphabetically",
+      "input": "// Line chart axis: DimDate[MonthName]",
+      "expected_issue": "adv-vis-007: MonthName text sorts alphabetically (Apr, Aug, Dec...) — set Sort By Column to Month integer",
+      "expected_fix": "Select MonthName → Column Tools → Sort by Column → Month"
+    },
+    {
+      "name": "Pie chart with 30 slices",
+      "input": "// Donut chart: category = DimChannel[ChannelName] with 30 channels",
+      "expected_issue": "adv-vis-005: Pie/donut with 30 slices is unreadable — use bar chart or Top N filter",
+      "expected_fix": "Bar chart or TOPN measure grouping remainder as 'Other'"
+    },
+    {
+      "name": "Slicer on high-cardinality email column",
+      "input": "// Slicer: DimCustomer[Email] — 500,000 unique values",
+      "expected_issue": "adv-vis-002: Slicer on 500K unique emails — replace with search box or dropdown",
+      "expected_fix": "Search-as-you-type slicer or filter panel"
+    },
+    {
+      "name": "Date slicer on fact table date column",
+      "input": "// Slicer: FactSales[OrderDate] — not from DimDate",
+      "expected_issue": "adv-vis-003: Date slicer using fact table date won't filter time intelligence measures correctly",
+      "expected_fix": "Connect slicer to DimDate[Date]"
+    },
+    {
+      "name": "ALL() removing RLS filters",
+      "input": "Total = CALCULATE([Revenue], ALL(FactSales))",
+      "expected_issue": "adv-sec-005: ALL(FactSales) removes RLS row-level security — security bypass risk",
+      "expected_fix": "CALCULATE([Revenue], REMOVEFILTERS(FactSales[Region]))"
+    },
+    {
+      "name": "USERPRINCIPALNAME mixed case comparison in RLS",
+      "input": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()",
+      "expected_issue": "adv-sec-002: Case-sensitive comparison — LOWER() both sides to prevent user lockout",
+      "expected_fix": "LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())"
+    },
+    {
+      "name": "RLS FILTER expression returning table",
+      "input": "[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())",
+      "expected_issue": "adv-cor-085 / adv-sec: RLS must return TRUE/FALSE — FILTER() returns a table and will error",
+      "expected_fix": "DimEmployee[Email] = USERPRINCIPALNAME()"
+    },
+    {
+      "name": "No date table marked — time intelligence fails",
+      "input": "// Model has CalendarTable but not marked as Date Table",
+      "expected_issue": "adv-model-080: Date table not marked — DATESYTD/SAMEPERIODLASTYEAR return wrong results",
+      "expected_fix": "Table Tools → Mark as Date Table in Power BI Desktop"
+    },
+    {
+      "name": "Auto date/time enabled on large model",
+      "input": "// Options → Data Load → Auto Date/Time enabled",
+      "expected_issue": "adv-model-081: Auto date/time creates hidden tables for every date column — disable and use shared DimDate",
+      "expected_fix": "Disable Auto Date/Time; create single shared DimDate"
+    },
+    {
+      "name": "Many-to-many without bridge table",
+      "input": "// FactSales[ProductKey] → DimProduct many-to-many cardinality without bridge",
+      "expected_issue": "adv-model-083: Many-to-many requires bridge table or TREATAS workaround",
+      "expected_fix": "Create bridge table or use TREATAS in measures"
+    },
+    {
+      "name": "Bidirectional filter on bridge table causes ambiguity",
+      "input": "// DimEmployeeRole bridge has bidirectional filters to DimEmployee and DimRole",
+      "expected_issue": "adv-model-084: Bidirectional bridge causes filter ambiguity — set to single-direction",
+      "expected_fix": "Set to single-direction; use CROSSFILTER only in measures needing reverse filtering"
+    },
+    {
+      "name": "Two active date relationships on same fact table pair",
+      "input": "// FactOrders: OrderDateKey and ShipDateKey both active to DimDate",
+      "expected_issue": "adv-model-087: Power BI only allows one active relationship per table pair — second silently ignored or errors",
+      "expected_fix": "Keep one active; use USERELATIONSHIP for the other in measures"
     }
   ],
   "negative_cases": [
@@ -1434,6 +1910,333 @@
       "input": "Category Label = SWITCH(DimProduct[Tier], \"A\", \"Premium\", \"B\", \"Standard\", \"C\", \"Basic\", \"Unknown\")",
       "notes": "All case values unique",
       "expected_issue": "none"
+    },
+    {
+      "name": "[sales] valid: Avg Order Value",
+      "input": "Avg Order Value = DIVIDE([Total Sales], DISTINCTCOUNT(FactSales[SalesID]))",
+      "expected_issue": "none",
+      "notes": "Average revenue per order",
+      "domain": "sales"
+    },
+    {
+      "name": "[finance] valid: Revenue",
+      "input": "Revenue = CALCULATE([Actual Amount], DimAccount[AccountType] = \"Revenue\")",
+      "expected_issue": "none",
+      "notes": "Total revenue from GL",
+      "domain": "finance"
+    },
+    {
+      "name": "[saas] valid: DAU",
+      "input": "DAU = CALCULATE(DISTINCTCOUNT(FactUsage[AccountID]), LASTDATE(DimDate[Date]))",
+      "expected_issue": "none",
+      "notes": "Daily active users (accounts)",
+      "domain": "saas"
+    },
+    {
+      "name": "[healthcare] valid: Total Encounters",
+      "input": "Total Encounters = COUNTROWS(FactEncounters)",
+      "expected_issue": "none",
+      "notes": "Volume of patient encounters",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] valid: Avg LOS",
+      "input": "Avg LOS = DIVIDE(SUM(FactEncounters[LOS_Days]), COUNTROWS(FactEncounters))",
+      "expected_issue": "none",
+      "notes": "Average length of stay",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] valid: Readmission Rate",
+      "input": "Readmission Rate = DIVIDE(CALCULATE(COUNTROWS(FactEncounters), FactEncounters[ReadmissionFlag] = 1), COUNTROWS(FactEncounters))",
+      "expected_issue": "none",
+      "notes": "30-day readmission rate",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] valid: Cost per Encounter",
+      "input": "Cost per Encounter = DIVIDE(SUM(FactEncounters[TotalCost]), COUNTROWS(FactEncounters))",
+      "expected_issue": "none",
+      "notes": "Average cost per visit",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[healthcare] valid: Reimbursement Ratio",
+      "input": "Reimbursement Ratio = DIVIDE(SUM(FactEncounters[ReimbursementAmount]), SUM(FactEncounters[TotalCharges]))",
+      "expected_issue": "none",
+      "notes": "Payer reimbursement rate",
+      "domain": "healthcare"
+    },
+    {
+      "name": "[ecommerce] valid: Gross Revenue",
+      "input": "Gross Revenue = SUM(FactOrders[Revenue])",
+      "expected_issue": "none",
+      "notes": "Total order revenue before returns",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] valid: Net Revenue",
+      "input": "Net Revenue = [Gross Revenue] - SUM(FactReturns[RefundAmount])",
+      "expected_issue": "none",
+      "notes": "Revenue after refunds",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] valid: Return Rate",
+      "input": "Return Rate = DIVIDE(COUNTROWS(FactReturns), COUNTROWS(FactOrders))",
+      "expected_issue": "none",
+      "notes": "Percentage of orders returned",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] valid: Customer LTV",
+      "input": "Customer LTV = DIVIDE([Net Revenue], DISTINCTCOUNT(FactOrders[CustomerKey]))",
+      "expected_issue": "none",
+      "notes": "Average lifetime value per customer",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[ecommerce] valid: Repeat Purchase Rate",
+      "input": "Repeat Purchase Rate = DIVIDE(CALCULATE(DISTINCTCOUNT(FactOrders[CustomerKey]), CALCULATE(COUNTROWS(FactOrders), FactOrders[CustomerKey]) > 1), DISTINCTCOUNT(FactOrders[CustomerKey]))",
+      "expected_issue": "none",
+      "notes": "% of customers with more than one order",
+      "domain": "ecommerce"
+    },
+    {
+      "name": "[manufacturing] valid: OEE",
+      "input": "OEE = DIVIDE(SUM(FactProduction[ActualUnits]), SUM(FactProduction[PlannedUnits]))",
+      "expected_issue": "none",
+      "notes": "Overall Equipment Effectiveness",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] valid: Scrap Rate",
+      "input": "Scrap Rate = DIVIDE(SUM(FactProduction[ScrapUnits]), SUM(FactProduction[ActualUnits]))",
+      "expected_issue": "none",
+      "notes": "Percentage of units scrapped",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] valid: Defects Per Million",
+      "input": "DPMO = DIVIDE(SUM(FactQuality[DefectCount]) * 1000000, SUM(FactProduction[ActualUnits]))",
+      "expected_issue": "none",
+      "notes": "Defects per million opportunities",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[manufacturing] valid: Avg Cycle Time",
+      "input": "Avg Cycle Time = DIVIDE(SUM(FactProduction[CycleTimeSec]), COUNTROWS(FactProduction))",
+      "expected_issue": "none",
+      "notes": "Average cycle time in seconds",
+      "domain": "manufacturing"
+    },
+    {
+      "name": "[telecom] valid: ARPU",
+      "input": "ARPU = DIVIDE(SUM(FactBilling[BillAmount]), DISTINCTCOUNT(FactBilling[SubscriberKey]))",
+      "expected_issue": "none",
+      "notes": "Average revenue per user",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] valid: Churn Rate",
+      "input": "Churn Rate = DIVIDE(CALCULATE(COUNTROWS(DimSubscriber), DimSubscriber[ChurnFlag] = 1), COUNTROWS(DimSubscriber))",
+      "expected_issue": "none",
+      "notes": "Overall churn rate",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] valid: Data Revenue",
+      "input": "Data Revenue = CALCULATE(SUM(FactUsage[RevenueAmount]), FactUsage[DataGB] > 0)",
+      "expected_issue": "none",
+      "notes": "Revenue from data usage",
+      "domain": "telecom"
+    },
+    {
+      "name": "[telecom] valid: Avg Data Usage GB",
+      "input": "Avg Data GB = DIVIDE(SUM(FactUsage[DataGB]), DISTINCTCOUNT(FactUsage[SubscriberKey]))",
+      "expected_issue": "none",
+      "notes": "Average data consumption per subscriber",
+      "domain": "telecom"
+    },
+    {
+      "name": "Correct CALCULATE with column filter (no FILTER wrap)",
+      "input": "Sales CY = CALCULATE([Revenue], DimDate[Year] = YEAR(TODAY()))",
+      "notes": "Direct column filter is idiomatic and fast",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct SAMEPERIODLASTYEAR for prior year",
+      "input": "PY = CALCULATE([Revenue], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "notes": "Correct time intelligence — handles leap years",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct DIVIDE for safe division",
+      "input": "Margin = DIVIDE([Gross Profit], [Revenue])",
+      "notes": "DIVIDE handles zero denominator returning BLANK",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct IN operator for multi-value filter",
+      "input": "EU = CALCULATE([Revenue], DimTerritory[Region] IN {\"DE\",\"FR\",\"UK\",\"IT\"})",
+      "notes": "IN is faster and more readable than chained OR",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct COALESCE for blank handling",
+      "input": "Safe = COALESCE([Revenue], 0)",
+      "notes": "Explicit blank-to-zero conversion",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct USERPRINCIPALNAME with LOWER",
+      "input": "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())",
+      "notes": "Case-insensitive UPN comparison",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct CALCULATE(COUNTROWS()) filter",
+      "input": "Churned = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\")",
+      "notes": "Preferred over COUNTROWS(FILTER(...))",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct USERELATIONSHIP inside CALCULATE",
+      "input": "DestCount = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))",
+      "notes": "Correctly activates inactive relationship",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct VAR pattern to cache sub-expression",
+      "input": "Diff = VAR base = [Base Sales] RETURN [Total Sales] - base",
+      "notes": "VAR prevents double evaluation of expensive measure",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct SWITCH(TRUE()) for range banding",
+      "input": "Band = SWITCH(TRUE(), [Rev]>1000,\"High\", [Rev]>500,\"Mid\", [Rev]>0,\"Low\", \"Zero\")",
+      "notes": "Ordered conditions narrow to wide — no overlap",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct SELECTEDVALUE with default",
+      "input": "Sel = SELECTEDVALUE(Product[Name], \"All\")",
+      "notes": "No need for HASONEVALUE wrapper",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct REMOVEFILTERS for specific column",
+      "input": "Market = CALCULATE([Rev], REMOVEFILTERS(FactSales[Region]))",
+      "notes": "Removes only region filter, not RLS filters",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct DATESMTD for month-to-date",
+      "input": "MTD = CALCULATE([Sales], DATESMTD(DimDate[Date]))",
+      "notes": "Explicit time intelligence — not deprecated TOTALMTD",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct SNAPSHOT fact with LASTDATE filter",
+      "input": "HC = CALCULATE(SUM(FactHeadcount[Salary]), LASTDATE(DimDate[Date]))",
+      "notes": "Snapshot fact correctly filtered to single date",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct SWITCH with unique cases and ELSE",
+      "input": "Label = SWITCH(S[Status], \"A\", \"Active\", \"I\", \"Inactive\", \"P\", \"Pending\", \"Unknown\")",
+      "notes": "All cases unique, ELSE clause present",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct CONTAINSROW for membership test",
+      "input": "IsVIP = CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])",
+      "notes": "Cleaner than CONTAINS — argument order unambiguous",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct string concat with & operator",
+      "input": "FullName = DimEmployee[FirstName] & \" \" & DimEmployee[LastName]",
+      "notes": "& chains cleanly — no nested CONCATENATE",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct ADDCOLUMNS for row-level calculation",
+      "input": "D = SUMX(ADDCOLUMNS(Sales, \"Markup\", Sales[Amount]*1.1), [Markup])",
+      "notes": "ADDCOLUMNS is cleaner than GENERATE+ROW",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct MAX on single column",
+      "input": "Latest = MAX(FactSales[OrderDate])",
+      "notes": "MAX is faster than MAXX for direct column",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct CALCULATE(AVERAGE()) for conditional average",
+      "input": "AvgPos = CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)",
+      "notes": "Filter pushed to CALCULATE — not per-row IF",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct USERPRINCIPALNAME (not USERNAME)",
+      "input": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()",
+      "notes": "USERPRINCIPALNAME is the correct cloud function",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct Table.ExpandTableColumn after NestedJoin",
+      "input": "Table.ExpandTableColumn(joined, \"CustomerData\", {\"Name\", \"Email\"})",
+      "notes": "Always expand after NestedJoin",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct Power Query parameter with type",
+      "input": "StartDate as date = #date(2020,1,1)",
+      "notes": "Explicit type prevents inference errors",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct DATESYTD with fiscal year end",
+      "input": "FYTD = CALCULATE([Rev], DATESYTD(DimDate[Date], \"6/30\"))",
+      "notes": "Fiscal year-end parameter correctly specified",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct COALESCE over IF(ISBLANK())",
+      "input": "Safe = COALESCE([Revenue], 0)",
+      "notes": "COALESCE is cleaner than IF(ISBLANK(x), 0, x)",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct NOT ISBLANK usage",
+      "input": "HasValue = NOT ISBLANK([Measure])",
+      "notes": "ISBLANK is preferred over <> BLANK()",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct VALUES over DISTINCT in SUMX",
+      "input": "D = SUMX(VALUES(Sales[CustomerID]), [Revenue])",
+      "notes": "VALUES is idiomatic; includes BLANK handling",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct OEE measure using DIVIDE",
+      "input": "OEE = DIVIDE(SUM(FactProduction[ActualUnits]), SUM(FactProduction[PlannedUnits]))",
+      "notes": "DIVIDE handles zero planned units gracefully",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct CHURN RATE with CALCULATE filter",
+      "input": "Churn Rate = DIVIDE(CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status]=\"Churned\"), COUNTROWS(FactSubscriptions))",
+      "notes": "CALCULATE filter preferred over COUNTROWS(FILTER(...))",
+      "expected_issue": "none"
+    },
+    {
+      "name": "Correct ARPU with DISTINCTCOUNT denominator",
+      "input": "ARPU = DIVIDE(SUM(FactBilling[BillAmount]), DISTINCTCOUNT(FactBilling[SubscriberKey]))",
+      "notes": "Correct per-user average revenue calculation",
+      "expected_issue": "none"
     }
   ],
   "edge_cases": [
@@ -1790,6 +2593,126 @@
       "input": "// Area chart: axis DimDate[Date], values [MRR] and [ARR]",
       "expected_issue": "visual: ARR = MRR * 12 — ARR dominates scale, MRR line appears flat at bottom",
       "expected_fix": "Put ARR on secondary axis or show in separate visual"
+    },
+    {
+      "name": "BLANK propagation: BLANK + 0 = 0 but BLANK * 2 = BLANK",
+      "input": "Total = [Sales] * [Multiplier]  // Multiplier can be BLANK",
+      "expected_issue": "adv-cor-080: BLANK * number = BLANK — measure returns BLANK when Multiplier is blank",
+      "expected_fix": "Total = [Sales] * COALESCE([Multiplier], 1)"
+    },
+    {
+      "name": "DIVIDE(0, 0) returns BLANK not 0",
+      "input": "Rate = DIVIDE(0, 0)",
+      "expected_issue": "adv-cor-089: DIVIDE(0,0) = BLANK — may be unexpected if 0 rate expected",
+      "expected_fix": "Wrap with COALESCE(DIVIDE(0,0), 0) if 0 is intended"
+    },
+    {
+      "name": "KEEPFILTERS intersecting with existing visual filter produces empty result",
+      "input": "EU Only = CALCULATE([Sales], KEEPFILTERS(Geo[Region] = \"Europe\"))",
+      "expected_issue": "adv-cor-083: If user selects 'Asia' in slicer, KEEPFILTERS intersects to produce BLANK",
+      "expected_fix": "Use direct filter (not KEEPFILTERS) unless intersection is intentional"
+    },
+    {
+      "name": "ALLSELECTED column vs table scope difference",
+      "input": "Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))",
+      "expected_issue": "adv-cor-082: ALLSELECTED(Product[Category]) only removes category slicer — other Product filters still apply",
+      "expected_fix": "ALLSELECTED(Product) to remove all product filters"
+    },
+    {
+      "name": "SWITCH(TRUE()) with overlapping ranges — first match wins silently",
+      "input": "B = SWITCH(TRUE(), [R]>0,\"Pos\", [R]>1000,\"High\", \"Zero\")",
+      "expected_issue": "adv-cor-005: [R]>1000 never reached — [R]>0 matches first for all positive values",
+      "expected_fix": "SWITCH(TRUE(), [R]>1000,\"High\", [R]>0,\"Pos\", \"Zero\")"
+    },
+    {
+      "name": "DATESYTD crossing fiscal year boundary without year-end arg",
+      "input": "Q1 FY YTD = CALCULATE([Rev], DATESYTD(DimDate[Date]))",
+      "expected_issue": "adv-cor-093: Fiscal year model without year-end arg returns calendar YTD not fiscal YTD",
+      "expected_fix": "DATESYTD(DimDate[Date], \"3/31\") for April fiscal year start"
+    },
+    {
+      "name": "Snapshot fact with rolling date filter inflates result",
+      "input": "HC Rolling = CALCULATE(SUM(FactHeadcount[Salary]), DATESINPERIOD(DimDate[Date], MAX(DimDate[Date]), -3, MONTH))",
+      "expected_issue": "adv-model-067: Snapshot summed over 3 months = 3x actual headcount cost",
+      "expected_fix": "Use LASTDATE filter for snapshot; rolling only appropriate for flow facts"
+    },
+    {
+      "name": "RLS with USERPRINCIPALNAME on Azure B2B guest — UPN format differs",
+      "input": "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())",
+      "expected_issue": "adv-sec-002: Azure B2B guest UPNs use #EXT# format — may not match stored email",
+      "expected_fix": "Normalize UPN format or use PATHCONTAINS for guest account matching"
+    },
+    {
+      "name": "CONCATENATEX over 1M row fact table — blank or timeout",
+      "input": "AllIDs = CONCATENATEX(FactSales, FactSales[SalesID], \", \")",
+      "expected_issue": "adv-cor-007: CONCATENATEX over millions of rows will timeout or be truncated by Power BI",
+      "expected_fix": "Limit with TOPN or aggregate before concatenating"
+    },
+    {
+      "name": "CALENDAR(start > end) produces zero rows",
+      "input": "Dates = CALENDAR(DATE(2025,1,1), DATE(2020,1,1))",
+      "expected_issue": "adv-cor-015: Start date after end date — calendar has zero rows, all time intelligence returns BLANK",
+      "expected_fix": "CALENDAR(DATE(2020,1,1), DATE(2025,12,31))"
+    },
+    {
+      "name": "DISTINCTCOUNT on nullable foreign key column",
+      "input": "Count = DISTINCTCOUNT(FactSales[CustomerKey])",
+      "expected_issue": "edge: NULL/BLANK CustomerKeys counted as one distinct value — may inflate unique customer count",
+      "expected_fix": "CALCULATE(DISTINCTCOUNT(FactSales[CustomerKey]), NOT ISBLANK(FactSales[CustomerKey]))"
+    },
+    {
+      "name": "Two measures on different fact grains in same visual — denominator mismatch",
+      "input": "// Matrix: Rows=DimProduct, Values=[Order Count from FactOrders] + [Line Count from FactOrderLines]",
+      "expected_issue": "adv-model-063: Different grains in same visual — counts will not align, comparisons mislead",
+      "expected_fix": "Aggregate line count to order level first or use separate visuals"
+    },
+    {
+      "name": "FORMAT mask with wrong decimal separator for EU locale",
+      "input": "Display = FORMAT([Amount], \"#,##0.00\")",
+      "expected_issue": "adv-cor-095: Comma thousands / period decimal may render as period thousands / comma decimal in EU locales",
+      "expected_fix": "Use Power BI format pane (locale-aware) instead of DAX FORMAT"
+    },
+    {
+      "name": "ALL(FactTable) in percentage measure bypasses RLS",
+      "input": "Mkt Share = DIVIDE([Sales], CALCULATE([Sales], ALL(FactSales)))",
+      "expected_issue": "adv-sec-005: ALL(FactSales) removes RLS — user sees market share against all data, not their allowed data",
+      "expected_fix": "CALCULATE([Sales], REMOVEFILTERS(FactSales[Product])) — only remove product filter, not all filters"
+    },
+    {
+      "name": "USERELATIONSHIP with inactive relationship used in calculated column",
+      "input": "// Calculated column using USERELATIONSHIP — not inside CALCULATE",
+      "expected_issue": "adv-cor-084: USERELATIONSHIP in calculated column has no effect — wrap in CALCULATE",
+      "expected_fix": "Add CALCULATE wrapper around the column expression"
+    },
+    {
+      "name": "Auto date/time + custom DimDate = duplicate date hierarchies in field list",
+      "input": "// Both Auto Date/Time and custom DimDate active in model",
+      "expected_issue": "adv-model-081: Duplicate date hierarchies confuse users and inflate model size — disable Auto Date/Time",
+      "expected_fix": "Options → Current File → Data Load → uncheck Auto Date/Time"
+    },
+    {
+      "name": "RANKX with ALLSELECTED on visual with no slicer — returns 1 for all rows",
+      "input": "Rank = RANKX(ALLSELECTED(DimCustomer), [Revenue], , DESC, Dense)",
+      "expected_issue": "edge: Without a slicer, ALLSELECTED = ALL — rank works. With slicer showing 1 customer, all rows rank 1",
+      "expected_fix": "Test rank behavior with and without slicer applied"
+    },
+    {
+      "name": "ISINSCOPE on column not in visual hierarchy — always FALSE",
+      "input": "IsDetail = ISINSCOPE(FactSales[SalesID])",
+      "expected_issue": "adv-cor-021: SalesID never appears in visual hierarchy — ISINSCOPE always FALSE, conditional never triggers",
+      "expected_fix": "Use a column that is actually in the visual's row/column grouping"
+    },
+    {
+      "name": "Table.Distinct on fact table removing legitimate duplicates",
+      "input": "Table.Distinct(FactSales)",
+      "expected_issue": "adv-pq-004: Deduplication may remove valid rows if grain is not unique on natural key — verify before removing",
+      "expected_fix": "Confirm grain: use Table.Group to identify actual duplicates first"
+    },
+    {
+      "name": "Binary image column in model inflating .pbix to 500MB+",
+      "input": "// Product[ImageBytes] loaded — model file is 480MB",
+      "expected_issue": "adv-pq-010 / adv-model-085: Binary column inflates model — remove in Power Query",
+      "expected_fix": "Table.RemoveColumns(Source, {\"ImageBytes\"})"
     }
   ]
 }

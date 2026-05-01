@@ -1,629 +1,389 @@
 #!/usr/bin/env node
 /**
- * Synthetic Training Data Generator for PBI Copilot
- *
- * Reads synthetic_data_factory.json and expands:
- *   1. test_suite.json  — new positive, negative, and edge cases
- *   2. rules_advanced.json — new rules for patterns not yet covered
- *
- * Safe to run multiple times — deduplicates by name/id before writing.
+ * Synthetic Training Data Generator — PBI Copilot (Full Expansion)
+ * Reads synthetic_data_factory.json and writes to:
+ *   training/rules_advanced.json   — DAX/PQ/visual/security rules
+ *   training/test_suite.json       — positive, negative, edge cases
+ * Safe to run multiple times — deduplicates by id/name before writing.
  */
 
 const fs   = require("fs");
 const path = require("path");
 
-const ROOT     = path.join(__dirname, "..");
-const FACTORY  = path.join(ROOT, "training", "synthetic_data_factory.json");
-const RULES    = path.join(ROOT, "training", "rules_advanced.json");
-const SUITE    = path.join(ROOT, "training", "test_suite.json");
+const ROOT    = path.join(__dirname, "..");
+const FACTORY = path.join(ROOT, "training", "synthetic_data_factory.json");
+const RULES   = path.join(ROOT, "training", "rules_advanced.json");
+const SUITE   = path.join(ROOT, "training", "test_suite.json");
 
-// ── Load existing data ────────────────────────────────────────────────────────
-
-const factory = JSON.parse(fs.readFileSync(FACTORY, "utf8"));
+const factory  = JSON.parse(fs.readFileSync(FACTORY, "utf8"));
 const rulesRaw = JSON.parse(fs.readFileSync(RULES, "utf8"));
 const suite    = JSON.parse(fs.readFileSync(SUITE, "utf8"));
 
-const existingRules = Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw.rules || Object.values(rulesRaw));
-const existingRuleIds = new Set(existingRules.map(r => r.id));
-
+const existingRules     = Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw.rules || Object.values(rulesRaw));
+const existingRuleIds   = new Set(existingRules.map(r => r.id));
 const existingPosNames  = new Set(suite.positive_cases.map(t => t.name));
 const existingNegNames  = new Set((suite.negative_cases || []).map(t => t.name));
 const existingEdgeNames = new Set((suite.edge_cases || []).map(t => t.name));
 
-let newRules = [];
-let newPos   = [];
-let newNeg   = [];
-let newEdge  = [];
+let newRules = [], newPos = [], newNeg = [], newEdge = [];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+function addRule(r)  { if (!existingRuleIds.has(r.id))       { existingRuleIds.add(r.id);       newRules.push(r); } }
+function addPos(t)   { if (!existingPosNames.has(t.name))    { existingPosNames.add(t.name);    newPos.push(t);   } }
+function addNeg(t)   { if (!existingNegNames.has(t.name))    { existingNegNames.add(t.name);    newNeg.push(t);   } }
+function addEdge(t)  { if (!existingEdgeNames.has(t.name))   { existingEdgeNames.add(t.name);   newEdge.push(t);  } }
 
-function addRule(rule) {
-  if (!existingRuleIds.has(rule.id)) {
-    existingRuleIds.add(rule.id);
-    newRules.push(rule);
-  }
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — RULES FROM PREVIOUS GENERATOR (keep idempotent)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-function addPos(tc) {
-  if (!existingPosNames.has(tc.name)) {
-    existingPosNames.add(tc.name);
-    newPos.push(tc);
-  }
-}
+addRule({ id:"adv-model-063", pattern:"Two fact tables sharing a dimension — cross-filter produces unexpected BLANK rows", bad_dax:"// FactUsage + FactSubscriptions → DimAccount", detection_logic:{functions:["CALCULATE","CROSSFILTER"],conditions:["two or more fact tables share a single dimension","measure from one fact placed in visual with measure from other","no TREATAS bridges them"]}, fixed_dax:"Metric = CALCULATE([MRR], TREATAS(VALUES(DimAccount[AccountID]), FactUsage[AccountID]))", category:"modeling", confidence:0.81, fix_type:"needs_review", requires_llm:true });
+addRule({ id:"adv-model-066", pattern:"Role-playing dimension with only one active relationship — inactive path ignored in measures", bad_dax:"Shipments To = COUNTROWS(FactShipments)", detection_logic:{functions:["USERELATIONSHIP"],conditions:["table has two FKs to same dimension","one relationship inactive","measure missing USERELATIONSHIP"]}, fixed_dax:"Shipments To = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestinationKey], DimLocation[LocationKey]))", category:"modeling", confidence:0.85, fix_type:"needs_review", requires_llm:false });
+addRule({ id:"adv-model-067", pattern:"Snapshot fact table summed without date filter — periodic snapshot values inflate when summed across dates", bad_dax:"Total Stock = SUM(FactInventory[OnHandQty])", detection_logic:{functions:["SUM","SUMX"],conditions:["fact grain is snapshot","measure sums balance/stock/headcount without date filter"]}, fixed_dax:"Total Stock = CALCULATE(SUM(FactInventory[OnHandQty]), LASTDATE(DimDate[Date]))", category:"correctness", confidence:0.88, fix_type:"needs_review", requires_llm:true });
+addRule({ id:"adv-model-068", pattern:"Fan trap — many-to-many between two fact tables via shared dimension causes overcounting", bad_dax:"// DimBudget + FactGL → DimAccount", detection_logic:{functions:["SUMMARIZECOLUMNS","CROSSFILTER"],conditions:["two fact-like tables both connected to same dimension","measure spans both"]}, fixed_dax:"Budget in Context = CALCULATE([Budget Amount], TREATAS(VALUES(FactGL[AccountKey]), DimBudget[AccountKey]))", category:"modeling", confidence:0.79, fix_type:"needs_review", requires_llm:true });
+addRule({ id:"adv-perf-069", pattern:"COUNTROWS(FILTER(FactTable, condition)) — use CALCULATE(COUNTROWS(), condition) instead", bad_dax:"Churn Count = COUNTROWS(FILTER(FactSubscriptions, FactSubscriptions[Status] = \"Churned\"))", detection_logic:{functions:["COUNTROWS","FILTER"],conditions:["COUNTROWS wraps FILTER on fact","condition is simple equality or comparison"]}, fixed_dax:"Churn Count = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\")", category:"performance", confidence:0.95, fix_type:"safe", requires_llm:false });
+addRule({ id:"adv-cor-070", pattern:"TOPN without tiebreaker second sort column — tied values produce nondeterministic inclusion", bad_dax:"Top 3 Plans = CALCULATE([MRR], TOPN(3, ALL(DimPlan), [MRR], DESC))", detection_logic:{functions:["TOPN"],conditions:["TOPN has exactly 3 args","no secondary sort column"]}, fixed_dax:"Top 3 Plans = CALCULATE([MRR], TOPN(3, ALL(DimPlan), [MRR], DESC, DimPlan[PlanKey], ASC))", category:"correctness", confidence:0.87, fix_type:"needs_review", requires_llm:false });
+addRule({ id:"adv-cor-071", pattern:"USERNAME() in RLS — deprecated in Power BI Service, returns empty in some tenants", bad_dax:"[RLS Filter] = FILTER(DimEmployee, DimEmployee[Email] = USERNAME())", detection_logic:{functions:["USERNAME"],conditions:["USERNAME() in RLS expression or measure","not wrapped with USERPRINCIPALNAME()"]}, fixed_dax:"[RLS Filter] = FILTER(DimEmployee, LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME()))", category:"correctness", confidence:0.96, fix_type:"safe", requires_llm:false });
+addRule({ id:"adv-cor-072", pattern:"RELATED() requires row context — fails at measure top level", bad_dax:"Over Band = COUNTROWS(FILTER(FactHeadcount, FactHeadcount[Salary] > RELATED(DimJobLevel[SalaryMax])))", detection_logic:{functions:["RELATED"],conditions:["RELATED inside FILTER iterating a fact table from a measure","relationship exists but called without SUMX/AVERAGEX wrapper"]}, fixed_dax:"// RELATED is valid here since FILTER provides row context — ensure relationship is active", category:"correctness", confidence:0.83, fix_type:"needs_review", requires_llm:true });
+addRule({ id:"adv-perf-073", pattern:"LOOKUPVALUE inside SUMX when relationship exists — 10-100x slower than RELATED", bad_dax:"USD Amount = SUMX(FactGL, FactGL[Amount] * LOOKUPVALUE(DimExchange[Rate], DimExchange[Currency], FactGL[Currency]))", detection_logic:{functions:["LOOKUPVALUE","SUMX"],conditions:["LOOKUPVALUE inside row iterator","lookup key matches potential relationship key"]}, fixed_dax:"USD Amount = SUMX(FactGL, FactGL[Amount] * RELATED(DimExchange[Rate]))", category:"performance", confidence:0.89, fix_type:"needs_review", requires_llm:false });
+addRule({ id:"adv-perf-074", pattern:"DATEADD with -365 DAY for prior year — misses leap years", bad_dax:"MRR PY = CALCULATE([MRR], DATEADD(DimDate[Date], -365, DAY))", detection_logic:{functions:["DATEADD"],conditions:["DATEADD offset is -365 or 365","interval is DAY","intent is prior year"]}, fixed_dax:"MRR PY = CALCULATE([MRR], SAMEPERIODLASTYEAR(DimDate[Date]))", category:"performance", confidence:0.92, fix_type:"safe", requires_llm:false });
+addRule({ id:"adv-perf-075", pattern:"Three or more OR conditions on same column — use IN operator instead", bad_dax:"Social = CALCULATE([CTR], DimChannel[Platform] = \"Facebook\" || DimChannel[Platform] = \"Instagram\" || DimChannel[Platform] = \"Twitter\")", detection_logic:{functions:["CALCULATE"],conditions:["3+ OR conditions in same CALCULATE filter","all branches test same column against different literal values"]}, fixed_dax:"Social = CALCULATE([CTR], DimChannel[Platform] IN {\"Facebook\", \"Instagram\", \"Twitter\"})", category:"performance", confidence:0.93, fix_type:"safe", requires_llm:false });
+addRule({ id:"adv-model-076", pattern:"Hardcoded year literal in measure — wrong results when calendar year changes", bad_dax:"Revenue 2024 = CALCULATE([Revenue], DimDate[Year] = 2024)", detection_logic:{functions:["CALCULATE"],conditions:["numeric year literal in filter","hardcoded constant not from parameter"]}, fixed_dax:"Revenue CY = CALCULATE([Revenue], DATESYTD(DimDate[Date]))", category:"modeling", confidence:0.91, fix_type:"needs_review", requires_llm:false });
+addRule({ id:"adv-perf-077", pattern:"RANKX over entire fact table — should rank over dimension", bad_dax:"Sales Rank = RANKX(ALL(FactCampaigns), [ROAS])", detection_logic:{functions:["RANKX","ALL"],conditions:["RANKX first arg is ALL() of fact table"]}, fixed_dax:"Sales Rank = RANKX(ALLSELECTED(DimChannel[ChannelName]), [ROAS], , DESC, Dense)", category:"performance", confidence:0.88, fix_type:"needs_review", requires_llm:false });
+addRule({ id:"adv-cor-078", pattern:"SWITCH with duplicate condition value — second branch is unreachable", bad_dax:"Work Category = SWITCH(FactWorkOrders[WorkType], \"EM\", \"Emergency\", \"PM\", \"Preventive\", \"EM\", \"Emergency2\", \"Unknown\")", detection_logic:{functions:["SWITCH"],conditions:["SWITCH first arg is not TRUE()","two or more case values identical"]}, fixed_dax:"Work Category = SWITCH(FactWorkOrders[WorkType], \"EM\", \"Emergency\", \"PM\", \"Preventive\", \"CM\", \"Corrective\", \"Unknown\")", category:"correctness", confidence:0.97, fix_type:"safe", requires_llm:false });
+addRule({ id:"adv-model-079", pattern:"TODAY() or NOW() in calculated column — frozen at refresh, stale between refreshes", bad_dax:"Asset Age Years = DATEDIFF(DimAsset[InstalledDate], TODAY(), YEAR)", detection_logic:{functions:["TODAY","NOW"],conditions:["TODAY() or NOW() in calculated column","column stores age/duration/days-since"]}, fixed_dax:"// Move to measure: Asset Age Years = DATEDIFF(MAX(DimAsset[InstalledDate]), TODAY(), YEAR)", category:"modeling", confidence:0.95, fix_type:"needs_review", requires_llm:false });
 
-function addNeg(tc) {
-  if (!existingNegNames.has(tc.name)) {
-    existingNegNames.add(tc.name);
-    newNeg.push(tc);
-  }
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — NEW PERFORMANCE RULES
+// ═══════════════════════════════════════════════════════════════════════════════
 
-function addEdge(tc) {
-  if (!existingEdgeNames.has(tc.name)) {
-    existingEdgeNames.add(tc.name);
-    newEdge.push(tc);
-  }
-}
+addRule({ id:"adv-perf-080", pattern:"IF inside AVERAGEX instead of CALCULATE+FILTER — evaluates condition on every row", bad_dax:"Avg Positive = AVERAGEX(FactSales, IF(FactSales[Amount] > 0, FactSales[Amount], BLANK()))", detection_logic:{functions:["AVERAGEX","IF"],conditions:["IF used inside AVERAGEX to filter rows","condition could be pushed to CALCULATE filter"]}, fixed_dax:"Avg Positive = CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)", category:"performance", confidence:0.86, fix_type:"safe", requires_llm:false });
 
-// ── 1. Rules derived from synthetic_data_factory modeling & visual scenarios ─
+addRule({ id:"adv-perf-081", pattern:"MAXX/MINX over single column of same table — MAX/MIN is faster", bad_dax:"Latest Date = MAXX(FactSales, FactSales[OrderDate])", detection_logic:{functions:["MAXX","MINX"],conditions:["single column expression inside MAXX/MINX","expression references only the iterated table's own column","no calculation involved"]}, fixed_dax:"Latest Date = MAX(FactSales[OrderDate])", category:"performance", confidence:0.91, fix_type:"safe", requires_llm:false });
 
-// These are referenced by the factory but missing from rules_advanced
-addRule({
-  id: "adv-model-063",
-  pattern: "Two fact tables sharing a dimension — cross-filter produces unexpected BLANK rows when dimension value has no match in both facts",
-  bad_dax: "// FactUsage and FactSubscriptions both connect to DimAccount — filtering by account may give BLANK for accounts present in one fact but not the other",
-  detection_logic: {
-    functions: ["CALCULATE", "CROSSFILTER"],
-    conditions: [
-      "two or more fact tables share a single dimension table",
-      "a measure from one fact is placed in the same visual as a measure from the other fact",
-      "no TREATAS or USERELATIONSHIP bridges the two facts"
-    ],
-    context: "multi-fact_model"
-  },
-  fixed_dax: "// Use TREATAS to apply shared dimension context explicitly:\nMetric = CALCULATE([MRR], TREATAS(VALUES(DimAccount[AccountID]), FactUsage[AccountID]))",
-  category: "modeling",
-  confidence: 0.81,
-  fix_type: "needs_review",
-  requires_llm: true
-});
+addRule({ id:"adv-perf-082", pattern:"AVERAGEX over large fact when DIVIDE(SUM,COUNT) produces the same result", bad_dax:"Avg Sale = AVERAGEX(FactSales, FactSales[Amount])", detection_logic:{functions:["AVERAGEX"],conditions:["AVERAGEX expression is a direct column reference (no calculation)","fact table has millions of rows"]}, fixed_dax:"Avg Sale = DIVIDE(SUM(FactSales[Amount]), COUNTROWS(FactSales))", category:"performance", confidence:0.78, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-model-066",
-  pattern: "Role-playing dimension with only one active relationship — measures using inactive relationship require USERELATIONSHIP in every measure",
-  bad_dax: "Shipments To = COUNTROWS(FactShipments)  -- uses active OriginKey relationship, ignores DestinationKey",
-  detection_logic: {
-    functions: ["USERELATIONSHIP"],
-    conditions: [
-      "table has two foreign keys pointing to the same dimension",
-      "one relationship is inactive",
-      "measure does not use USERELATIONSHIP for the inactive path"
-    ],
-    context: "role_playing_dimension"
-  },
-  fixed_dax: "Shipments To = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestinationKey], DimLocation[LocationKey]))",
-  category: "modeling",
-  confidence: 0.85,
-  fix_type: "needs_review",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-083", pattern:"DISTINCTCOUNT on composite text key — integer key is 5-10x faster", bad_dax:"Unique Orders = DISTINCTCOUNT(FactSales[OrderKey])", detection_logic:{functions:["DISTINCTCOUNT"],conditions:["column is text type","column appears to be a surrogate or natural key","an integer equivalent likely exists"]}, fixed_dax:"Unique Orders = DISTINCTCOUNT(FactSales[OrderID])", category:"performance", confidence:0.72, fix_type:"needs_review", requires_llm:false });
 
-addRule({
-  id: "adv-model-067",
-  pattern: "Snapshot fact table summed without date filter — periodic snapshot values inflate when summed across all snapshot dates",
-  bad_dax: "Total Stock = SUM(FactInventory[OnHandQty])  -- sums across all daily snapshots, not just latest",
-  detection_logic: {
-    functions: ["SUM", "SUMX"],
-    conditions: [
-      "fact table grain is 'one row per entity per day' (snapshot)",
-      "measure sums a stock/balance/headcount column without date filter",
-      "result appears inflated when no date slicer is applied"
-    ],
-    context: "semi_additive_snapshot_fact"
-  },
-  fixed_dax: "Total Stock = CALCULATE(SUM(FactInventory[OnHandQty]), LASTDATE(DimDate[Date]))",
-  category: "correctness",
-  confidence: 0.88,
-  fix_type: "needs_review",
-  requires_llm: true
-});
+addRule({ id:"adv-perf-084", pattern:"Nested SUMX inside SUMX — O(n²) complexity, extremely slow on large tables", bad_dax:"CrossTotal = SUMX(Products, SUMX(Customers, [Revenue]))", detection_logic:{functions:["SUMX"],conditions:["SUMX appears as the expression inside another SUMX","inner SUMX iterates a different table","result is aggregated — could be pre-summarized"]}, fixed_dax:"// Redesign: use SUMMARIZECOLUMNS or pre-aggregate in Power Query", category:"performance", confidence:0.93, fix_type:"needs_review", requires_llm:true });
 
-addRule({
-  id: "adv-model-068",
-  pattern: "Fan trap — many-to-many between two fact tables via shared dimension causes overcounting",
-  bad_dax: "// DimBudget connected to DimAccount; FactGL connected to DimAccount — joining both in a visual can double-count rows",
-  detection_logic: {
-    functions: ["SUMMARIZECOLUMNS", "CROSSFILTER"],
-    conditions: [
-      "two tables that are both 'fact-like' are both connected to the same dimension",
-      "a visual or measure spans both tables",
-      "no bridge table or TREATAS isolates the join path"
-    ],
-    context: "many_to_many_via_shared_dimension"
-  },
-  fixed_dax: "// Use TREATAS or a dedicated bridge table to control filter propagation:\nBudget in Context = CALCULATE([Budget Amount], TREATAS(VALUES(FactGL[AccountKey]), DimBudget[AccountKey]))",
-  category: "modeling",
-  confidence: 0.79,
-  fix_type: "needs_review",
-  requires_llm: true
-});
+addRule({ id:"adv-perf-085", pattern:"CROSSJOIN materializing full cartesian product in a measure", bad_dax:"AllCombos = COUNTROWS(CROSSJOIN(VALUES(DimProduct[Category]), VALUES(DimCustomer[Segment])))", detection_logic:{functions:["CROSSJOIN"],conditions:["CROSSJOIN used inside a measure at query time","both tables have many rows","result is only counted or filtered — could be derived another way"]}, fixed_dax:"// Use SUMMARIZECOLUMNS or calculate dimensions separately", category:"performance", confidence:0.88, fix_type:"needs_review", requires_llm:true });
 
-addRule({
-  id: "adv-perf-069",
-  pattern: "COUNTROWS(FILTER(FactTable, condition)) — use CALCULATE(COUNTROWS(), condition) instead",
-  bad_dax: "Churn Count = COUNTROWS(FILTER(FactSubscriptions, FactSubscriptions[Status] = \"Churned\"))",
-  detection_logic: {
-    functions: ["COUNTROWS", "FILTER"],
-    conditions: [
-      "COUNTROWS wraps a FILTER on a fact table",
-      "the condition inside FILTER is a simple equality or comparison",
-      "no table-level iterator semantics are required"
-    ],
-    context: "measure_or_calculated_column"
-  },
-  fixed_dax: "Churn Count = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\")",
-  category: "performance",
-  confidence: 0.95,
-  fix_type: "safe",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-086", pattern:"TOPN(1,...) to get single row value — MAX/MAXX is faster", bad_dax:"Best Customer = SELECTCOLUMNS(TOPN(1, ALL(DimCustomer), [Revenue], DESC), \"Name\", DimCustomer[Name])", detection_logic:{functions:["TOPN"],conditions:["N=1 in TOPN","result is used to extract a single scalar value"]}, fixed_dax:"Best Customer = MAXX(TOPN(1, ALL(DimCustomer), [Revenue], DESC), DimCustomer[Name])", category:"performance", confidence:0.84, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-cor-070",
-  pattern: "TOPN without tiebreaker second sort column — tied values produce nondeterministic row inclusion",
-  bad_dax: "Top 3 Plans = CALCULATE([MRR], TOPN(3, ALL(DimPlan), [MRR], DESC))",
-  detection_logic: {
-    functions: ["TOPN"],
-    conditions: [
-      "TOPN has exactly 3 arguments (N, table, expression)",
-      "no secondary sort column is provided",
-      "result is used in a CALCULATE filter or SUMX — inclusion affects numeric result"
-    ],
-    context: "topn_filter_measure"
-  },
-  fixed_dax: "Top 3 Plans = CALCULATE([MRR], TOPN(3, ALL(DimPlan), [MRR], DESC, DimPlan[PlanKey], ASC))",
-  category: "correctness",
-  confidence: 0.87,
-  fix_type: "needs_review",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-087", pattern:"HASONEVALUE+SELECTEDVALUE redundant — SELECTEDVALUE second arg handles blank case", bad_dax:"Sel = IF(HASONEVALUE(Product[Name]), SELECTEDVALUE(Product[Name]), \"All\")", detection_logic:{functions:["HASONEVALUE","SELECTEDVALUE"],conditions:["HASONEVALUE wraps SELECTEDVALUE on the same column","a default value is provided in the IF false branch"]}, fixed_dax:"Sel = SELECTEDVALUE(Product[Name], \"All\")", category:"performance", confidence:0.97, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-cor-071",
-  pattern: "USERNAME() used in RLS — deprecated in Power BI Service, silently returns UPN in some tenants and empty in others",
-  bad_dax: "[RLS Filter] = FILTER(DimEmployee, DimEmployee[Email] = USERNAME())",
-  detection_logic: {
-    functions: ["USERNAME"],
-    conditions: [
-      "USERNAME() appears in an RLS expression or measure",
-      "not wrapped with USERPRINCIPALNAME() fallback",
-      "target field is an email address"
-    ],
-    context: "rls_row_level_security"
-  },
-  fixed_dax: "[RLS Filter] = FILTER(DimEmployee, LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME()))",
-  category: "correctness",
-  confidence: 0.96,
-  fix_type: "safe",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-088", pattern:"Multiple measures calling same expensive sub-measure without VAR caching", bad_dax:"Ratio = [Total Sales] / [Base Sales]\nDiff = [Total Sales] - [Base Sales]\n// [Base Sales] evaluated twice per cell", detection_logic:{functions:["VAR"],conditions:["same expensive measure called two or more times in same expression","no VAR used to cache the result"]}, fixed_dax:"Ratio = VAR base = [Base Sales] RETURN DIVIDE([Total Sales], base)\nDiff = VAR base = [Base Sales] RETURN [Total Sales] - base", category:"performance", confidence:0.82, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-cor-072",
-  pattern: "RELATED() called directly in a measure body — requires row context; fails with 'RELATED can only be used in row context' error",
-  bad_dax: "Over Band = COUNTROWS(FILTER(FactHeadcount, FactHeadcount[Salary] > RELATED(DimJobLevel[SalaryMax])))",
-  detection_logic: {
-    functions: ["RELATED"],
-    conditions: [
-      "RELATED is used inside FILTER iterating a fact table from a measure",
-      "the relationship exists but RELATED is being used in filter predicate without SUMX/AVERAGEX wrapper"
-    ],
-    context: "measure_with_filter_iterator"
-  },
-  fixed_dax: "Over Band = COUNTROWS(FILTER(FactHeadcount, FactHeadcount[Salary] > RELATED(DimJobLevel[SalaryMax])))\n-- Note: RELATED is valid here since FILTER provides row context over FactHeadcount.\n-- Fix: ensure the relationship from FactHeadcount to DimJobLevel is active.",
-  category: "correctness",
-  confidence: 0.83,
-  fix_type: "needs_review",
-  requires_llm: true
-});
+addRule({ id:"adv-perf-089", pattern:"ALLEXCEPT with many columns specified — REMOVEFILTERS on specific columns is cleaner", bad_dax:"Market Share = CALCULATE([Sales], ALLEXCEPT(Sales, Sales[Year], Sales[Quarter], Sales[Month], Sales[Region]))", detection_logic:{functions:["ALLEXCEPT"],conditions:["ALLEXCEPT specifies 4 or more keep columns","a smaller REMOVEFILTERS list could achieve same result"]}, fixed_dax:"Market Share = CALCULATE([Sales], REMOVEFILTERS(Sales[Customer], Sales[Product]))", category:"performance", confidence:0.74, fix_type:"needs_review", requires_llm:false });
 
-addRule({
-  id: "adv-perf-073",
-  pattern: "LOOKUPVALUE inside SUMX when a direct relationship would allow RELATED — 10-100x slower",
-  bad_dax: "USD Amount = SUMX(FactGL, FactGL[Amount] * LOOKUPVALUE(DimExchange[Rate], DimExchange[Currency], FactGL[Currency]))",
-  detection_logic: {
-    functions: ["LOOKUPVALUE", "SUMX"],
-    conditions: [
-      "LOOKUPVALUE appears inside a row iterator (SUMX, AVERAGEX, etc.)",
-      "the lookup key matches a column that could be used as a relationship key",
-      "a direct relationship could replace the lookup"
-    ],
-    context: "iterator_with_lookup"
-  },
-  fixed_dax: "// Add relationship from FactGL[Currency] to DimExchange[Currency], then:\nUSD Amount = SUMX(FactGL, FactGL[Amount] * RELATED(DimExchange[Rate]))",
-  category: "performance",
-  confidence: 0.89,
-  fix_type: "needs_review",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-090", pattern:"CALCULATE inside SUMX on every row — move CALCULATE outside iterator", bad_dax:"Total = SUMX(Sales, CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\"))", detection_logic:{functions:["CALCULATE","SUMX"],conditions:["CALCULATE appears as direct expression inside SUMX","CALCULATE filter is a constant — same for every row"]}, fixed_dax:"Total = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\")", category:"performance", confidence:0.89, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-perf-074",
-  pattern: "DATEADD with -365 DAY for prior year — misses leap years, produces wrong date range",
-  bad_dax: "MRR PY = CALCULATE([MRR], DATEADD(DimDate[Date], -365, DAY))",
-  detection_logic: {
-    functions: ["DATEADD"],
-    conditions: [
-      "DATEADD offset is -365 or 365",
-      "interval is DAY",
-      "intent is to compare same period in prior year"
-    ],
-    context: "prior_year_comparison"
-  },
-  fixed_dax: "MRR PY = CALCULATE([MRR], SAMEPERIODLASTYEAR(DimDate[Date]))",
-  category: "performance",
-  confidence: 0.92,
-  fix_type: "safe",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-091", pattern:"IFERROR wrapping expensive measure — hides errors and still evaluates the measure", bad_dax:"Safe Ratio = IFERROR(DIVIDE([Complex Measure], [Base]), 0)", detection_logic:{functions:["IFERROR"],conditions:["IFERROR wraps a complex or expensive measure","alternative of 0 is returned — could mask bugs"]}, fixed_dax:"Safe Ratio = DIVIDE([Complex Measure], [Base])  // DIVIDE already handles div-by-zero", category:"performance", confidence:0.77, fix_type:"needs_review", requires_llm:false });
 
-addRule({
-  id: "adv-perf-075",
-  pattern: "Multiple OR conditions on same column — IN operator is faster and more readable",
-  bad_dax: "Social Spend = CALCULATE([CTR], DimChannel[Platform] = \"Facebook\" || DimChannel[Platform] = \"Instagram\" || DimChannel[Platform] = \"Twitter\")",
-  detection_logic: {
-    functions: ["CALCULATE"],
-    conditions: [
-      "three or more OR conditions in the same CALCULATE filter",
-      "all OR branches test the same column against different literal values",
-      "IN operator would express the same logic more efficiently"
-    ],
-    context: "multi_value_filter"
-  },
-  fixed_dax: "Social Spend = CALCULATE([CTR], DimChannel[Platform] IN {\"Facebook\", \"Instagram\", \"Twitter\"})",
-  category: "performance",
-  confidence: 0.93,
-  fix_type: "safe",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-092", pattern:"SUMX(DISTINCT(column),...) — use VALUES() which includes blank handling", bad_dax:"DistinctSum = SUMX(DISTINCT(Sales[CustomerID]), [Revenue])", detection_logic:{functions:["SUMX","DISTINCT"],conditions:["DISTINCT used as table expression inside SUMX","VALUES would be equivalent and is preferred"]}, fixed_dax:"DistinctSum = SUMX(VALUES(Sales[CustomerID]), [Revenue])", category:"performance", confidence:0.81, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-model-076",
-  pattern: "Hardcoded year literal in measure — will silently return wrong results when calendar year changes",
-  bad_dax: "Revenue 2024 = CALCULATE([Revenue], DimDate[Year] = 2024)",
-  detection_logic: {
-    functions: ["CALCULATE"],
-    conditions: [
-      "a numeric year literal (e.g. 2023, 2024) is used as a filter argument",
-      "the literal is a hardcoded constant, not derived from a parameter or slicer",
-      "measure name or comment implies it is a 'current year' measure"
-    ],
-    context: "current_year_measure"
-  },
-  fixed_dax: "Revenue CY = CALCULATE([Revenue], DATESYTD(DimDate[Date]))",
-  category: "modeling",
-  confidence: 0.91,
-  fix_type: "needs_review",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-093", pattern:"PARALLELPERIOD used for rolling window — shifts whole calendar period, not a sliding window", bad_dax:"Prev30 = CALCULATE([Rev], PARALLELPERIOD('Date'[Date], -1, MONTH))", detection_logic:{functions:["PARALLELPERIOD"],conditions:["intent is a rolling 30-day or N-day window","PARALLELPERIOD shifts full month/quarter/year periods"]}, fixed_dax:"Prev30 = CALCULATE([Rev], DATESINPERIOD('Date'[Date], MAX('Date'[Date]) - 30, -30, DAY))", category:"performance", confidence:0.85, fix_type:"needs_review", requires_llm:false });
 
-addRule({
-  id: "adv-perf-077",
-  pattern: "RANKX over an entire fact table — should rank over a dimension or aggregated table",
-  bad_dax: "Sales Rank = RANKX(ALL(FactCampaigns), [ROAS])",
-  detection_logic: {
-    functions: ["RANKX", "ALL"],
-    conditions: [
-      "RANKX first argument is ALL() of a fact table (high row count)",
-      "ranking over the fact table produces one rank per fact row, not per dimension member"
-    ],
-    context: "ranking_measure"
-  },
-  fixed_dax: "Sales Rank = RANKX(ALLSELECTED(DimChannel[ChannelName]), [ROAS], , DESC, Dense)",
-  category: "performance",
-  confidence: 0.88,
-  fix_type: "needs_review",
-  requires_llm: false
-});
+addRule({ id:"adv-perf-094", pattern:"GENERATE+ROW to add a single column — ADDCOLUMNS is cleaner and equivalent", bad_dax:"D = SUMX(GENERATE(Sales, ROW(\"Markup\", Sales[Amount] * 1.1)), [Markup])", detection_logic:{functions:["GENERATE","ROW"],conditions:["ROW creates a single-column virtual table","GENERATE pairs each row with ROW result"]}, fixed_dax:"D = SUMX(ADDCOLUMNS(Sales, \"Markup\", Sales[Amount] * 1.1), [Markup])", category:"performance", confidence:0.88, fix_type:"safe", requires_llm:false });
 
-addRule({
-  id: "adv-cor-078",
-  pattern: "SWITCH with duplicate condition value — second branch with same value is unreachable",
-  bad_dax: "Work Category = SWITCH(FactWorkOrders[WorkType], \"EM\", \"Emergency\", \"PM\", \"Preventive\", \"EM\", \"Emergency2\", \"Unknown\")",
-  detection_logic: {
-    functions: ["SWITCH"],
-    conditions: [
-      "SWITCH first argument is not TRUE()",
-      "two or more case values are identical strings or numbers",
-      "the second occurrence of the duplicate case can never be reached"
-    ],
-    context: "switch_lookup_measure_or_column"
-  },
-  fixed_dax: "Work Category = SWITCH(FactWorkOrders[WorkType], \"EM\", \"Emergency\", \"PM\", \"Preventive\", \"CM\", \"Corrective\", \"Unknown\")",
-  category: "correctness",
-  confidence: 0.97,
-  fix_type: "safe",
-  requires_llm: false
-});
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — NEW CORRECTNESS RULES
+// ═══════════════════════════════════════════════════════════════════════════════
 
-addRule({
-  id: "adv-model-079",
-  pattern: "TODAY() in a calculated column — column evaluated at refresh time, stale between refreshes",
-  bad_dax: "Asset Age Years = DATEDIFF(DimAsset[InstalledDate], TODAY(), YEAR)",
-  detection_logic: {
-    functions: ["TODAY", "NOW"],
-    conditions: [
-      "TODAY() or NOW() used in a calculated column definition",
-      "column stores age, duration, or days-since value",
-      "the value becomes incorrect between dataset refreshes"
-    ],
-    context: "calculated_column"
-  },
-  fixed_dax: "// Move to a measure:\nAsset Age Years = DATEDIFF(MAX(DimAsset[InstalledDate]), TODAY(), YEAR)",
-  category: "modeling",
-  confidence: 0.95,
-  fix_type: "needs_review",
-  requires_llm: false
-});
+addRule({ id:"adv-cor-080", pattern:"BLANK propagation in arithmetic — BLANK + 0 = 0, but BLANK * anything = BLANK", bad_dax:"Total = [Sales] + [Returns]  // Returns is BLANK when no returns — result is 0 not BLANK", detection_logic:{functions:[],conditions:["two measures added where one can return BLANK","additive combination silently converts BLANK to 0"]}, fixed_dax:"Total = [Sales] + COALESCE([Returns], 0)  // explicit about zero vs blank intent", category:"correctness", confidence:0.71, fix_type:"needs_review", requires_llm:true });
 
-// ── 2. Positive test cases from bad_measures in all domains ──────────────────
+addRule({ id:"adv-cor-081", pattern:"VAR declared but never referenced in RETURN — dead code, may hide intent", bad_dax:"M = VAR x = [Base Sales] VAR y = [Returns] RETURN x  // y never used", detection_logic:{functions:["VAR"],conditions:["a VAR is defined","the VAR name does not appear in the RETURN expression"]}, fixed_dax:"M = VAR x = [Base Sales] RETURN x  // remove unused VAR y", category:"correctness", confidence:0.86, fix_type:"safe", requires_llm:false });
 
-factory.domains.forEach(domain => {
+addRule({ id:"adv-cor-082", pattern:"ALLSELECTED(column) vs ALLSELECTED(table) — different filter scope, easy to mix up", bad_dax:"Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))", detection_logic:{functions:["ALLSELECTED"],conditions:["ALLSELECTED takes a single column","intent is to remove all slicers from the table","should use ALLSELECTED(Product) for full table scope"]}, fixed_dax:"Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product)))", category:"correctness", confidence:0.76, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-cor-083", pattern:"KEEPFILTERS inside CALCULATE — adds to existing filter instead of replacing it, often unintended", bad_dax:"Filtered = CALCULATE([Sales], KEEPFILTERS(Product[Color] = \"Red\"))", detection_logic:{functions:["KEEPFILTERS","CALCULATE"],conditions:["KEEPFILTERS used as CALCULATE modifier","existing visual filter may already restrict the column — intersection may produce empty"]}, fixed_dax:"// Only use KEEPFILTERS intentionally to intersect filters. Direct column filter replaces:\nFiltered = CALCULATE([Sales], Product[Color] = \"Red\")", category:"correctness", confidence:0.79, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-cor-084", pattern:"USERELATIONSHIP called outside CALCULATE — has no effect outside a CALCULATE context", bad_dax:"Bad = USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey])", detection_logic:{functions:["USERELATIONSHIP"],conditions:["USERELATIONSHIP is the top-level expression","not wrapped inside CALCULATE or CALCULATETABLE"]}, fixed_dax:"Good = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))", category:"correctness", confidence:0.95, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-085", pattern:"RLS expression returning a table instead of TRUE/FALSE scalar", bad_dax:"[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())", detection_logic:{functions:["FILTER"],conditions:["RLS role expression uses FILTER() returning a table","RLS requires a boolean expression, not a table"]}, fixed_dax:"[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()", category:"correctness", confidence:0.94, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-086", pattern:"IF(ISBLANK(x), fallback, x) pattern — COALESCE(x, fallback) is equivalent and clearer", bad_dax:"Result = IF(ISBLANK([Revenue]), 0, [Revenue])", detection_logic:{functions:["IF","ISBLANK"],conditions:["IF checks ISBLANK of a value","true branch returns a fallback","false branch returns the original value"]}, fixed_dax:"Result = COALESCE([Revenue], 0)", category:"correctness", confidence:0.88, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-087", pattern:"Nested IF more than 3 levels deep — use SWITCH(TRUE()) for readability and performance", bad_dax:"Band = IF([Rev]>1000,\"A\",IF([Rev]>500,\"B\",IF([Rev]>100,\"C\",IF([Rev]>0,\"D\",\"E\"))))", detection_logic:{functions:["IF"],conditions:["four or more nested IF statements","each false branch immediately contains another IF","conditions are mutually exclusive ranges"]}, fixed_dax:"Band = SWITCH(TRUE(), [Rev]>1000,\"A\", [Rev]>500,\"B\", [Rev]>100,\"C\", [Rev]>0,\"D\", \"E\")", category:"correctness", confidence:0.92, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-088", pattern:"EARLIER used in nested iterator — use VAR to capture outer row context instead", bad_dax:"RunningTotal = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Date] <= EARLIER(Sales[Date])))", detection_logic:{functions:["EARLIER"],conditions:["EARLIER used inside CALCULATE+FILTER","a VAR defined before the iterator would be cleaner and faster"]}, fixed_dax:"RunningTotal = VAR currentDate = Sales[Date] RETURN CALCULATE(SUM(Sales[Amount]), Sales[Date] <= currentDate)", category:"correctness", confidence:0.93, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-089", pattern:"DIVIDE with 0 as alternative — returns 0 instead of BLANK, breaks aggregation SUM", bad_dax:"Safe Ratio = DIVIDE([Numerator], [Denominator], 0)", detection_logic:{functions:["DIVIDE"],conditions:["DIVIDE third argument is 0","result used in SUM aggregation — zeros inflate the sum"]}, fixed_dax:"Safe Ratio = DIVIDE([Numerator], [Denominator])  // BLANK is better — excludes row from SUM", category:"correctness", confidence:0.83, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-cor-090", pattern:"SWITCH with no else clause — silently returns BLANK for unmatched values", bad_dax:"Label = SWITCH(Sales[Status], \"A\", \"Active\", \"S\", \"Suspended\")", detection_logic:{functions:["SWITCH"],conditions:["SWITCH has no final default expression","data may contain values not covered by cases"]}, fixed_dax:"Label = SWITCH(Sales[Status], \"A\", \"Active\", \"S\", \"Suspended\", \"Unknown\")", category:"correctness", confidence:0.87, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-cor-091", pattern:"TOTALMTD/TOTALQTD/TOTALYTD wrappers — deprecated aliases, use CALCULATE+DATESMTD/etc explicitly", bad_dax:"Sales MTD = TOTALMTD([Total Sales], DimDate[Date])", detection_logic:{functions:["TOTALMTD","TOTALQTD","TOTALYTD"],conditions:["any of the TOTAL* wrapper functions used","they are aliases for CALCULATE+DATES* but hide the filter modifier"]}, fixed_dax:"Sales MTD = CALCULATE([Total Sales], DATESMTD(DimDate[Date]))", category:"correctness", confidence:0.82, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-092", pattern:"FIRSTNONBLANK vs FIRSTDATE — different semantics: FIRSTNONBLANK finds first date where measure is non-blank", bad_dax:"First Sale Date = FIRSTDATE(FactSales[OrderDate])", detection_logic:{functions:["FIRSTDATE","FIRSTNONBLANK"],conditions:["FIRSTDATE used on a fact table date column","intent is first date with actual sales data","FIRSTDATE returns first date in filter context regardless of data"]}, fixed_dax:"First Sale Date = FIRSTNONBLANK(DimDate[Date], [Total Sales])", category:"correctness", confidence:0.75, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-cor-093", pattern:"DATESYTD without year-end argument on fiscal year model — defaults to Dec 31", bad_dax:"FY YTD = CALCULATE([Revenue], DATESYTD(DimDate[Date]))", detection_logic:{functions:["DATESYTD"],conditions:["DATESYTD used without year-end argument","model has fiscal year different from calendar year"]}, fixed_dax:"FY YTD = CALCULATE([Revenue], DATESYTD(DimDate[Date], \"6/30\"))  // e.g. fiscal year ending June 30", category:"correctness", confidence:0.84, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-cor-094", pattern:"NOT ISBLANK(x) vs x <> BLANK() — ISBLANK is correct; <> BLANK() can have unexpected behavior with some data types", bad_dax:"HasValue = [Measure] <> BLANK()", detection_logic:{functions:["BLANK"],conditions:["<> BLANK() used to check for non-blank","ISBLANK() is the explicit and recommended approach"]}, fixed_dax:"HasValue = NOT ISBLANK([Measure])", category:"correctness", confidence:0.79, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-095", pattern:"FORMAT with locale-sensitive number pattern — output varies by user's regional settings", bad_dax:"Display = FORMAT([Revenue], \"#,##0.00\")", detection_logic:{functions:["FORMAT"],conditions:["FORMAT uses locale-sensitive pattern like #,##0 or 0.00%","result viewed by users with different regional settings"]}, fixed_dax:"// Use Power BI format pane for number formatting; if DAX needed: FORMAT([Revenue], \"Fixed\")", category:"correctness", confidence:0.74, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-cor-096", pattern:"CONTAINS vs CONTAINSROW — CONTAINS argument order is table/col/value, easy to get wrong", bad_dax:"IsVIP = CONTAINS(VIPList, VIPList[ID], Customer[ID])", detection_logic:{functions:["CONTAINS"],conditions:["CONTAINS used for membership test","argument order table/column/value is often confused"]}, fixed_dax:"IsVIP = CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])", category:"correctness", confidence:0.86, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-097", pattern:"IN operator with single value — direct equality is faster and clearer", bad_dax:"IsRed = Sales[Color] IN {\"Red\"}", detection_logic:{functions:[],conditions:["IN operator used with a single-element set","direct = comparison would be clearer"]}, fixed_dax:"IsRed = Sales[Color] = \"Red\"", category:"correctness", confidence:0.88, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-cor-098", pattern:"CONCATENATE function with more than 2 strings — use & operator which supports chaining", bad_dax:"FullName = CONCATENATE(CONCATENATE(First, \" \"), Last)", detection_logic:{functions:["CONCATENATE"],conditions:["CONCATENATE nested inside CONCATENATE","more than two string values being joined"]}, fixed_dax:"FullName = First & \" \" & Last", category:"correctness", confidence:0.91, fix_type:"safe", requires_llm:false });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — NEW MODELING RULES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+addRule({ id:"adv-model-080", pattern:"No date table marked as date table — time intelligence functions silently return wrong results", bad_dax:"// No date table marked; DATESYTD/SAMEPERIODLASTYEAR return unexpected results", detection_logic:{functions:["DATESYTD","SAMEPERIODLASTYEAR","DATEADD"],conditions:["date table exists in model","time intelligence functions used in measures","no table marked as date table in model properties"]}, fixed_dax:"// Mark DimDate as Date Table in Power BI Desktop: Table Tools → Mark as Date Table", category:"modeling", confidence:0.94, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-model-081", pattern:"Auto date/time tables enabled on large model — hidden tables inflate model size and slow refresh", bad_dax:"// Auto Date/Time enabled: Power BI creates hidden date tables for every date column", detection_logic:{functions:[],conditions:["model has multiple date columns","Auto Date/Time is enabled in options","model contains large fact tables"]}, fixed_dax:"// Disable Auto Date/Time in Options → Data Load. Create a single shared DimDate instead.", category:"modeling", confidence:0.91, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-model-082", pattern:"Calculated table depending on another calculated table — refresh order may cause stale data", bad_dax:"FactAdjusted = ADDCOLUMNS(FactSales, \"Margin\", FactSales[Revenue] - FactSales[Cost])\nSummary = SUMMARIZECOLUMNS(FactAdjusted[Category], \"Total\", SUM(FactAdjusted[Margin]))", detection_logic:{functions:["ADDCOLUMNS","SUMMARIZECOLUMNS"],conditions:["calculated table references another calculated table","dependency chain not guaranteed to refresh in correct order"]}, fixed_dax:"// Build transformation chain in Power Query instead of chained calculated tables", category:"modeling", confidence:0.85, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-model-083", pattern:"Many-to-many relationship without bridge table — Power BI requires intermediate bridge or TREATAS workaround", bad_dax:"// FactSales[ProductKey] → DimProduct (many-to-one) AND DimProduct ← DimCategory[ProductKey] many-to-many", detection_logic:{functions:["TREATAS","CROSSFILTER"],conditions:["two tables have many-to-many cardinality","no bridge table defined","Power BI shows many-to-many relationship warning"]}, fixed_dax:"// Create a bridge table or use TREATAS in measures to propagate context", category:"modeling", confidence:0.87, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-model-084", pattern:"Bidirectional relationship on a bridge table — causes filter ambiguity across multiple paths", bad_dax:"// DimEmployeeRole is a bridge with bidirectional filters to both DimEmployee and DimRole", detection_logic:{functions:["CROSSFILTER"],conditions:["bridge table has bidirectional filter to both sides","filtering one end can unexpectedly affect the other through multiple paths"]}, fixed_dax:"// Set bridge table relationships to single-direction. Use CROSSFILTER in measures that need reverse filtering.", category:"modeling", confidence:0.83, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-model-085", pattern:"High-cardinality text column imported without need — inflates model size and compression ratio", bad_dax:"// DimProduct[Description] is a free-text column with 50,000 unique values", detection_logic:{functions:[],conditions:["text column has very high cardinality","column is not used in relationships or filters","column only used for display in tooltips or detail rows"]}, fixed_dax:"// Remove column in Power Query: Table.RemoveColumns(Source, {\"Description\"}). Show in tooltip via drill-through page instead.", category:"modeling", confidence:0.76, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-model-086", pattern:"Composite model mixing Import and DirectQuery in same visual — some DAX functions not supported in DirectQuery", bad_dax:"// Visual combines [Total Sales] (Import) with [Live Inventory] (DirectQuery)", detection_logic:{functions:[],conditions:["model has both Import and DirectQuery tables","measure from Import table and measure from DirectQuery table in same visual","time intelligence or complex DAX on DirectQuery side"]}, fixed_dax:"// Check DirectQuery DAX limitations. Consider caching DirectQuery table as Import for frequently-used aggregations.", category:"modeling", confidence:0.81, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-model-087", pattern:"Duplicate date relationships — fact table has two date columns both with active relationships to DimDate", bad_dax:"// FactOrders: OrderDateKey and ShipDateKey both have active relationships to DimDate[DateKey]", detection_logic:{functions:["USERELATIONSHIP"],conditions:["fact table has two or more date columns","more than one active relationship to DimDate","second active relationship is impossible — Power BI only allows one active per table pair"]}, fixed_dax:"// Keep OrderDate active. Use USERELATIONSHIP in measures for ShipDate analysis.", category:"modeling", confidence:0.96, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-model-088", pattern:"Large fact table in DirectQuery with no aggregation table — all queries hit full source", bad_dax:"// 50M row FactUsage in DirectQuery; no aggregation table configured", detection_logic:{functions:[],conditions:["DirectQuery fact table has >10M rows","no aggregation table defined","report visuals have long load times"]}, fixed_dax:"// Create monthly aggregation table in Power BI. Configure under: Model → Manage Aggregations.", category:"modeling", confidence:0.79, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-model-089", pattern:"Incremental refresh range shorter than date table range — gaps between date table and refresh boundary produce BLANKs", bad_dax:"// Date table: 2018-2025. Incremental refresh set to last 2 years only. 2018-2022 data purged.", detection_logic:{functions:[],conditions:["incremental refresh configured","date table covers longer historical range than refresh window","historical reports return BLANK or show gaps"]}, fixed_dax:"// Align date table range with refresh window, or extend refresh window to cover needed history.", category:"modeling", confidence:0.77, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-model-090", pattern:"RLS filter using IN() with a long list of hardcoded values — brittle, doesn't scale", bad_dax:"[RLS] = DimTerritory[Region] IN {\"North\", \"South\", \"East\", \"West\", \"Central\"}", detection_logic:{functions:["IN"],conditions:["RLS expression uses IN with more than 3 hardcoded string values","list is maintained manually and not driven by data"]}, fixed_dax:"// Use a UserMapping table: join USERPRINCIPALNAME() to a UserPermissions table that maps users to regions.", category:"modeling", confidence:0.81, fix_type:"needs_review", requires_llm:true });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 5 — POWER QUERY RULES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+addRule({ id:"adv-pq-001", pattern:"Table.NestedJoin without subsequent Table.ExpandTableColumn — joined data never extracted", bad_dax:"Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")", detection_logic:{functions:["Table.NestedJoin"],conditions:["NestedJoin creates a column of tables","no Table.ExpandTableColumn step follows","resulting column is of type Table and never accessed"]}, fixed_dax:"Table.ExpandTableColumn(joinResult, \"CustomerData\", {\"Name\", \"Email\"})", category:"performance", confidence:0.92, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-pq-002", pattern:"Text.Contains inside Table.SelectRows — breaks query folding, loads full table to memory", bad_dax:"Table.SelectRows(Source, each Text.Contains([Description], \"urgent\"))", detection_logic:{functions:["Text.Contains"],conditions:["Text.Contains used inside Table.SelectRows or Table.SelectColumns","source is a SQL or OData source","folding indicator shows step does not fold"]}, fixed_dax:"// Filter at SQL source: add WHERE Description LIKE '%urgent%' in the native query", category:"performance", confidence:0.89, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-pq-003", pattern:"List.Accumulate for running totals in Power Query — extremely slow row-by-row iteration", bad_dax:"List.Accumulate(Table.ToRows(Source), 0, (state, row) => state + row{2})", detection_logic:{functions:["List.Accumulate"],conditions:["List.Accumulate used for running total or cumulative calculation","applied to tables with more than a few thousand rows"]}, fixed_dax:"// Use window function in SQL source, or calculate running total as a DAX measure instead", category:"performance", confidence:0.91, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-pq-004", pattern:"Table.Distinct on large fact table — sorts and deduplicates all rows in memory", bad_dax:"Table.Distinct(FactSales)", detection_logic:{functions:["Table.Distinct"],conditions:["Table.Distinct applied to a large table","table is a fact table with millions of rows","deduplication may not be necessary if grain is already unique"]}, fixed_dax:"// Push deduplication to SQL source with SELECT DISTINCT, or verify table grain is unique", category:"performance", confidence:0.87, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-pq-005", pattern:"Table.TransformColumns with custom function — may break query folding", bad_dax:"Table.TransformColumns(Source, {{\"Amount\", each _ * 1.1, type number}})", detection_logic:{functions:["Table.TransformColumns"],conditions:["custom function passed to Table.TransformColumns","source is SQL or OData","native query view shows folding stops at this step"]}, fixed_dax:"// Apply the transformation in SQL source (computed column) or verify folding with View Native Query", category:"performance", confidence:0.78, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-pq-006", pattern:"try...otherwise null hiding data errors — bad rows silently become null", bad_dax:"[Amount] = try [RawAmount] otherwise null", detection_logic:{functions:[],conditions:["try...otherwise null used on a data column","errors converted to null without logging","null propagates through downstream calculations silently"]}, fixed_dax:"// Log errors to separate audit query. Use Table.SelectRows to remove bad rows explicitly.", category:"correctness", confidence:0.93, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-pq-007", pattern:"Untyped Power Query parameter — inferred as text, causes arithmetic or date failures", bad_dax:"let StartDate = #date(2024,1,1) in StartDate  // parameter has no declared type", detection_logic:{functions:[],conditions:["Power Query parameter defined without explicit type annotation","parameter used in date arithmetic or number comparison","wrong inference causes type mismatch errors at refresh"]}, fixed_dax:"// Declare type: StartDate as date = #date(2024,1,1)", category:"correctness", confidence:0.88, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-pq-008", pattern:"Table.Buffer used on large table — forces in-memory evaluation and blocks folding for all downstream steps", bad_dax:"Table.Buffer(Source)", detection_logic:{functions:["Table.Buffer"],conditions:["Table.Buffer applied to a large table","downstream steps could benefit from folding","not needed to prevent re-evaluation of random/time-sensitive source"]}, fixed_dax:"// Remove Table.Buffer unless specifically preventing re-evaluation of a volatile source", category:"performance", confidence:0.90, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-pq-009", pattern:"List.Generate for date range expansion — never folds to SQL source", bad_dax:"List.Generate(() => StartDate, each _ <= EndDate, each Date.AddDays(_, 1))", detection_logic:{functions:["List.Generate"],conditions:["List.Generate used to expand date ranges","source is SQL or structured database","no folding possible — full execution in Power Query engine"]}, fixed_dax:"// Use a pre-built calendar table in SQL, or use Power BI's CALENDAR() DAX function for DimDate", category:"performance", confidence:0.94, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-pq-010", pattern:"Binary or image column loaded in model — inflates file size with non-queryable data", bad_dax:"// Power Query loads Product[ImageBinary] column into model", detection_logic:{functions:["Table.RemoveColumns"],conditions:["column of type binary loaded into model","column cannot be used in DAX calculations or visuals","model file size significantly inflated"]}, fixed_dax:"Table.RemoveColumns(Source, {\"ImageBinary\", \"PDF\", \"Photo\"})", category:"modeling", confidence:0.92, fix_type:"safe", requires_llm:false });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 6 — VISUAL / UX RULES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+addRule({ id:"adv-vis-001", pattern:"Card visual showing SUM when COUNT or AVERAGE was intended", bad_dax:"// Card: value = SUM(DimCustomer[Age]) — shows total of all ages, not average", detection_logic:{functions:["SUM"],conditions:["card visual uses SUM on a non-additive column like age, score, or rating","result is numerically meaningless as a total"]}, fixed_dax:"// Change to AVERAGE(DimCustomer[Age]) or DIVIDE(SUM, COUNT) for meaningful card value", category:"correctness", confidence:0.80, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-vis-002", pattern:"Slicer on high-cardinality text column — loads thousands of items, poor UX and slow visual render", bad_dax:"// Slicer field: DimCustomer[Email] — 500,000 unique values", detection_logic:{functions:[],conditions:["slicer field has more than 1,000 distinct values","field is a text identifier not a category","users cannot meaningfully browse the slicer list"]}, fixed_dax:"// Replace with a search box, top-N dropdown, or search-as-you-type custom visual", category:"modeling", confidence:0.85, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-vis-003", pattern:"Date slicer not connected to Date table — using fact table date column directly", bad_dax:"// Slicer field: FactSales[OrderDate] — not from marked DimDate table", detection_logic:{functions:[],conditions:["date slicer uses date column from fact table","date table exists and is marked","time intelligence measures reference DimDate — slicer won't filter them correctly"]}, fixed_dax:"// Connect slicer to DimDate[Date]; ensure relationship from DimDate to all fact tables", category:"correctness", confidence:0.89, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-vis-004", pattern:"Matrix visual with 5+ row or column fields — performance degrades, visual becomes unreadable", bad_dax:"// Matrix: rows = [Region, Country, City, Store, Product], columns = [Year, Quarter, Month]", detection_logic:{functions:[],conditions:["matrix has 5 or more row fields","or 3 or more column fields","visual response time exceeds 5 seconds"]}, fixed_dax:"// Reduce to 3 row fields maximum. Use drill-through pages for lower-level detail.", category:"modeling", confidence:0.78, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-vis-005", pattern:"Pie/donut chart with more than 7 slices — chart becomes unreadable, labels overlap", bad_dax:"// Donut: category = DimChannel[ChannelName] with 30 channels", detection_logic:{functions:[],conditions:["pie or donut chart has more than 7 categories","small slices are unreadable","legend overlaps or is truncated"]}, fixed_dax:"// Use bar chart for many categories, or filter to Top N + 'Other' group with TOPN measure", category:"modeling", confidence:0.87, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-vis-006", pattern:"Tooltip page using heavy measures — tooltip loads slowly, bad user experience", bad_dax:"// Tooltip page has 8 measures each requiring full table scan", detection_logic:{functions:[],conditions:["report page set as tooltip","page contains complex or slow measures","tooltip takes >1 second to appear on hover"]}, fixed_dax:"// Pre-aggregate tooltip measures as calculated columns, or reduce measure count on tooltip page", category:"modeling", confidence:0.74, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-vis-007", pattern:"Line chart with MonthName on axis — sorts alphabetically, not by month number", bad_dax:"// Line chart axis: DimDate[MonthName] — shows Apr, Aug, Dec, Feb... not Jan-Dec", detection_logic:{functions:[],conditions:["axis field is a month name text column","chart appears to sort alphabetically","no sort-by-column configured for MonthName"]}, fixed_dax:"// In Power BI Desktop: select MonthName column → Column Tools → Sort by Column → Month (integer)", category:"correctness", confidence:0.95, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-vis-008", pattern:"KPI visual target is a hardcoded number — doesn't adjust with time period filter", bad_dax:"// KPI: value = [Revenue], target = 1000000 (hardcoded constant)", detection_logic:{functions:[],conditions:["KPI visual target field is a constant measure","target doesn't change when date slicer changes","report users may compare YTD vs full-year target incorrectly"]}, fixed_dax:"// Make target a measure: Target = CALCULATE(SUM(DimBudget[TargetAmount]), ALLEXCEPT(DimDate, DimDate[Year]))", category:"correctness", confidence:0.80, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-vis-009", pattern:"Scatter chart with millions of data points — visual is unreadable and browser may freeze", bad_dax:"// Scatter: X=[Revenue], Y=[Margin], Detail=FactSales[OrderID] — 8M points", detection_logic:{functions:[],conditions:["scatter or bubble chart uses a high-cardinality detail field","more than 10,000 data points rendered","visual is illegible"]}, fixed_dax:"// Aggregate to category or region level. Use sampling or Top N filter on detail field.", category:"modeling", confidence:0.88, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-vis-010", pattern:"Report-level filter hiding data — users see filtered report without knowing filter is active", bad_dax:"// Report-level filter: DimDate[Year] = 2024 — invisible to users", detection_logic:{functions:[],conditions:["report-level filter applied","filter is not surfaced in a visible slicer","users assume all data is shown"]}, fixed_dax:"// Add a visible label or slicer showing the active filter. Document filters in report description.", category:"correctness", confidence:0.76, fix_type:"needs_review", requires_llm:false });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 7 — SECURITY / RLS RULES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+addRule({ id:"adv-sec-001", pattern:"RLS not configured — all users see all data in published report", bad_dax:"// No RLS roles defined; report contains sensitive financial or HR data", detection_logic:{functions:[],conditions:["report contains PII or financial data","no RLS role defined","all viewers can see all rows"]}, fixed_dax:"// Add RLS role in Power BI Desktop → Security. Test with 'View as Role' before publishing.", category:"modeling", confidence:0.85, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-sec-002", pattern:"USERPRINCIPALNAME() compared with mixed case — users excluded from RLS if email case differs", bad_dax:"[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()", detection_logic:{functions:["USERPRINCIPALNAME"],conditions:["USERPRINCIPALNAME() compared with = operator","Email column may contain uppercase characters","Azure AD UPNs are case-insensitive but DAX = is case-sensitive"]}, fixed_dax:"[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())", category:"correctness", confidence:0.93, fix_type:"safe", requires_llm:false });
+
+addRule({ id:"adv-sec-003", pattern:"RLS on dimension with bidirectional filter to fact — security filter leaks through to other dimensions", bad_dax:"// DimTerritory has bidirectional filter to FactSales; RLS on DimTerritory leaks to DimCustomer", detection_logic:{functions:["CROSSFILTER"],conditions:["RLS applied to a dimension table","dimension has bidirectional relationship to fact","other dimensions connected to same fact may expose restricted data"]}, fixed_dax:"// Set relationship to single-direction. Apply RLS on FactSales directly or use CROSSFILTER only within measures.", category:"modeling", confidence:0.88, fix_type:"needs_review", requires_llm:true });
+
+addRule({ id:"adv-sec-004", pattern:"Object-level security (OLS) not used for sensitive columns — column visible even if not in visual", bad_dax:"// DimEmployee[Salary] visible to all users — not protected by OLS", detection_logic:{functions:[],conditions:["model contains sensitive columns like salary, SSN, or PII","no object-level security configured","users can access column via DAX queries or Analyze in Excel"]}, fixed_dax:"// Configure OLS in Tabular Editor or XMLA endpoint to restrict column access by role.", category:"modeling", confidence:0.82, fix_type:"needs_review", requires_llm:false });
+
+addRule({ id:"adv-sec-005", pattern:"ALL() in a measure removes RLS filters — creates a security bypass", bad_dax:"Market Total = CALCULATE([Revenue], ALL(FactSales))", detection_logic:{functions:["ALL"],conditions:["ALL() applied to a fact table that has RLS","measure returns total regardless of user's RLS role","intended as 'grand total' but bypasses row security"]}, fixed_dax:"Market Total = CALCULATE([Revenue], REMOVEFILTERS(FactSales[Region]))  // only remove the specific filter column, not all filters", category:"modeling", confidence:0.91, fix_type:"needs_review", requires_llm:false });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 8 — POSITIVE CASES FROM ALL FACTORY DOMAINS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Pull bad_measures from all domains (including new ones added to factory)
+const allDomains = [
+  ...(factory.domains || []),
+  factory.healthcare_domain,
+  factory.ecommerce_domain,
+  factory.manufacturing_domain,
+  factory.telecom_domain
+].filter(Boolean);
+
+allDomains.forEach(domain => {
   (domain.bad_measures || []).forEach(bm => {
-    addPos({
-      name: `[${domain.domain}] ${bm.name}`,
-      input: bm.dax,
-      expected_issue: `${bm.expected_rule}: ${bm.issue}`,
-      expected_fix: `See fix_template for ${bm.expected_rule}`,
-      domain: domain.domain
-    });
+    addPos({ name:`[${domain.domain}] ${bm.name}`, input:bm.dax, expected_issue:`${bm.expected_rule}: ${bm.issue}`, expected_fix:`See rule ${bm.expected_rule}`, domain:domain.domain });
   });
-
-  // Positive cases from modeling_scenarios
   (domain.modeling_scenarios || []).forEach(ms => {
-    if (ms.expected_rule) {
-      addPos({
-        name: `[${domain.domain}] modeling: ${ms.scenario}`,
-        input: ms.scenario,
-        expected_issue: `${ms.expected_rule}: ${ms.issue}`,
-        expected_fix: ms.fix,
-        domain: domain.domain
-      });
-    }
+    if (ms.expected_rule) addPos({ name:`[${domain.domain}] modeling: ${ms.scenario.slice(0,60)}`, input:ms.scenario, expected_issue:`${ms.expected_rule}: ${ms.issue}`, expected_fix:ms.fix, domain:domain.domain });
+  });
+  (domain.valid_measures || []).slice(0,5).forEach(vm => {
+    addNeg({ name:`[${domain.domain}] valid: ${vm.name}`, input:vm.dax, expected_issue:"none", notes:vm.purpose, domain:domain.domain });
   });
 });
 
-// Power Query scenarios → positive cases
+// Power Query factory scenarios
 (factory.power_query_scenarios || []).forEach(pq => {
-  addPos({
-    name: `[pq] ${pq.scenario}`,
-    input: pq.code_pattern,
-    expected_issue: `${pq.expected_rule}: ${pq.issue}`,
-    expected_fix: pq.fix,
-    domain: "power_query"
-  });
+  addPos({ name:`[pq] ${pq.scenario}`, input:pq.code_pattern, expected_issue:`${pq.expected_rule}: ${pq.issue}`, expected_fix:pq.fix, domain:"power_query" });
 });
 
-// ── 3. Negative test cases from valid_measures (should NOT trigger any rule) ─
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 9 — POSITIVE CASES FROM NEW RULES
+// ═══════════════════════════════════════════════════════════════════════════════
 
-factory.domains.forEach(domain => {
-  (domain.valid_measures || []).slice(0, 4).forEach(vm => {
-    addNeg({
-      name: `[${domain.domain}] valid: ${vm.name}`,
-      input: vm.dax,
-      expected_issue: "none",
-      notes: `Correct pattern: ${vm.purpose}`,
-      domain: domain.domain
-    });
-  });
-});
-
-// ── 4. Edge cases ─────────────────────────────────────────────────────────────
-
-// Edge: empty string in SWITCH
-addEdge({
-  name: "SWITCH with empty string case",
-  input: "Label = SWITCH(Sales[Status], \"\", \"Blank Status\", \"Active\", \"Active\", \"Unknown\")",
-  expected_issue: "adv-cor-078: Empty string is a valid case value but often unintentional; verify data quality",
-  expected_fix: "Add data quality check; use ISBLANK() separately"
-});
-
-// Edge: DIVIDE by zero measure used as denominator
-addEdge({
-  name: "DIVIDE result used as denominator without zero guard",
-  input: "Ratio = [Total Sales] / [Conversion Rate]",
-  expected_issue: "adv-cor-003: Division by measure that can return BLANK or zero",
-  expected_fix: "Ratio = DIVIDE([Total Sales], [Conversion Rate])"
-});
-
-// Edge: time intelligence on non-marked date table
-addEdge({
-  name: "DATESYTD on column from non-marked date table",
-  input: "YTD Bad = CALCULATE([Revenue], DATESYTD(Orders[OrderDate]))",
-  expected_issue: "adv-perf-050: Date argument from fact table, not from marked Date table — time intelligence may misbehave",
-  expected_fix: "CALCULATE([Revenue], DATESYTD('Date'[Date]))"
-});
-
-// Edge: ALLSELECTED with no slicer in scope
-addEdge({
-  name: "ALLSELECTED produces ALL behavior when no slicer is active",
-  input: "Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))",
-  expected_issue: "adv-cor-004: ALLSELECTED returns ALL when called from DAX Studio or when no slicer exists",
-  expected_fix: "Add ISINSCOPE guard or document that behavior is expected in no-slicer context"
-});
-
-// Edge: Snapshot fact summed with partial date range selected
-addEdge({
-  name: "Headcount summed across multiple snapshot months",
-  input: "HC Total = SUM(FactHeadcount[Salary])",
-  expected_issue: "adv-model-067: Snapshot fact — summing salary across all months inflates by month count",
-  expected_fix: "HC Total = CALCULATE(SUM(FactHeadcount[Salary]), LASTDATE(DimDate[Date]))"
-});
-
-// Edge: CONCATENATEX with very large table
-addEdge({
-  name: "CONCATENATEX over full fact table — may return truncated or blank result",
-  input: "All Items = CONCATENATEX(FactSales, FactSales[SalesID], \", \")",
-  expected_issue: "adv-cor-007/adv-perf: CONCATENATEX over millions of rows will timeout or be truncated by Power BI",
-  expected_fix: "Limit with TOPN or aggregate before concatenating"
-});
-
-// Edge: Inactive relationship not activated in measure
-addEdge({
-  name: "Measure referencing inactive relationship without USERELATIONSHIP",
-  input: "Deliveries by Destination = COUNTROWS(FactShipments)",
-  expected_issue: "adv-model-066: DestinationKey→DimLocation is inactive; measure uses OriginKey relationship instead",
-  expected_fix: "CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestinationKey], DimLocation[LocationKey]))"
-});
-
-// Edge: RELATED in non-iterator measure (fails at runtime)
-addEdge({
-  name: "RELATED called at measure top level — runtime error",
-  input: "Cat = RELATED(DimProduct[Category])",
-  expected_issue: "adv-cor-072: RELATED requires row context — fails at measure top level",
-  expected_fix: "SUMX(FactSales, RELATED(DimProduct[Category]))  -- only if you need row-level iteration"
-});
-
-// Edge: USERNAME vs USERPRINCIPALNAME in cloud
-addEdge({
-  name: "USERNAME() in Power BI cloud RLS — returns empty in some tenants",
-  input: "[RLS] = DimEmployee[Email] = USERNAME()",
-  expected_issue: "adv-cor-071: USERNAME() deprecated in Power BI Service",
-  expected_fix: "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())"
-});
-
-// Edge: ALL on full fact table inside CALCULATE used in RLS context
-addEdge({
-  name: "ALL(FactSales) removes RLS row-level security filters",
-  input: "Market Total = CALCULATE([Revenue], ALL(FactSales))",
-  expected_issue: "adv-perf-038: ALL on a fact table removes all filters including RLS — security bypass risk",
-  expected_fix: "CALCULATE([Revenue], REMOVEFILTERS(FactSales[Region]))"
-});
-
-// Domain-specific visual edge cases
-addEdge({
-  name: "MonthName sorted alphabetically — visual shows Apr before Jan",
-  input: "// Line chart axis: DimDate[MonthName], values: [Total Sales]",
-  expected_issue: "visual: MonthName is text — sorts alphabetically (Apr, Aug, Dec...) not by month number",
-  expected_fix: "Sort MonthName by Month (integer) column in DimDate model view"
-});
-
-addEdge({
-  name: "MRR and ARR on same y-axis — MRR line invisible at scale",
-  input: "// Area chart: axis DimDate[Date], values [MRR] and [ARR]",
-  expected_issue: "visual: ARR = MRR * 12 — ARR dominates scale, MRR line appears flat at bottom",
-  expected_fix: "Put ARR on secondary axis or show in separate visual"
-});
-
-// ── 5. Additional positive cases from NEW rules ───────────────────────────────
-
-addPos({
-  name: "COUNTROWS(FILTER(fact, condition)) — slow pattern",
-  input: "Active Subs = COUNTROWS(FILTER(FactSubscriptions, FactSubscriptions[Status] = \"Active\"))",
-  expected_issue: "adv-perf-069: COUNTROWS(FILTER(fact)) — use CALCULATE(COUNTROWS(), condition)",
-  expected_fix: "CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Active\")"
-});
-
-addPos({
-  name: "Multiple OR conditions — use IN operator",
-  input: "EU Sales = CALCULATE([Revenue], DimTerritory[Region] = \"DE\" || DimTerritory[Region] = \"FR\" || DimTerritory[Region] = \"UK\" || DimTerritory[Region] = \"IT\")",
-  expected_issue: "adv-perf-075: Four OR conditions on same column — use IN {\"DE\",\"FR\",\"UK\",\"IT\"}",
-  expected_fix: "CALCULATE([Revenue], DimTerritory[Region] IN {\"DE\", \"FR\", \"UK\", \"IT\"})"
-});
-
-addPos({
-  name: "RANKX over fact table — should rank over dimension",
-  input: "Order Rank = RANKX(ALL(FactSales), [Total Sales])",
-  expected_issue: "adv-perf-077: RANKX over FactSales (5M rows) — rank over DimCustomer or DimProduct instead",
-  expected_fix: "RANKX(ALLSELECTED(DimCustomer[CustomerName]), [Total Sales], , DESC, Dense)"
-});
-
-addPos({
-  name: "SWITCH duplicate case value",
-  input: "Priority Label = SWITCH(FactWorkOrders[Priority], \"P1\", \"Critical\", \"P2\", \"High\", \"P1\", \"Urgent\", \"Normal\")",
-  expected_issue: "adv-cor-078: 'P1' appears twice — second branch 'Urgent' can never be reached",
-  expected_fix: "Remove duplicate 'P1' branch; consolidate to single case value"
-});
-
-addPos({
-  name: "TODAY() in calculated column — stale between refreshes",
-  input: "Days Since Hire = DATEDIFF(DimEmployee[HireDate], TODAY(), DAY)",
-  expected_issue: "adv-model-079: TODAY() in calculated column is frozen at refresh — becomes stale immediately after",
-  expected_fix: "Move to a measure: Days Since Hire = DATEDIFF(MAX(DimEmployee[HireDate]), TODAY(), DAY)"
-});
-
-addPos({
-  name: "DATEADD -365 DAY for prior year",
-  input: "ARR PY = CALCULATE([ARR], DATEADD(DimDate[Date], -365, DAY))",
-  expected_issue: "adv-perf-074: DATEADD -365 DAY ignores leap years — use SAMEPERIODLASTYEAR",
-  expected_fix: "CALCULATE([ARR], SAMEPERIODLASTYEAR(DimDate[Date]))"
-});
-
-addPos({
-  name: "Hardcoded year 2023 in measure",
-  input: "Budget 2023 = CALCULATE([Budget Amount], DimDate[Year] = 2023)",
-  expected_issue: "adv-model-076: Year literal 2023 — measure becomes wrong after 2023",
-  expected_fix: "CALCULATE([Budget Amount], DATESYTD(DimDate[Date]))"
-});
-
-addPos({
-  name: "USERNAME() in RLS filter",
-  input: "[RLS] = FactHeadcount[ManagerEmail] = USERNAME()",
-  expected_issue: "adv-cor-071: USERNAME() deprecated in Power BI Service — use USERPRINCIPALNAME()",
-  expected_fix: "[RLS] = LOWER(FactHeadcount[ManagerEmail]) = LOWER(USERPRINCIPALNAME())"
-});
-
-addPos({
-  name: "LOOKUPVALUE inside SUMX when relationship exists",
-  input: "FX Amount = SUMX(FactGL, FactGL[Amount] * LOOKUPVALUE(DimExchange[Rate], DimExchange[Currency], FactGL[Currency]))",
-  expected_issue: "adv-perf-073: LOOKUPVALUE inside SUMX — add relationship and use RELATED instead",
-  expected_fix: "SUMX(FactGL, FactGL[Amount] * RELATED(DimExchange[Rate]))"
-});
-
-addPos({
-  name: "CONCATENATEX without ORDERBY — nondeterministic list",
-  input: "Manager Names = CONCATENATEX(FILTER(DimEmployee, DimEmployee[IsManager] = TRUE()), DimEmployee[FullName], \", \")",
-  expected_issue: "adv-cor-007: CONCATENATEX without ORDERBY — name order varies between queries",
-  expected_fix: "CONCATENATEX(FILTER(DimEmployee, DimEmployee[IsManager] = TRUE()), DimEmployee[FullName], \", \", DimEmployee[FullName], ASC)"
-});
-
-// ── 6. Additional negative cases from all domains' valid measures ─────────────
-
-const moreCorrct = [
-  { name: "Correct SAMEPERIODLASTYEAR usage", input: "Sales PY = CALCULATE([Total Sales], SAMEPERIODLASTYEAR(DimDate[Date]))", notes: "Correct time intelligence function" },
-  { name: "Correct DIVIDE usage", input: "Gross Margin % = DIVIDE([Gross Profit], [Revenue])", notes: "DIVIDE handles zero denominator" },
-  { name: "Correct DATESYTD usage", input: "Sales YTD = CALCULATE([Total Sales], DATESYTD(DimDate[Date]))", notes: "Date argument from marked Date table" },
-  { name: "Correct IN operator filter", input: "EU Revenue = CALCULATE([Revenue], DimTerritory[Region] IN {\"DE\",\"FR\",\"UK\"})", notes: "Uses IN instead of chained OR" },
-  { name: "Correct CALCULATE with column filter", input: "Active Accounts = CALCULATE([MRR], FactSubscriptions[Status] = \"Active\")", notes: "Direct column filter, no FILTER(ALL())" },
-  { name: "Correct USERPRINCIPALNAME in RLS", input: "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())", notes: "Case-insensitive UPN comparison" },
-  { name: "Correct TOPN with tiebreaker", input: "Top 5 = CALCULATE([Revenue], TOPN(5, ALL(DimCustomer), [Revenue], DESC, DimCustomer[CustomerKey], ASC))", notes: "Tiebreaker column prevents nondeterminism" },
-  { name: "Correct CONCATENATEX with ORDERBY", input: "Regions = CONCATENATEX(VALUES(DimTerritory[Region]), DimTerritory[Region], \", \", DimTerritory[Region], ASC)", notes: "Deterministic order" },
-  { name: "Correct CALCULATE with COUNTROWS and filter", input: "Churned Count = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\")", notes: "Preferred over COUNTROWS(FILTER(...))" },
-  { name: "Correct USERELATIONSHIP for inactive path", input: "Dest Shipments = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestinationKey], DimLocation[LocationKey]))", notes: "Correctly activates inactive relationship" },
-  { name: "Correct snapshot fact with LASTDATE", input: "Current Stock = CALCULATE(SUM(FactInventory[OnHandQty]), LASTDATE(DimDate[Date]))", notes: "Snapshot fact filtered to single date" },
-  { name: "Correct SWITCH with no duplicate cases", input: "Category Label = SWITCH(DimProduct[Tier], \"A\", \"Premium\", \"B\", \"Standard\", \"C\", \"Basic\", \"Unknown\")", notes: "All case values unique" }
+const newRulePos = [
+  { name:"IF inside AVERAGEX — use CALCULATE+FILTER", input:"Avg Pos = AVERAGEX(FactSales, IF(FactSales[Amount] > 0, FactSales[Amount], BLANK()))", expected_issue:"adv-perf-080: IF inside AVERAGEX evaluates per-row — push to CALCULATE filter", expected_fix:"CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)" },
+  { name:"MAXX on single column — use MAX instead", input:"Latest = MAXX(FactSales, FactSales[OrderDate])", expected_issue:"adv-perf-081: MAXX on direct column — MAX(FactSales[OrderDate]) is faster", expected_fix:"MAX(FactSales[OrderDate])" },
+  { name:"AVERAGEX on large fact — use DIVIDE(SUM,COUNT)", input:"Avg Sale = AVERAGEX(FactSales, FactSales[Amount])", expected_issue:"adv-perf-082: AVERAGEX on direct column reference — DIVIDE(SUM,COUNTROWS) is equivalent and faster", expected_fix:"DIVIDE(SUM(FactSales[Amount]), COUNTROWS(FactSales))" },
+  { name:"DISTINCTCOUNT on text composite key", input:"Unique Orders = DISTINCTCOUNT(FactSales[OrderKey])", expected_issue:"adv-perf-083: Text DISTINCTCOUNT slower than integer — use DISTINCTCOUNT(FactSales[OrderID])", expected_fix:"DISTINCTCOUNT(FactSales[OrderID])" },
+  { name:"Nested SUMX inside SUMX", input:"Cross = SUMX(Products, SUMX(Customers, [Revenue]))", expected_issue:"adv-perf-084: Nested SUMX creates O(n²) complexity — redesign with SUMMARIZECOLUMNS", expected_fix:"SUMMARIZECOLUMNS(Products[Category], Customers[Segment], \"Rev\", [Revenue])" },
+  { name:"CROSSJOIN in measure materializing cartesian product", input:"Combos = COUNTROWS(CROSSJOIN(VALUES(DimProduct[Category]), VALUES(DimCustomer[Segment])))", expected_issue:"adv-perf-085: CROSSJOIN materializes full cartesian product at query time", expected_fix:"Calculate dimensions separately or use SUMMARIZECOLUMNS" },
+  { name:"TOPN(1) to get single value — use MAXX", input:"Best = SELECTCOLUMNS(TOPN(1, ALL(DimCustomer), [Revenue], DESC), \"Name\", DimCustomer[Name])", expected_issue:"adv-perf-086: TOPN(1) for scalar — MAXX over TOPN(1,...) is cleaner", expected_fix:"MAXX(TOPN(1, ALL(DimCustomer), [Revenue], DESC), DimCustomer[Name])" },
+  { name:"HASONEVALUE+SELECTEDVALUE redundant guard", input:"Label = IF(HASONEVALUE(Product[Name]), SELECTEDVALUE(Product[Name]), \"All\")", expected_issue:"adv-perf-087: SELECTEDVALUE second arg handles multi-value case — no IF needed", expected_fix:"SELECTEDVALUE(Product[Name], \"All\")" },
+  { name:"CALCULATE inside SUMX with constant filter", input:"Total = SUMX(Sales, CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\"))", expected_issue:"adv-perf-090: CALCULATE with constant filter inside SUMX — move CALCULATE outside iterator", expected_fix:"CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\")" },
+  { name:"IFERROR masking expensive measure error", input:"Safe = IFERROR(DIVIDE([Complex Measure], [Base]), 0)", expected_issue:"adv-perf-091: IFERROR still evaluates the measure — use DIVIDE which handles zero natively", expected_fix:"DIVIDE([Complex Measure], [Base])" },
+  { name:"SUMX(DISTINCT(col)) — use VALUES()", input:"Total = SUMX(DISTINCT(Sales[CustomerID]), [Revenue])", expected_issue:"adv-perf-092: Use VALUES() instead of DISTINCT() as SUMX table arg", expected_fix:"SUMX(VALUES(Sales[CustomerID]), [Revenue])" },
+  { name:"GENERATE+ROW instead of ADDCOLUMNS", input:"D = SUMX(GENERATE(Sales, ROW(\"M\", Sales[Amount]*1.1)), [M])", expected_issue:"adv-perf-094: GENERATE+ROW overhead — ADDCOLUMNS is cleaner and equivalent", expected_fix:"SUMX(ADDCOLUMNS(Sales, \"M\", Sales[Amount]*1.1), [M])" },
+  { name:"VAR declared but never used", input:"M = VAR x = [Base] VAR y = [Returns] RETURN x", expected_issue:"adv-cor-081: VAR y declared but never referenced in RETURN — remove dead code", expected_fix:"M = VAR x = [Base] RETURN x" },
+  { name:"KEEPFILTERS changing filter semantics unintentionally", input:"Red Sales = CALCULATE([Sales], KEEPFILTERS(Product[Color] = \"Red\"))", expected_issue:"adv-cor-083: KEEPFILTERS intersects with existing filters — may produce empty when another color is selected", expected_fix:"Red Sales = CALCULATE([Sales], Product[Color] = \"Red\")  // replaces filter, not intersects" },
+  { name:"USERELATIONSHIP outside CALCULATE — has no effect", input:"Bad = USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey])", expected_issue:"adv-cor-084: USERELATIONSHIP only works inside CALCULATE — no effect at top level", expected_fix:"CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))" },
+  { name:"RLS FILTER() returning table instead of boolean", input:"[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())", expected_issue:"adv-cor-085: RLS expression must return TRUE/FALSE — FILTER() returns a table", expected_fix:"[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()" },
+  { name:"IF(ISBLANK()) pattern — use COALESCE instead", input:"Result = IF(ISBLANK([Revenue]), 0, [Revenue])", expected_issue:"adv-cor-086: IF(ISBLANK(x), fallback, x) is equivalent to COALESCE(x, fallback)", expected_fix:"COALESCE([Revenue], 0)" },
+  { name:"4-level nested IF — use SWITCH(TRUE())", input:"Band = IF([R]>1000,\"A\",IF([R]>500,\"B\",IF([R]>100,\"C\",IF([R]>0,\"D\",\"E\"))))", expected_issue:"adv-cor-087: 4-deep nested IF — use SWITCH(TRUE()) for readability and performance", expected_fix:"SWITCH(TRUE(),[R]>1000,\"A\",[R]>500,\"B\",[R]>100,\"C\",[R]>0,\"D\",\"E\")" },
+  { name:"EARLIER in iterator — use VAR instead", input:"RunTotal = CALCULATE(SUM(S[Amt]), FILTER(S, S[Date] <= EARLIER(S[Date])))", expected_issue:"adv-cor-088: EARLIER is confusing and slower — use VAR currentDate = S[Date]", expected_fix:"VAR d = S[Date] RETURN CALCULATE(SUM(S[Amt]), S[Date] <= d)" },
+  { name:"DIVIDE with 0 alternative breaks aggregation", input:"Ratio = DIVIDE([A], [B], 0)", expected_issue:"adv-cor-089: DIVIDE with 0 alternative returns 0 instead of BLANK — inflates SUM aggregations", expected_fix:"DIVIDE([A], [B])  // returns BLANK on zero denominator — correct for aggregation" },
+  { name:"SWITCH with no ELSE clause", input:"Label = SWITCH(S[Status], \"A\", \"Active\", \"S\", \"Suspended\")", expected_issue:"adv-cor-090: No ELSE clause — unmatched values silently return BLANK", expected_fix:"SWITCH(S[Status], \"A\", \"Active\", \"S\", \"Suspended\", \"Unknown\")" },
+  { name:"TOTALMTD deprecated wrapper", input:"MTD = TOTALMTD([Sales], DimDate[Date])", expected_issue:"adv-cor-091: TOTALMTD is deprecated alias — use CALCULATE([Sales], DATESMTD(DimDate[Date]))", expected_fix:"CALCULATE([Sales], DATESMTD(DimDate[Date]))" },
+  { name:"DATESYTD without fiscal year-end argument", input:"FY YTD = CALCULATE([Rev], DATESYTD(DimDate[Date]))", expected_issue:"adv-cor-093: Missing year-end argument defaults to Dec 31 on fiscal year models", expected_fix:"CALCULATE([Rev], DATESYTD(DimDate[Date], \"6/30\"))" },
+  { name:"NOT ISBLANK vs <> BLANK()", input:"HasVal = [Measure] <> BLANK()", expected_issue:"adv-cor-094: Use NOT ISBLANK([Measure]) — <> BLANK() has edge cases with some data types", expected_fix:"NOT ISBLANK([Measure])" },
+  { name:"Nested CONCATENATE — use & operator", input:"Name = CONCATENATE(CONCATENATE([First], \" \"), [Last])", expected_issue:"adv-cor-098: Nested CONCATENATE — use & operator for chaining: [First] & \" \" & [Last]", expected_fix:"[First] & \" \" & [Last]" },
+  { name:"CONTAINS instead of CONTAINSROW", input:"IsVIP = CONTAINS(VIPList, VIPList[ID], Customer[ID])", expected_issue:"adv-cor-096: CONTAINS argument order is error-prone — use CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])", expected_fix:"CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])" },
+  { name:"IN with single value — use direct equality", input:"IsRed = Sales[Color] IN {\"Red\"}", expected_issue:"adv-cor-097: IN with one value — Sales[Color] = \"Red\" is cleaner and equivalent", expected_fix:"Sales[Color] = \"Red\"" },
+  { name:"Table.NestedJoin without expand step", input:"Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")", expected_issue:"adv-pq-001: NestedJoin creates column of tables — no ExpandTableColumn step follows", expected_fix:"Table.ExpandTableColumn(result, \"CustomerData\", {\"Name\", \"Email\"})" },
+  { name:"Text.Contains inside Table.SelectRows breaking folding", input:"Table.SelectRows(Source, each Text.Contains([Desc], \"urgent\"))", expected_issue:"adv-pq-002: Text.Contains breaks query folding — full table loaded to memory", expected_fix:"Filter in SQL source: WHERE Desc LIKE '%urgent%'" },
+  { name:"List.Accumulate for running total", input:"List.Accumulate(Table.ToRows(Source), 0, (s, r) => s + r{2})", expected_issue:"adv-pq-003: List.Accumulate iterates row-by-row — very slow on large tables", expected_fix:"Calculate running total as DAX measure or SQL window function" },
+  { name:"Table.Buffer on large source table", input:"Table.Buffer(Source)", expected_issue:"adv-pq-008: Table.Buffer forces in-memory evaluation and blocks query folding", expected_fix:"Remove Table.Buffer unless preventing re-evaluation of volatile source" },
+  { name:"try...otherwise null hiding errors", input:"[Amt] = try [RawAmount] otherwise null", expected_issue:"adv-pq-006: try...otherwise null silently converts errors to null — hides data quality issues", expected_fix:"Log errors to separate audit query; use explicit type checks" },
+  { name:"MonthName axis sorts alphabetically", input:"// Line chart axis: DimDate[MonthName]", expected_issue:"adv-vis-007: MonthName text sorts alphabetically (Apr, Aug, Dec...) — set Sort By Column to Month integer", expected_fix:"Select MonthName → Column Tools → Sort by Column → Month" },
+  { name:"Pie chart with 30 slices", input:"// Donut chart: category = DimChannel[ChannelName] with 30 channels", expected_issue:"adv-vis-005: Pie/donut with 30 slices is unreadable — use bar chart or Top N filter", expected_fix:"Bar chart or TOPN measure grouping remainder as 'Other'" },
+  { name:"Slicer on high-cardinality email column", input:"// Slicer: DimCustomer[Email] — 500,000 unique values", expected_issue:"adv-vis-002: Slicer on 500K unique emails — replace with search box or dropdown", expected_fix:"Search-as-you-type slicer or filter panel" },
+  { name:"Date slicer on fact table date column", input:"// Slicer: FactSales[OrderDate] — not from DimDate", expected_issue:"adv-vis-003: Date slicer using fact table date won't filter time intelligence measures correctly", expected_fix:"Connect slicer to DimDate[Date]" },
+  { name:"ALL() removing RLS filters", input:"Total = CALCULATE([Revenue], ALL(FactSales))", expected_issue:"adv-sec-005: ALL(FactSales) removes RLS row-level security — security bypass risk", expected_fix:"CALCULATE([Revenue], REMOVEFILTERS(FactSales[Region]))" },
+  { name:"USERPRINCIPALNAME mixed case comparison in RLS", input:"[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()", expected_issue:"adv-sec-002: Case-sensitive comparison — LOWER() both sides to prevent user lockout", expected_fix:"LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())" },
+  { name:"RLS FILTER expression returning table", input:"[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())", expected_issue:"adv-cor-085 / adv-sec: RLS must return TRUE/FALSE — FILTER() returns a table and will error", expected_fix:"DimEmployee[Email] = USERPRINCIPALNAME()" },
+  { name:"No date table marked — time intelligence fails", input:"// Model has CalendarTable but not marked as Date Table", expected_issue:"adv-model-080: Date table not marked — DATESYTD/SAMEPERIODLASTYEAR return wrong results", expected_fix:"Table Tools → Mark as Date Table in Power BI Desktop" },
+  { name:"Auto date/time enabled on large model", input:"// Options → Data Load → Auto Date/Time enabled", expected_issue:"adv-model-081: Auto date/time creates hidden tables for every date column — disable and use shared DimDate", expected_fix:"Disable Auto Date/Time; create single shared DimDate" },
+  { name:"Many-to-many without bridge table", input:"// FactSales[ProductKey] → DimProduct many-to-many cardinality without bridge", expected_issue:"adv-model-083: Many-to-many requires bridge table or TREATAS workaround", expected_fix:"Create bridge table or use TREATAS in measures" },
+  { name:"Bidirectional filter on bridge table causes ambiguity", input:"// DimEmployeeRole bridge has bidirectional filters to DimEmployee and DimRole", expected_issue:"adv-model-084: Bidirectional bridge causes filter ambiguity — set to single-direction", expected_fix:"Set to single-direction; use CROSSFILTER only in measures needing reverse filtering" },
+  { name:"Two active date relationships on same fact table pair", input:"// FactOrders: OrderDateKey and ShipDateKey both active to DimDate", expected_issue:"adv-model-087: Power BI only allows one active relationship per table pair — second silently ignored or errors", expected_fix:"Keep one active; use USERELATIONSHIP for the other in measures" },
 ];
+newRulePos.forEach(addPos);
 
-moreCorrct.forEach(tc => addNeg({ ...tc, expected_issue: "none" }));
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 10 — NEGATIVE CASES (correct patterns)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Write output ──────────────────────────────────────────────────────────────
+const correctPatterns = [
+  { name:"Correct CALCULATE with column filter (no FILTER wrap)", input:"Sales CY = CALCULATE([Revenue], DimDate[Year] = YEAR(TODAY()))", notes:"Direct column filter is idiomatic and fast" },
+  { name:"Correct SAMEPERIODLASTYEAR for prior year", input:"PY = CALCULATE([Revenue], SAMEPERIODLASTYEAR(DimDate[Date]))", notes:"Correct time intelligence — handles leap years" },
+  { name:"Correct DIVIDE for safe division", input:"Margin = DIVIDE([Gross Profit], [Revenue])", notes:"DIVIDE handles zero denominator returning BLANK" },
+  { name:"Correct IN operator for multi-value filter", input:"EU = CALCULATE([Revenue], DimTerritory[Region] IN {\"DE\",\"FR\",\"UK\",\"IT\"})", notes:"IN is faster and more readable than chained OR" },
+  { name:"Correct COALESCE for blank handling", input:"Safe = COALESCE([Revenue], 0)", notes:"Explicit blank-to-zero conversion" },
+  { name:"Correct USERPRINCIPALNAME with LOWER", input:"[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())", notes:"Case-insensitive UPN comparison" },
+  { name:"Correct TOPN with tiebreaker", input:"Top5 = CALCULATE([Rev], TOPN(5, ALL(DimCustomer), [Rev], DESC, DimCustomer[CustomerKey], ASC))", notes:"Tiebreaker column ensures deterministic result" },
+  { name:"Correct CONCATENATEX with ORDERBY", input:"Regions = CONCATENATEX(VALUES(DimTerritory[Region]), DimTerritory[Region], \", \", DimTerritory[Region], ASC)", notes:"Deterministic string concatenation" },
+  { name:"Correct CALCULATE(COUNTROWS()) filter", input:"Churned = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\")", notes:"Preferred over COUNTROWS(FILTER(...))" },
+  { name:"Correct USERELATIONSHIP inside CALCULATE", input:"DestCount = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))", notes:"Correctly activates inactive relationship" },
+  { name:"Correct VAR pattern to cache sub-expression", input:"Diff = VAR base = [Base Sales] RETURN [Total Sales] - base", notes:"VAR prevents double evaluation of expensive measure" },
+  { name:"Correct SWITCH(TRUE()) for range banding", input:"Band = SWITCH(TRUE(), [Rev]>1000,\"High\", [Rev]>500,\"Mid\", [Rev]>0,\"Low\", \"Zero\")", notes:"Ordered conditions narrow to wide — no overlap" },
+  { name:"Correct SELECTEDVALUE with default", input:"Sel = SELECTEDVALUE(Product[Name], \"All\")", notes:"No need for HASONEVALUE wrapper" },
+  { name:"Correct REMOVEFILTERS for specific column", input:"Market = CALCULATE([Rev], REMOVEFILTERS(FactSales[Region]))", notes:"Removes only region filter, not RLS filters" },
+  { name:"Correct DATESMTD for month-to-date", input:"MTD = CALCULATE([Sales], DATESMTD(DimDate[Date]))", notes:"Explicit time intelligence — not deprecated TOTALMTD" },
+  { name:"Correct SNAPSHOT fact with LASTDATE filter", input:"HC = CALCULATE(SUM(FactHeadcount[Salary]), LASTDATE(DimDate[Date]))", notes:"Snapshot fact correctly filtered to single date" },
+  { name:"Correct SWITCH with unique cases and ELSE", input:"Label = SWITCH(S[Status], \"A\", \"Active\", \"I\", \"Inactive\", \"P\", \"Pending\", \"Unknown\")", notes:"All cases unique, ELSE clause present" },
+  { name:"Correct CONTAINSROW for membership test", input:"IsVIP = CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])", notes:"Cleaner than CONTAINS — argument order unambiguous" },
+  { name:"Correct string concat with & operator", input:"FullName = DimEmployee[FirstName] & \" \" & DimEmployee[LastName]", notes:"& chains cleanly — no nested CONCATENATE" },
+  { name:"Correct ADDCOLUMNS for row-level calculation", input:"D = SUMX(ADDCOLUMNS(Sales, \"Markup\", Sales[Amount]*1.1), [Markup])", notes:"ADDCOLUMNS is cleaner than GENERATE+ROW" },
+  { name:"Correct MAX on single column", input:"Latest = MAX(FactSales[OrderDate])", notes:"MAX is faster than MAXX for direct column" },
+  { name:"Correct CALCULATE(AVERAGE()) for conditional average", input:"AvgPos = CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)", notes:"Filter pushed to CALCULATE — not per-row IF" },
+  { name:"Correct USERPRINCIPALNAME (not USERNAME)", input:"[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()", notes:"USERPRINCIPALNAME is the correct cloud function" },
+  { name:"Correct Table.ExpandTableColumn after NestedJoin", input:"Table.ExpandTableColumn(joined, \"CustomerData\", {\"Name\", \"Email\"})", notes:"Always expand after NestedJoin" },
+  { name:"Correct Power Query parameter with type", input:"StartDate as date = #date(2020,1,1)", notes:"Explicit type prevents inference errors" },
+  { name:"Correct DATESYTD with fiscal year end", input:"FYTD = CALCULATE([Rev], DATESYTD(DimDate[Date], \"6/30\"))", notes:"Fiscal year-end parameter correctly specified" },
+  { name:"Correct COALESCE over IF(ISBLANK())", input:"Safe = COALESCE([Revenue], 0)", notes:"COALESCE is cleaner than IF(ISBLANK(x), 0, x)" },
+  { name:"Correct NOT ISBLANK usage", input:"HasValue = NOT ISBLANK([Measure])", notes:"ISBLANK is preferred over <> BLANK()" },
+  { name:"Correct VALUES over DISTINCT in SUMX", input:"D = SUMX(VALUES(Sales[CustomerID]), [Revenue])", notes:"VALUES is idiomatic; includes BLANK handling" },
+  { name:"Correct OEE measure using DIVIDE", input:"OEE = DIVIDE(SUM(FactProduction[ActualUnits]), SUM(FactProduction[PlannedUnits]))", notes:"DIVIDE handles zero planned units gracefully" },
+  { name:"Correct CHURN RATE with CALCULATE filter", input:"Churn Rate = DIVIDE(CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status]=\"Churned\"), COUNTROWS(FactSubscriptions))", notes:"CALCULATE filter preferred over COUNTROWS(FILTER(...))" },
+  { name:"Correct ARPU with DISTINCTCOUNT denominator", input:"ARPU = DIVIDE(SUM(FactBilling[BillAmount]), DISTINCTCOUNT(FactBilling[SubscriberKey]))", notes:"Correct per-user average revenue calculation" },
+];
+correctPatterns.forEach(t => addNeg({ ...t, expected_issue:"none" }));
 
-// Update rules_advanced.json
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 11 — EDGE CASES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const edgeCases = [
+  { name:"BLANK propagation: BLANK + 0 = 0 but BLANK * 2 = BLANK", input:"Total = [Sales] * [Multiplier]  // Multiplier can be BLANK", expected_issue:"adv-cor-080: BLANK * number = BLANK — measure returns BLANK when Multiplier is blank", expected_fix:"Total = [Sales] * COALESCE([Multiplier], 1)" },
+  { name:"DIVIDE(0, 0) returns BLANK not 0", input:"Rate = DIVIDE(0, 0)", expected_issue:"adv-cor-089: DIVIDE(0,0) = BLANK — may be unexpected if 0 rate expected", expected_fix:"Wrap with COALESCE(DIVIDE(0,0), 0) if 0 is intended" },
+  { name:"KEEPFILTERS intersecting with existing visual filter produces empty result", input:"EU Only = CALCULATE([Sales], KEEPFILTERS(Geo[Region] = \"Europe\"))", expected_issue:"adv-cor-083: If user selects 'Asia' in slicer, KEEPFILTERS intersects to produce BLANK", expected_fix:"Use direct filter (not KEEPFILTERS) unless intersection is intentional" },
+  { name:"ALLSELECTED column vs table scope difference", input:"Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))", expected_issue:"adv-cor-082: ALLSELECTED(Product[Category]) only removes category slicer — other Product filters still apply", expected_fix:"ALLSELECTED(Product) to remove all product filters" },
+  { name:"SWITCH(TRUE()) with overlapping ranges — first match wins silently", input:"B = SWITCH(TRUE(), [R]>0,\"Pos\", [R]>1000,\"High\", \"Zero\")", expected_issue:"adv-cor-005: [R]>1000 never reached — [R]>0 matches first for all positive values", expected_fix:"SWITCH(TRUE(), [R]>1000,\"High\", [R]>0,\"Pos\", \"Zero\")" },
+  { name:"DATESYTD crossing fiscal year boundary without year-end arg", input:"Q1 FY YTD = CALCULATE([Rev], DATESYTD(DimDate[Date]))", expected_issue:"adv-cor-093: Fiscal year model without year-end arg returns calendar YTD not fiscal YTD", expected_fix:"DATESYTD(DimDate[Date], \"3/31\") for April fiscal year start" },
+  { name:"Snapshot fact with rolling date filter inflates result", input:"HC Rolling = CALCULATE(SUM(FactHeadcount[Salary]), DATESINPERIOD(DimDate[Date], MAX(DimDate[Date]), -3, MONTH))", expected_issue:"adv-model-067: Snapshot summed over 3 months = 3x actual headcount cost", expected_fix:"Use LASTDATE filter for snapshot; rolling only appropriate for flow facts" },
+  { name:"RLS with USERPRINCIPALNAME on Azure B2B guest — UPN format differs", input:"[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())", expected_issue:"adv-sec-002: Azure B2B guest UPNs use #EXT# format — may not match stored email", expected_fix:"Normalize UPN format or use PATHCONTAINS for guest account matching" },
+  { name:"CONCATENATEX over 1M row fact table — blank or timeout", input:"AllIDs = CONCATENATEX(FactSales, FactSales[SalesID], \", \")", expected_issue:"adv-cor-007: CONCATENATEX over millions of rows will timeout or be truncated by Power BI", expected_fix:"Limit with TOPN or aggregate before concatenating" },
+  { name:"CALENDAR(start > end) produces zero rows", input:"Dates = CALENDAR(DATE(2025,1,1), DATE(2020,1,1))", expected_issue:"adv-cor-015: Start date after end date — calendar has zero rows, all time intelligence returns BLANK", expected_fix:"CALENDAR(DATE(2020,1,1), DATE(2025,12,31))" },
+  { name:"DISTINCTCOUNT on nullable foreign key column", input:"Count = DISTINCTCOUNT(FactSales[CustomerKey])", expected_issue:"edge: NULL/BLANK CustomerKeys counted as one distinct value — may inflate unique customer count", expected_fix:"CALCULATE(DISTINCTCOUNT(FactSales[CustomerKey]), NOT ISBLANK(FactSales[CustomerKey]))" },
+  { name:"Two measures on different fact grains in same visual — denominator mismatch", input:"// Matrix: Rows=DimProduct, Values=[Order Count from FactOrders] + [Line Count from FactOrderLines]", expected_issue:"adv-model-063: Different grains in same visual — counts will not align, comparisons mislead", expected_fix:"Aggregate line count to order level first or use separate visuals" },
+  { name:"FORMAT mask with wrong decimal separator for EU locale", input:"Display = FORMAT([Amount], \"#,##0.00\")", expected_issue:"adv-cor-095: Comma thousands / period decimal may render as period thousands / comma decimal in EU locales", expected_fix:"Use Power BI format pane (locale-aware) instead of DAX FORMAT" },
+  { name:"ALL(FactTable) in percentage measure bypasses RLS", input:"Mkt Share = DIVIDE([Sales], CALCULATE([Sales], ALL(FactSales)))", expected_issue:"adv-sec-005: ALL(FactSales) removes RLS — user sees market share against all data, not their allowed data", expected_fix:"CALCULATE([Sales], REMOVEFILTERS(FactSales[Product])) — only remove product filter, not all filters" },
+  { name:"USERELATIONSHIP with inactive relationship used in calculated column", input:"// Calculated column using USERELATIONSHIP — not inside CALCULATE", expected_issue:"adv-cor-084: USERELATIONSHIP in calculated column has no effect — wrap in CALCULATE", expected_fix:"Add CALCULATE wrapper around the column expression" },
+  { name:"Auto date/time + custom DimDate = duplicate date hierarchies in field list", input:"// Both Auto Date/Time and custom DimDate active in model", expected_issue:"adv-model-081: Duplicate date hierarchies confuse users and inflate model size — disable Auto Date/Time", expected_fix:"Options → Current File → Data Load → uncheck Auto Date/Time" },
+  { name:"RANKX with ALLSELECTED on visual with no slicer — returns 1 for all rows", input:"Rank = RANKX(ALLSELECTED(DimCustomer), [Revenue], , DESC, Dense)", expected_issue:"edge: Without a slicer, ALLSELECTED = ALL — rank works. With slicer showing 1 customer, all rows rank 1", expected_fix:"Test rank behavior with and without slicer applied" },
+  { name:"ISINSCOPE on column not in visual hierarchy — always FALSE", input:"IsDetail = ISINSCOPE(FactSales[SalesID])", expected_issue:"adv-cor-021: SalesID never appears in visual hierarchy — ISINSCOPE always FALSE, conditional never triggers", expected_fix:"Use a column that is actually in the visual's row/column grouping" },
+  { name:"Table.Distinct on fact table removing legitimate duplicates", input:"Table.Distinct(FactSales)", expected_issue:"adv-pq-004: Deduplication may remove valid rows if grain is not unique on natural key — verify before removing", expected_fix:"Confirm grain: use Table.Group to identify actual duplicates first" },
+  { name:"Binary image column in model inflating .pbix to 500MB+", input:"// Product[ImageBytes] loaded — model file is 480MB", expected_issue:"adv-pq-010 / adv-model-085: Binary column inflates model — remove in Power Query", expected_fix:"Table.RemoveColumns(Source, {\"ImageBytes\"})" },
+];
+edgeCases.forEach(addEdge);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WRITE OUTPUT
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const updatedRules = existingRules.concat(newRules);
 fs.writeFileSync(RULES, JSON.stringify(updatedRules, null, 2), "utf8");
 
-// Update test_suite.json
 suite.positive_cases = suite.positive_cases.concat(newPos);
 suite.negative_cases = (suite.negative_cases || []).concat(newNeg);
 suite.edge_cases     = (suite.edge_cases || []).concat(newEdge);
 fs.writeFileSync(SUITE, JSON.stringify(suite, null, 2), "utf8");
 
-// Summary
-console.log("\n=== Synthetic Data Generator ===");
+console.log("\n=== Synthetic Data Generator — Full Expansion ===");
 console.log(`  New rules added:          ${newRules.length}`);
 console.log(`  New positive cases added: ${newPos.length}`);
 console.log(`  New negative cases added: ${newNeg.length}`);
 console.log(`  New edge cases added:     ${newEdge.length}`);
-console.log(`\n  rules_advanced.json now has ${updatedRules.length} rules`);
-console.log(`  test_suite.json: ${suite.positive_cases.length} pos / ${suite.negative_cases.length} neg / ${suite.edge_cases.length} edge`);
+console.log(`\n  rules_advanced.json: ${updatedRules.length} total rules`);
+console.log(`  test_suite.json:     ${suite.positive_cases.length} pos / ${suite.negative_cases.length} neg / ${suite.edge_cases.length} edge`);
+console.log(`  Grand total test cases: ${suite.positive_cases.length + suite.negative_cases.length + suite.edge_cases.length}`);
 console.log("\nDone. Run: node scripts/testRunner.js\n");

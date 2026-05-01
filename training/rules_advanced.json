@@ -1779,5 +1779,1349 @@
     "confidence": 0.95,
     "fix_type": "needs_review",
     "requires_llm": false
+  },
+  {
+    "id": "adv-perf-080",
+    "pattern": "IF inside AVERAGEX instead of CALCULATE+FILTER — evaluates condition on every row",
+    "bad_dax": "Avg Positive = AVERAGEX(FactSales, IF(FactSales[Amount] > 0, FactSales[Amount], BLANK()))",
+    "detection_logic": {
+      "functions": [
+        "AVERAGEX",
+        "IF"
+      ],
+      "conditions": [
+        "IF used inside AVERAGEX to filter rows",
+        "condition could be pushed to CALCULATE filter"
+      ]
+    },
+    "fixed_dax": "Avg Positive = CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)",
+    "category": "performance",
+    "confidence": 0.86,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-081",
+    "pattern": "MAXX/MINX over single column of same table — MAX/MIN is faster",
+    "bad_dax": "Latest Date = MAXX(FactSales, FactSales[OrderDate])",
+    "detection_logic": {
+      "functions": [
+        "MAXX",
+        "MINX"
+      ],
+      "conditions": [
+        "single column expression inside MAXX/MINX",
+        "expression references only the iterated table's own column",
+        "no calculation involved"
+      ]
+    },
+    "fixed_dax": "Latest Date = MAX(FactSales[OrderDate])",
+    "category": "performance",
+    "confidence": 0.91,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-082",
+    "pattern": "AVERAGEX over large fact when DIVIDE(SUM,COUNT) produces the same result",
+    "bad_dax": "Avg Sale = AVERAGEX(FactSales, FactSales[Amount])",
+    "detection_logic": {
+      "functions": [
+        "AVERAGEX"
+      ],
+      "conditions": [
+        "AVERAGEX expression is a direct column reference (no calculation)",
+        "fact table has millions of rows"
+      ]
+    },
+    "fixed_dax": "Avg Sale = DIVIDE(SUM(FactSales[Amount]), COUNTROWS(FactSales))",
+    "category": "performance",
+    "confidence": 0.78,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-083",
+    "pattern": "DISTINCTCOUNT on composite text key — integer key is 5-10x faster",
+    "bad_dax": "Unique Orders = DISTINCTCOUNT(FactSales[OrderKey])",
+    "detection_logic": {
+      "functions": [
+        "DISTINCTCOUNT"
+      ],
+      "conditions": [
+        "column is text type",
+        "column appears to be a surrogate or natural key",
+        "an integer equivalent likely exists"
+      ]
+    },
+    "fixed_dax": "Unique Orders = DISTINCTCOUNT(FactSales[OrderID])",
+    "category": "performance",
+    "confidence": 0.72,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-084",
+    "pattern": "Nested SUMX inside SUMX — O(n²) complexity, extremely slow on large tables",
+    "bad_dax": "CrossTotal = SUMX(Products, SUMX(Customers, [Revenue]))",
+    "detection_logic": {
+      "functions": [
+        "SUMX"
+      ],
+      "conditions": [
+        "SUMX appears as the expression inside another SUMX",
+        "inner SUMX iterates a different table",
+        "result is aggregated — could be pre-summarized"
+      ]
+    },
+    "fixed_dax": "// Redesign: use SUMMARIZECOLUMNS or pre-aggregate in Power Query",
+    "category": "performance",
+    "confidence": 0.93,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-perf-085",
+    "pattern": "CROSSJOIN materializing full cartesian product in a measure",
+    "bad_dax": "AllCombos = COUNTROWS(CROSSJOIN(VALUES(DimProduct[Category]), VALUES(DimCustomer[Segment])))",
+    "detection_logic": {
+      "functions": [
+        "CROSSJOIN"
+      ],
+      "conditions": [
+        "CROSSJOIN used inside a measure at query time",
+        "both tables have many rows",
+        "result is only counted or filtered — could be derived another way"
+      ]
+    },
+    "fixed_dax": "// Use SUMMARIZECOLUMNS or calculate dimensions separately",
+    "category": "performance",
+    "confidence": 0.88,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-perf-086",
+    "pattern": "TOPN(1,...) to get single row value — MAX/MAXX is faster",
+    "bad_dax": "Best Customer = SELECTCOLUMNS(TOPN(1, ALL(DimCustomer), [Revenue], DESC), \"Name\", DimCustomer[Name])",
+    "detection_logic": {
+      "functions": [
+        "TOPN"
+      ],
+      "conditions": [
+        "N=1 in TOPN",
+        "result is used to extract a single scalar value"
+      ]
+    },
+    "fixed_dax": "Best Customer = MAXX(TOPN(1, ALL(DimCustomer), [Revenue], DESC), DimCustomer[Name])",
+    "category": "performance",
+    "confidence": 0.84,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-087",
+    "pattern": "HASONEVALUE+SELECTEDVALUE redundant — SELECTEDVALUE second arg handles blank case",
+    "bad_dax": "Sel = IF(HASONEVALUE(Product[Name]), SELECTEDVALUE(Product[Name]), \"All\")",
+    "detection_logic": {
+      "functions": [
+        "HASONEVALUE",
+        "SELECTEDVALUE"
+      ],
+      "conditions": [
+        "HASONEVALUE wraps SELECTEDVALUE on the same column",
+        "a default value is provided in the IF false branch"
+      ]
+    },
+    "fixed_dax": "Sel = SELECTEDVALUE(Product[Name], \"All\")",
+    "category": "performance",
+    "confidence": 0.97,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-088",
+    "pattern": "Multiple measures calling same expensive sub-measure without VAR caching",
+    "bad_dax": "Ratio = [Total Sales] / [Base Sales]\nDiff = [Total Sales] - [Base Sales]\n// [Base Sales] evaluated twice per cell",
+    "detection_logic": {
+      "functions": [
+        "VAR"
+      ],
+      "conditions": [
+        "same expensive measure called two or more times in same expression",
+        "no VAR used to cache the result"
+      ]
+    },
+    "fixed_dax": "Ratio = VAR base = [Base Sales] RETURN DIVIDE([Total Sales], base)\nDiff = VAR base = [Base Sales] RETURN [Total Sales] - base",
+    "category": "performance",
+    "confidence": 0.82,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-089",
+    "pattern": "ALLEXCEPT with many columns specified — REMOVEFILTERS on specific columns is cleaner",
+    "bad_dax": "Market Share = CALCULATE([Sales], ALLEXCEPT(Sales, Sales[Year], Sales[Quarter], Sales[Month], Sales[Region]))",
+    "detection_logic": {
+      "functions": [
+        "ALLEXCEPT"
+      ],
+      "conditions": [
+        "ALLEXCEPT specifies 4 or more keep columns",
+        "a smaller REMOVEFILTERS list could achieve same result"
+      ]
+    },
+    "fixed_dax": "Market Share = CALCULATE([Sales], REMOVEFILTERS(Sales[Customer], Sales[Product]))",
+    "category": "performance",
+    "confidence": 0.74,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-090",
+    "pattern": "CALCULATE inside SUMX on every row — move CALCULATE outside iterator",
+    "bad_dax": "Total = SUMX(Sales, CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\"))",
+    "detection_logic": {
+      "functions": [
+        "CALCULATE",
+        "SUMX"
+      ],
+      "conditions": [
+        "CALCULATE appears as direct expression inside SUMX",
+        "CALCULATE filter is a constant — same for every row"
+      ]
+    },
+    "fixed_dax": "Total = CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\")",
+    "category": "performance",
+    "confidence": 0.89,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-091",
+    "pattern": "IFERROR wrapping expensive measure — hides errors and still evaluates the measure",
+    "bad_dax": "Safe Ratio = IFERROR(DIVIDE([Complex Measure], [Base]), 0)",
+    "detection_logic": {
+      "functions": [
+        "IFERROR"
+      ],
+      "conditions": [
+        "IFERROR wraps a complex or expensive measure",
+        "alternative of 0 is returned — could mask bugs"
+      ]
+    },
+    "fixed_dax": "Safe Ratio = DIVIDE([Complex Measure], [Base])  // DIVIDE already handles div-by-zero",
+    "category": "performance",
+    "confidence": 0.77,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-092",
+    "pattern": "SUMX(DISTINCT(column),...) — use VALUES() which includes blank handling",
+    "bad_dax": "DistinctSum = SUMX(DISTINCT(Sales[CustomerID]), [Revenue])",
+    "detection_logic": {
+      "functions": [
+        "SUMX",
+        "DISTINCT"
+      ],
+      "conditions": [
+        "DISTINCT used as table expression inside SUMX",
+        "VALUES would be equivalent and is preferred"
+      ]
+    },
+    "fixed_dax": "DistinctSum = SUMX(VALUES(Sales[CustomerID]), [Revenue])",
+    "category": "performance",
+    "confidence": 0.81,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-093",
+    "pattern": "PARALLELPERIOD used for rolling window — shifts whole calendar period, not a sliding window",
+    "bad_dax": "Prev30 = CALCULATE([Rev], PARALLELPERIOD('Date'[Date], -1, MONTH))",
+    "detection_logic": {
+      "functions": [
+        "PARALLELPERIOD"
+      ],
+      "conditions": [
+        "intent is a rolling 30-day or N-day window",
+        "PARALLELPERIOD shifts full month/quarter/year periods"
+      ]
+    },
+    "fixed_dax": "Prev30 = CALCULATE([Rev], DATESINPERIOD('Date'[Date], MAX('Date'[Date]) - 30, -30, DAY))",
+    "category": "performance",
+    "confidence": 0.85,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-perf-094",
+    "pattern": "GENERATE+ROW to add a single column — ADDCOLUMNS is cleaner and equivalent",
+    "bad_dax": "D = SUMX(GENERATE(Sales, ROW(\"Markup\", Sales[Amount] * 1.1)), [Markup])",
+    "detection_logic": {
+      "functions": [
+        "GENERATE",
+        "ROW"
+      ],
+      "conditions": [
+        "ROW creates a single-column virtual table",
+        "GENERATE pairs each row with ROW result"
+      ]
+    },
+    "fixed_dax": "D = SUMX(ADDCOLUMNS(Sales, \"Markup\", Sales[Amount] * 1.1), [Markup])",
+    "category": "performance",
+    "confidence": 0.88,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-080",
+    "pattern": "BLANK propagation in arithmetic — BLANK + 0 = 0, but BLANK * anything = BLANK",
+    "bad_dax": "Total = [Sales] + [Returns]  // Returns is BLANK when no returns — result is 0 not BLANK",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "two measures added where one can return BLANK",
+        "additive combination silently converts BLANK to 0"
+      ]
+    },
+    "fixed_dax": "Total = [Sales] + COALESCE([Returns], 0)  // explicit about zero vs blank intent",
+    "category": "correctness",
+    "confidence": 0.71,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-cor-081",
+    "pattern": "VAR declared but never referenced in RETURN — dead code, may hide intent",
+    "bad_dax": "M = VAR x = [Base Sales] VAR y = [Returns] RETURN x  // y never used",
+    "detection_logic": {
+      "functions": [
+        "VAR"
+      ],
+      "conditions": [
+        "a VAR is defined",
+        "the VAR name does not appear in the RETURN expression"
+      ]
+    },
+    "fixed_dax": "M = VAR x = [Base Sales] RETURN x  // remove unused VAR y",
+    "category": "correctness",
+    "confidence": 0.86,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-082",
+    "pattern": "ALLSELECTED(column) vs ALLSELECTED(table) — different filter scope, easy to mix up",
+    "bad_dax": "Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))",
+    "detection_logic": {
+      "functions": [
+        "ALLSELECTED"
+      ],
+      "conditions": [
+        "ALLSELECTED takes a single column",
+        "intent is to remove all slicers from the table",
+        "should use ALLSELECTED(Product) for full table scope"
+      ]
+    },
+    "fixed_dax": "Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product)))",
+    "category": "correctness",
+    "confidence": 0.76,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-cor-083",
+    "pattern": "KEEPFILTERS inside CALCULATE — adds to existing filter instead of replacing it, often unintended",
+    "bad_dax": "Filtered = CALCULATE([Sales], KEEPFILTERS(Product[Color] = \"Red\"))",
+    "detection_logic": {
+      "functions": [
+        "KEEPFILTERS",
+        "CALCULATE"
+      ],
+      "conditions": [
+        "KEEPFILTERS used as CALCULATE modifier",
+        "existing visual filter may already restrict the column — intersection may produce empty"
+      ]
+    },
+    "fixed_dax": "// Only use KEEPFILTERS intentionally to intersect filters. Direct column filter replaces:\nFiltered = CALCULATE([Sales], Product[Color] = \"Red\")",
+    "category": "correctness",
+    "confidence": 0.79,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-cor-084",
+    "pattern": "USERELATIONSHIP called outside CALCULATE — has no effect outside a CALCULATE context",
+    "bad_dax": "Bad = USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey])",
+    "detection_logic": {
+      "functions": [
+        "USERELATIONSHIP"
+      ],
+      "conditions": [
+        "USERELATIONSHIP is the top-level expression",
+        "not wrapped inside CALCULATE or CALCULATETABLE"
+      ]
+    },
+    "fixed_dax": "Good = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-085",
+    "pattern": "RLS expression returning a table instead of TRUE/FALSE scalar",
+    "bad_dax": "[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())",
+    "detection_logic": {
+      "functions": [
+        "FILTER"
+      ],
+      "conditions": [
+        "RLS role expression uses FILTER() returning a table",
+        "RLS requires a boolean expression, not a table"
+      ]
+    },
+    "fixed_dax": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()",
+    "category": "correctness",
+    "confidence": 0.94,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-086",
+    "pattern": "IF(ISBLANK(x), fallback, x) pattern — COALESCE(x, fallback) is equivalent and clearer",
+    "bad_dax": "Result = IF(ISBLANK([Revenue]), 0, [Revenue])",
+    "detection_logic": {
+      "functions": [
+        "IF",
+        "ISBLANK"
+      ],
+      "conditions": [
+        "IF checks ISBLANK of a value",
+        "true branch returns a fallback",
+        "false branch returns the original value"
+      ]
+    },
+    "fixed_dax": "Result = COALESCE([Revenue], 0)",
+    "category": "correctness",
+    "confidence": 0.88,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-087",
+    "pattern": "Nested IF more than 3 levels deep — use SWITCH(TRUE()) for readability and performance",
+    "bad_dax": "Band = IF([Rev]>1000,\"A\",IF([Rev]>500,\"B\",IF([Rev]>100,\"C\",IF([Rev]>0,\"D\",\"E\"))))",
+    "detection_logic": {
+      "functions": [
+        "IF"
+      ],
+      "conditions": [
+        "four or more nested IF statements",
+        "each false branch immediately contains another IF",
+        "conditions are mutually exclusive ranges"
+      ]
+    },
+    "fixed_dax": "Band = SWITCH(TRUE(), [Rev]>1000,\"A\", [Rev]>500,\"B\", [Rev]>100,\"C\", [Rev]>0,\"D\", \"E\")",
+    "category": "correctness",
+    "confidence": 0.92,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-088",
+    "pattern": "EARLIER used in nested iterator — use VAR to capture outer row context instead",
+    "bad_dax": "RunningTotal = CALCULATE(SUM(Sales[Amount]), FILTER(Sales, Sales[Date] <= EARLIER(Sales[Date])))",
+    "detection_logic": {
+      "functions": [
+        "EARLIER"
+      ],
+      "conditions": [
+        "EARLIER used inside CALCULATE+FILTER",
+        "a VAR defined before the iterator would be cleaner and faster"
+      ]
+    },
+    "fixed_dax": "RunningTotal = VAR currentDate = Sales[Date] RETURN CALCULATE(SUM(Sales[Amount]), Sales[Date] <= currentDate)",
+    "category": "correctness",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-089",
+    "pattern": "DIVIDE with 0 as alternative — returns 0 instead of BLANK, breaks aggregation SUM",
+    "bad_dax": "Safe Ratio = DIVIDE([Numerator], [Denominator], 0)",
+    "detection_logic": {
+      "functions": [
+        "DIVIDE"
+      ],
+      "conditions": [
+        "DIVIDE third argument is 0",
+        "result used in SUM aggregation — zeros inflate the sum"
+      ]
+    },
+    "fixed_dax": "Safe Ratio = DIVIDE([Numerator], [Denominator])  // BLANK is better — excludes row from SUM",
+    "category": "correctness",
+    "confidence": 0.83,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-090",
+    "pattern": "SWITCH with no else clause — silently returns BLANK for unmatched values",
+    "bad_dax": "Label = SWITCH(Sales[Status], \"A\", \"Active\", \"S\", \"Suspended\")",
+    "detection_logic": {
+      "functions": [
+        "SWITCH"
+      ],
+      "conditions": [
+        "SWITCH has no final default expression",
+        "data may contain values not covered by cases"
+      ]
+    },
+    "fixed_dax": "Label = SWITCH(Sales[Status], \"A\", \"Active\", \"S\", \"Suspended\", \"Unknown\")",
+    "category": "correctness",
+    "confidence": 0.87,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-091",
+    "pattern": "TOTALMTD/TOTALQTD/TOTALYTD wrappers — deprecated aliases, use CALCULATE+DATESMTD/etc explicitly",
+    "bad_dax": "Sales MTD = TOTALMTD([Total Sales], DimDate[Date])",
+    "detection_logic": {
+      "functions": [
+        "TOTALMTD",
+        "TOTALQTD",
+        "TOTALYTD"
+      ],
+      "conditions": [
+        "any of the TOTAL* wrapper functions used",
+        "they are aliases for CALCULATE+DATES* but hide the filter modifier"
+      ]
+    },
+    "fixed_dax": "Sales MTD = CALCULATE([Total Sales], DATESMTD(DimDate[Date]))",
+    "category": "correctness",
+    "confidence": 0.82,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-092",
+    "pattern": "FIRSTNONBLANK vs FIRSTDATE — different semantics: FIRSTNONBLANK finds first date where measure is non-blank",
+    "bad_dax": "First Sale Date = FIRSTDATE(FactSales[OrderDate])",
+    "detection_logic": {
+      "functions": [
+        "FIRSTDATE",
+        "FIRSTNONBLANK"
+      ],
+      "conditions": [
+        "FIRSTDATE used on a fact table date column",
+        "intent is first date with actual sales data",
+        "FIRSTDATE returns first date in filter context regardless of data"
+      ]
+    },
+    "fixed_dax": "First Sale Date = FIRSTNONBLANK(DimDate[Date], [Total Sales])",
+    "category": "correctness",
+    "confidence": 0.75,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-cor-093",
+    "pattern": "DATESYTD without year-end argument on fiscal year model — defaults to Dec 31",
+    "bad_dax": "FY YTD = CALCULATE([Revenue], DATESYTD(DimDate[Date]))",
+    "detection_logic": {
+      "functions": [
+        "DATESYTD"
+      ],
+      "conditions": [
+        "DATESYTD used without year-end argument",
+        "model has fiscal year different from calendar year"
+      ]
+    },
+    "fixed_dax": "FY YTD = CALCULATE([Revenue], DATESYTD(DimDate[Date], \"6/30\"))  // e.g. fiscal year ending June 30",
+    "category": "correctness",
+    "confidence": 0.84,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-cor-094",
+    "pattern": "NOT ISBLANK(x) vs x <> BLANK() — ISBLANK is correct; <> BLANK() can have unexpected behavior with some data types",
+    "bad_dax": "HasValue = [Measure] <> BLANK()",
+    "detection_logic": {
+      "functions": [
+        "BLANK"
+      ],
+      "conditions": [
+        "<> BLANK() used to check for non-blank",
+        "ISBLANK() is the explicit and recommended approach"
+      ]
+    },
+    "fixed_dax": "HasValue = NOT ISBLANK([Measure])",
+    "category": "correctness",
+    "confidence": 0.79,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-095",
+    "pattern": "FORMAT with locale-sensitive number pattern — output varies by user's regional settings",
+    "bad_dax": "Display = FORMAT([Revenue], \"#,##0.00\")",
+    "detection_logic": {
+      "functions": [
+        "FORMAT"
+      ],
+      "conditions": [
+        "FORMAT uses locale-sensitive pattern like #,##0 or 0.00%",
+        "result viewed by users with different regional settings"
+      ]
+    },
+    "fixed_dax": "// Use Power BI format pane for number formatting; if DAX needed: FORMAT([Revenue], \"Fixed\")",
+    "category": "correctness",
+    "confidence": 0.74,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-096",
+    "pattern": "CONTAINS vs CONTAINSROW — CONTAINS argument order is table/col/value, easy to get wrong",
+    "bad_dax": "IsVIP = CONTAINS(VIPList, VIPList[ID], Customer[ID])",
+    "detection_logic": {
+      "functions": [
+        "CONTAINS"
+      ],
+      "conditions": [
+        "CONTAINS used for membership test",
+        "argument order table/column/value is often confused"
+      ]
+    },
+    "fixed_dax": "IsVIP = CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])",
+    "category": "correctness",
+    "confidence": 0.86,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-097",
+    "pattern": "IN operator with single value — direct equality is faster and clearer",
+    "bad_dax": "IsRed = Sales[Color] IN {\"Red\"}",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "IN operator used with a single-element set",
+        "direct = comparison would be clearer"
+      ]
+    },
+    "fixed_dax": "IsRed = Sales[Color] = \"Red\"",
+    "category": "correctness",
+    "confidence": 0.88,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-cor-098",
+    "pattern": "CONCATENATE function with more than 2 strings — use & operator which supports chaining",
+    "bad_dax": "FullName = CONCATENATE(CONCATENATE(First, \" \"), Last)",
+    "detection_logic": {
+      "functions": [
+        "CONCATENATE"
+      ],
+      "conditions": [
+        "CONCATENATE nested inside CONCATENATE",
+        "more than two string values being joined"
+      ]
+    },
+    "fixed_dax": "FullName = First & \" \" & Last",
+    "category": "correctness",
+    "confidence": 0.91,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-080",
+    "pattern": "No date table marked as date table — time intelligence functions silently return wrong results",
+    "bad_dax": "// No date table marked; DATESYTD/SAMEPERIODLASTYEAR return unexpected results",
+    "detection_logic": {
+      "functions": [
+        "DATESYTD",
+        "SAMEPERIODLASTYEAR",
+        "DATEADD"
+      ],
+      "conditions": [
+        "date table exists in model",
+        "time intelligence functions used in measures",
+        "no table marked as date table in model properties"
+      ]
+    },
+    "fixed_dax": "// Mark DimDate as Date Table in Power BI Desktop: Table Tools → Mark as Date Table",
+    "category": "modeling",
+    "confidence": 0.94,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-081",
+    "pattern": "Auto date/time tables enabled on large model — hidden tables inflate model size and slow refresh",
+    "bad_dax": "// Auto Date/Time enabled: Power BI creates hidden date tables for every date column",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "model has multiple date columns",
+        "Auto Date/Time is enabled in options",
+        "model contains large fact tables"
+      ]
+    },
+    "fixed_dax": "// Disable Auto Date/Time in Options → Data Load. Create a single shared DimDate instead.",
+    "category": "modeling",
+    "confidence": 0.91,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-082",
+    "pattern": "Calculated table depending on another calculated table — refresh order may cause stale data",
+    "bad_dax": "FactAdjusted = ADDCOLUMNS(FactSales, \"Margin\", FactSales[Revenue] - FactSales[Cost])\nSummary = SUMMARIZECOLUMNS(FactAdjusted[Category], \"Total\", SUM(FactAdjusted[Margin]))",
+    "detection_logic": {
+      "functions": [
+        "ADDCOLUMNS",
+        "SUMMARIZECOLUMNS"
+      ],
+      "conditions": [
+        "calculated table references another calculated table",
+        "dependency chain not guaranteed to refresh in correct order"
+      ]
+    },
+    "fixed_dax": "// Build transformation chain in Power Query instead of chained calculated tables",
+    "category": "modeling",
+    "confidence": 0.85,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-083",
+    "pattern": "Many-to-many relationship without bridge table — Power BI requires intermediate bridge or TREATAS workaround",
+    "bad_dax": "// FactSales[ProductKey] → DimProduct (many-to-one) AND DimProduct ← DimCategory[ProductKey] many-to-many",
+    "detection_logic": {
+      "functions": [
+        "TREATAS",
+        "CROSSFILTER"
+      ],
+      "conditions": [
+        "two tables have many-to-many cardinality",
+        "no bridge table defined",
+        "Power BI shows many-to-many relationship warning"
+      ]
+    },
+    "fixed_dax": "// Create a bridge table or use TREATAS in measures to propagate context",
+    "category": "modeling",
+    "confidence": 0.87,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-model-084",
+    "pattern": "Bidirectional relationship on a bridge table — causes filter ambiguity across multiple paths",
+    "bad_dax": "// DimEmployeeRole is a bridge with bidirectional filters to both DimEmployee and DimRole",
+    "detection_logic": {
+      "functions": [
+        "CROSSFILTER"
+      ],
+      "conditions": [
+        "bridge table has bidirectional filter to both sides",
+        "filtering one end can unexpectedly affect the other through multiple paths"
+      ]
+    },
+    "fixed_dax": "// Set bridge table relationships to single-direction. Use CROSSFILTER in measures that need reverse filtering.",
+    "category": "modeling",
+    "confidence": 0.83,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-model-085",
+    "pattern": "High-cardinality text column imported without need — inflates model size and compression ratio",
+    "bad_dax": "// DimProduct[Description] is a free-text column with 50,000 unique values",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "text column has very high cardinality",
+        "column is not used in relationships or filters",
+        "column only used for display in tooltips or detail rows"
+      ]
+    },
+    "fixed_dax": "// Remove column in Power Query: Table.RemoveColumns(Source, {\"Description\"}). Show in tooltip via drill-through page instead.",
+    "category": "modeling",
+    "confidence": 0.76,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-086",
+    "pattern": "Composite model mixing Import and DirectQuery in same visual — some DAX functions not supported in DirectQuery",
+    "bad_dax": "// Visual combines [Total Sales] (Import) with [Live Inventory] (DirectQuery)",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "model has both Import and DirectQuery tables",
+        "measure from Import table and measure from DirectQuery table in same visual",
+        "time intelligence or complex DAX on DirectQuery side"
+      ]
+    },
+    "fixed_dax": "// Check DirectQuery DAX limitations. Consider caching DirectQuery table as Import for frequently-used aggregations.",
+    "category": "modeling",
+    "confidence": 0.81,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-model-087",
+    "pattern": "Duplicate date relationships — fact table has two date columns both with active relationships to DimDate",
+    "bad_dax": "// FactOrders: OrderDateKey and ShipDateKey both have active relationships to DimDate[DateKey]",
+    "detection_logic": {
+      "functions": [
+        "USERELATIONSHIP"
+      ],
+      "conditions": [
+        "fact table has two or more date columns",
+        "more than one active relationship to DimDate",
+        "second active relationship is impossible — Power BI only allows one active per table pair"
+      ]
+    },
+    "fixed_dax": "// Keep OrderDate active. Use USERELATIONSHIP in measures for ShipDate analysis.",
+    "category": "modeling",
+    "confidence": 0.96,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-088",
+    "pattern": "Large fact table in DirectQuery with no aggregation table — all queries hit full source",
+    "bad_dax": "// 50M row FactUsage in DirectQuery; no aggregation table configured",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "DirectQuery fact table has >10M rows",
+        "no aggregation table defined",
+        "report visuals have long load times"
+      ]
+    },
+    "fixed_dax": "// Create monthly aggregation table in Power BI. Configure under: Model → Manage Aggregations.",
+    "category": "modeling",
+    "confidence": 0.79,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-089",
+    "pattern": "Incremental refresh range shorter than date table range — gaps between date table and refresh boundary produce BLANKs",
+    "bad_dax": "// Date table: 2018-2025. Incremental refresh set to last 2 years only. 2018-2022 data purged.",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "incremental refresh configured",
+        "date table covers longer historical range than refresh window",
+        "historical reports return BLANK or show gaps"
+      ]
+    },
+    "fixed_dax": "// Align date table range with refresh window, or extend refresh window to cover needed history.",
+    "category": "modeling",
+    "confidence": 0.77,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-model-090",
+    "pattern": "RLS filter using IN() with a long list of hardcoded values — brittle, doesn't scale",
+    "bad_dax": "[RLS] = DimTerritory[Region] IN {\"North\", \"South\", \"East\", \"West\", \"Central\"}",
+    "detection_logic": {
+      "functions": [
+        "IN"
+      ],
+      "conditions": [
+        "RLS expression uses IN with more than 3 hardcoded string values",
+        "list is maintained manually and not driven by data"
+      ]
+    },
+    "fixed_dax": "// Use a UserMapping table: join USERPRINCIPALNAME() to a UserPermissions table that maps users to regions.",
+    "category": "modeling",
+    "confidence": 0.81,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-pq-001",
+    "pattern": "Table.NestedJoin without subsequent Table.ExpandTableColumn — joined data never extracted",
+    "bad_dax": "Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")",
+    "detection_logic": {
+      "functions": [
+        "Table.NestedJoin"
+      ],
+      "conditions": [
+        "NestedJoin creates a column of tables",
+        "no Table.ExpandTableColumn step follows",
+        "resulting column is of type Table and never accessed"
+      ]
+    },
+    "fixed_dax": "Table.ExpandTableColumn(joinResult, \"CustomerData\", {\"Name\", \"Email\"})",
+    "category": "performance",
+    "confidence": 0.92,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-002",
+    "pattern": "Text.Contains inside Table.SelectRows — breaks query folding, loads full table to memory",
+    "bad_dax": "Table.SelectRows(Source, each Text.Contains([Description], \"urgent\"))",
+    "detection_logic": {
+      "functions": [
+        "Text.Contains"
+      ],
+      "conditions": [
+        "Text.Contains used inside Table.SelectRows or Table.SelectColumns",
+        "source is a SQL or OData source",
+        "folding indicator shows step does not fold"
+      ]
+    },
+    "fixed_dax": "// Filter at SQL source: add WHERE Description LIKE '%urgent%' in the native query",
+    "category": "performance",
+    "confidence": 0.89,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-003",
+    "pattern": "List.Accumulate for running totals in Power Query — extremely slow row-by-row iteration",
+    "bad_dax": "List.Accumulate(Table.ToRows(Source), 0, (state, row) => state + row{2})",
+    "detection_logic": {
+      "functions": [
+        "List.Accumulate"
+      ],
+      "conditions": [
+        "List.Accumulate used for running total or cumulative calculation",
+        "applied to tables with more than a few thousand rows"
+      ]
+    },
+    "fixed_dax": "// Use window function in SQL source, or calculate running total as a DAX measure instead",
+    "category": "performance",
+    "confidence": 0.91,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-pq-004",
+    "pattern": "Table.Distinct on large fact table — sorts and deduplicates all rows in memory",
+    "bad_dax": "Table.Distinct(FactSales)",
+    "detection_logic": {
+      "functions": [
+        "Table.Distinct"
+      ],
+      "conditions": [
+        "Table.Distinct applied to a large table",
+        "table is a fact table with millions of rows",
+        "deduplication may not be necessary if grain is already unique"
+      ]
+    },
+    "fixed_dax": "// Push deduplication to SQL source with SELECT DISTINCT, or verify table grain is unique",
+    "category": "performance",
+    "confidence": 0.87,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-005",
+    "pattern": "Table.TransformColumns with custom function — may break query folding",
+    "bad_dax": "Table.TransformColumns(Source, {{\"Amount\", each _ * 1.1, type number}})",
+    "detection_logic": {
+      "functions": [
+        "Table.TransformColumns"
+      ],
+      "conditions": [
+        "custom function passed to Table.TransformColumns",
+        "source is SQL or OData",
+        "native query view shows folding stops at this step"
+      ]
+    },
+    "fixed_dax": "// Apply the transformation in SQL source (computed column) or verify folding with View Native Query",
+    "category": "performance",
+    "confidence": 0.78,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-006",
+    "pattern": "try...otherwise null hiding data errors — bad rows silently become null",
+    "bad_dax": "[Amount] = try [RawAmount] otherwise null",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "try...otherwise null used on a data column",
+        "errors converted to null without logging",
+        "null propagates through downstream calculations silently"
+      ]
+    },
+    "fixed_dax": "// Log errors to separate audit query. Use Table.SelectRows to remove bad rows explicitly.",
+    "category": "correctness",
+    "confidence": 0.93,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-007",
+    "pattern": "Untyped Power Query parameter — inferred as text, causes arithmetic or date failures",
+    "bad_dax": "let StartDate = #date(2024,1,1) in StartDate  // parameter has no declared type",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "Power Query parameter defined without explicit type annotation",
+        "parameter used in date arithmetic or number comparison",
+        "wrong inference causes type mismatch errors at refresh"
+      ]
+    },
+    "fixed_dax": "// Declare type: StartDate as date = #date(2024,1,1)",
+    "category": "correctness",
+    "confidence": 0.88,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-008",
+    "pattern": "Table.Buffer used on large table — forces in-memory evaluation and blocks folding for all downstream steps",
+    "bad_dax": "Table.Buffer(Source)",
+    "detection_logic": {
+      "functions": [
+        "Table.Buffer"
+      ],
+      "conditions": [
+        "Table.Buffer applied to a large table",
+        "downstream steps could benefit from folding",
+        "not needed to prevent re-evaluation of random/time-sensitive source"
+      ]
+    },
+    "fixed_dax": "// Remove Table.Buffer unless specifically preventing re-evaluation of a volatile source",
+    "category": "performance",
+    "confidence": 0.9,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-009",
+    "pattern": "List.Generate for date range expansion — never folds to SQL source",
+    "bad_dax": "List.Generate(() => StartDate, each _ <= EndDate, each Date.AddDays(_, 1))",
+    "detection_logic": {
+      "functions": [
+        "List.Generate"
+      ],
+      "conditions": [
+        "List.Generate used to expand date ranges",
+        "source is SQL or structured database",
+        "no folding possible — full execution in Power Query engine"
+      ]
+    },
+    "fixed_dax": "// Use a pre-built calendar table in SQL, or use Power BI's CALENDAR() DAX function for DimDate",
+    "category": "performance",
+    "confidence": 0.94,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-pq-010",
+    "pattern": "Binary or image column loaded in model — inflates file size with non-queryable data",
+    "bad_dax": "// Power Query loads Product[ImageBinary] column into model",
+    "detection_logic": {
+      "functions": [
+        "Table.RemoveColumns"
+      ],
+      "conditions": [
+        "column of type binary loaded into model",
+        "column cannot be used in DAX calculations or visuals",
+        "model file size significantly inflated"
+      ]
+    },
+    "fixed_dax": "Table.RemoveColumns(Source, {\"ImageBinary\", \"PDF\", \"Photo\"})",
+    "category": "modeling",
+    "confidence": 0.92,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-001",
+    "pattern": "Card visual showing SUM when COUNT or AVERAGE was intended",
+    "bad_dax": "// Card: value = SUM(DimCustomer[Age]) — shows total of all ages, not average",
+    "detection_logic": {
+      "functions": [
+        "SUM"
+      ],
+      "conditions": [
+        "card visual uses SUM on a non-additive column like age, score, or rating",
+        "result is numerically meaningless as a total"
+      ]
+    },
+    "fixed_dax": "// Change to AVERAGE(DimCustomer[Age]) or DIVIDE(SUM, COUNT) for meaningful card value",
+    "category": "correctness",
+    "confidence": 0.8,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-vis-002",
+    "pattern": "Slicer on high-cardinality text column — loads thousands of items, poor UX and slow visual render",
+    "bad_dax": "// Slicer field: DimCustomer[Email] — 500,000 unique values",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "slicer field has more than 1,000 distinct values",
+        "field is a text identifier not a category",
+        "users cannot meaningfully browse the slicer list"
+      ]
+    },
+    "fixed_dax": "// Replace with a search box, top-N dropdown, or search-as-you-type custom visual",
+    "category": "modeling",
+    "confidence": 0.85,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-003",
+    "pattern": "Date slicer not connected to Date table — using fact table date column directly",
+    "bad_dax": "// Slicer field: FactSales[OrderDate] — not from marked DimDate table",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "date slicer uses date column from fact table",
+        "date table exists and is marked",
+        "time intelligence measures reference DimDate — slicer won't filter them correctly"
+      ]
+    },
+    "fixed_dax": "// Connect slicer to DimDate[Date]; ensure relationship from DimDate to all fact tables",
+    "category": "correctness",
+    "confidence": 0.89,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-004",
+    "pattern": "Matrix visual with 5+ row or column fields — performance degrades, visual becomes unreadable",
+    "bad_dax": "// Matrix: rows = [Region, Country, City, Store, Product], columns = [Year, Quarter, Month]",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "matrix has 5 or more row fields",
+        "or 3 or more column fields",
+        "visual response time exceeds 5 seconds"
+      ]
+    },
+    "fixed_dax": "// Reduce to 3 row fields maximum. Use drill-through pages for lower-level detail.",
+    "category": "modeling",
+    "confidence": 0.78,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-005",
+    "pattern": "Pie/donut chart with more than 7 slices — chart becomes unreadable, labels overlap",
+    "bad_dax": "// Donut: category = DimChannel[ChannelName] with 30 channels",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "pie or donut chart has more than 7 categories",
+        "small slices are unreadable",
+        "legend overlaps or is truncated"
+      ]
+    },
+    "fixed_dax": "// Use bar chart for many categories, or filter to Top N + 'Other' group with TOPN measure",
+    "category": "modeling",
+    "confidence": 0.87,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-006",
+    "pattern": "Tooltip page using heavy measures — tooltip loads slowly, bad user experience",
+    "bad_dax": "// Tooltip page has 8 measures each requiring full table scan",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "report page set as tooltip",
+        "page contains complex or slow measures",
+        "tooltip takes >1 second to appear on hover"
+      ]
+    },
+    "fixed_dax": "// Pre-aggregate tooltip measures as calculated columns, or reduce measure count on tooltip page",
+    "category": "modeling",
+    "confidence": 0.74,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-007",
+    "pattern": "Line chart with MonthName on axis — sorts alphabetically, not by month number",
+    "bad_dax": "// Line chart axis: DimDate[MonthName] — shows Apr, Aug, Dec, Feb... not Jan-Dec",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "axis field is a month name text column",
+        "chart appears to sort alphabetically",
+        "no sort-by-column configured for MonthName"
+      ]
+    },
+    "fixed_dax": "// In Power BI Desktop: select MonthName column → Column Tools → Sort by Column → Month (integer)",
+    "category": "correctness",
+    "confidence": 0.95,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-008",
+    "pattern": "KPI visual target is a hardcoded number — doesn't adjust with time period filter",
+    "bad_dax": "// KPI: value = [Revenue], target = 1000000 (hardcoded constant)",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "KPI visual target field is a constant measure",
+        "target doesn't change when date slicer changes",
+        "report users may compare YTD vs full-year target incorrectly"
+      ]
+    },
+    "fixed_dax": "// Make target a measure: Target = CALCULATE(SUM(DimBudget[TargetAmount]), ALLEXCEPT(DimDate, DimDate[Year]))",
+    "category": "correctness",
+    "confidence": 0.8,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-vis-009",
+    "pattern": "Scatter chart with millions of data points — visual is unreadable and browser may freeze",
+    "bad_dax": "// Scatter: X=[Revenue], Y=[Margin], Detail=FactSales[OrderID] — 8M points",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "scatter or bubble chart uses a high-cardinality detail field",
+        "more than 10,000 data points rendered",
+        "visual is illegible"
+      ]
+    },
+    "fixed_dax": "// Aggregate to category or region level. Use sampling or Top N filter on detail field.",
+    "category": "modeling",
+    "confidence": 0.88,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-vis-010",
+    "pattern": "Report-level filter hiding data — users see filtered report without knowing filter is active",
+    "bad_dax": "// Report-level filter: DimDate[Year] = 2024 — invisible to users",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "report-level filter applied",
+        "filter is not surfaced in a visible slicer",
+        "users assume all data is shown"
+      ]
+    },
+    "fixed_dax": "// Add a visible label or slicer showing the active filter. Document filters in report description.",
+    "category": "correctness",
+    "confidence": 0.76,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-sec-001",
+    "pattern": "RLS not configured — all users see all data in published report",
+    "bad_dax": "// No RLS roles defined; report contains sensitive financial or HR data",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "report contains PII or financial data",
+        "no RLS role defined",
+        "all viewers can see all rows"
+      ]
+    },
+    "fixed_dax": "// Add RLS role in Power BI Desktop → Security. Test with 'View as Role' before publishing.",
+    "category": "modeling",
+    "confidence": 0.85,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-sec-002",
+    "pattern": "USERPRINCIPALNAME() compared with mixed case — users excluded from RLS if email case differs",
+    "bad_dax": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()",
+    "detection_logic": {
+      "functions": [
+        "USERPRINCIPALNAME"
+      ],
+      "conditions": [
+        "USERPRINCIPALNAME() compared with = operator",
+        "Email column may contain uppercase characters",
+        "Azure AD UPNs are case-insensitive but DAX = is case-sensitive"
+      ]
+    },
+    "fixed_dax": "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())",
+    "category": "correctness",
+    "confidence": 0.93,
+    "fix_type": "safe",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-sec-003",
+    "pattern": "RLS on dimension with bidirectional filter to fact — security filter leaks through to other dimensions",
+    "bad_dax": "// DimTerritory has bidirectional filter to FactSales; RLS on DimTerritory leaks to DimCustomer",
+    "detection_logic": {
+      "functions": [
+        "CROSSFILTER"
+      ],
+      "conditions": [
+        "RLS applied to a dimension table",
+        "dimension has bidirectional relationship to fact",
+        "other dimensions connected to same fact may expose restricted data"
+      ]
+    },
+    "fixed_dax": "// Set relationship to single-direction. Apply RLS on FactSales directly or use CROSSFILTER only within measures.",
+    "category": "modeling",
+    "confidence": 0.88,
+    "fix_type": "needs_review",
+    "requires_llm": true
+  },
+  {
+    "id": "adv-sec-004",
+    "pattern": "Object-level security (OLS) not used for sensitive columns — column visible even if not in visual",
+    "bad_dax": "// DimEmployee[Salary] visible to all users — not protected by OLS",
+    "detection_logic": {
+      "functions": [],
+      "conditions": [
+        "model contains sensitive columns like salary, SSN, or PII",
+        "no object-level security configured",
+        "users can access column via DAX queries or Analyze in Excel"
+      ]
+    },
+    "fixed_dax": "// Configure OLS in Tabular Editor or XMLA endpoint to restrict column access by role.",
+    "category": "modeling",
+    "confidence": 0.82,
+    "fix_type": "needs_review",
+    "requires_llm": false
+  },
+  {
+    "id": "adv-sec-005",
+    "pattern": "ALL() in a measure removes RLS filters — creates a security bypass",
+    "bad_dax": "Market Total = CALCULATE([Revenue], ALL(FactSales))",
+    "detection_logic": {
+      "functions": [
+        "ALL"
+      ],
+      "conditions": [
+        "ALL() applied to a fact table that has RLS",
+        "measure returns total regardless of user's RLS role",
+        "intended as 'grand total' but bypasses row security"
+      ]
+    },
+    "fixed_dax": "Market Total = CALCULATE([Revenue], REMOVEFILTERS(FactSales[Region]))  // only remove the specific filter column, not all filters",
+    "category": "modeling",
+    "confidence": 0.91,
+    "fix_type": "needs_review",
+    "requires_llm": false
   }
 ]
