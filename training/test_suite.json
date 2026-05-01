@@ -1227,6 +1227,222 @@
       "input": "// FactOrders: OrderDateKey and ShipDateKey both active to DimDate",
       "expected_issue": "adv-model-087: Power BI only allows one active relationship per table pair — second silently ignored or errors",
       "expected_fix": "Keep one active; use USERELATIONSHIP for the other in measures"
+    },
+    {
+      "name": "[auto] adv-cor-001: CALCULATE with FILTER(ALL(DimTable), condition) instead of d",
+      "input": "Sales YTD = CALCULATE([Total Sales], FILTER(ALL('Date'), 'Date'[Year] = 2024))",
+      "expected_rule": "adv-cor-001",
+      "expected_issue": "adv-cor-001: CALCULATE with FILTER(ALL(DimTable), condition) instead of direct column filter",
+      "expected_fix": "Sales YTD = CALCULATE([Total Sales], 'Date'[Year] = 2024)",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-cor-022: ISINSCOPE called on a column not present in any hierarchy or",
+      "input": "Subtotal Label = IF(ISINSCOPE(Customer[PostalCode]), \"Detail\", \"Total\")",
+      "expected_rule": "adv-cor-022",
+      "expected_issue": "adv-cor-022: ISINSCOPE called on a column not present in any hierarchy or visual — always returns FALSE",
+      "expected_fix": "Subtotal Label = IF(ISINSCOPE(Customer[City]), \"Detail\", \"Total\") -- use the column actually in the hierarchy",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-perf-047: SWITCH evaluating all branches when only first match matters",
+      "input": "Tier = SWITCH(TRUE(), [Revenue] > 1000000, CALCULATE([Revenue], ALL(Sales)), [Revenue] > 100000, CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date])), 0)",
+      "expected_rule": "adv-perf-047",
+      "expected_issue": "adv-perf-047: SWITCH evaluating all branches when only first match matters — all SWITCH branches are evaluated in DAX",
+      "expected_fix": "VAR AllSales = CALCULATE([Revenue], ALL(Sales)) VAR PY = CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date])) RETURN SWITCH(TRUE(), [Revenue] > 1000000, AllSales, [Revenue] > 100000, PY, 0)",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-perf-083: DISTINCTCOUNT on composite text key — integer key is 5-10x f",
+      "input": "Unique Orders = DISTINCTCOUNT(FactSales[OrderKey])",
+      "expected_rule": "adv-perf-083",
+      "expected_issue": "adv-perf-083: DISTINCTCOUNT on composite text key — integer key is 5-10x faster",
+      "expected_fix": "Unique Orders = DISTINCTCOUNT(FactSales[OrderID])",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-perf-088: Multiple measures calling same expensive sub-measure without",
+      "input": "Ratio = [Total Sales] / [Base Sales]\nDiff = [Total Sales] - [Base Sales]\n// [Base Sales] evaluated twice per cell",
+      "expected_rule": "adv-perf-088",
+      "expected_issue": "adv-perf-088: Multiple measures calling same expensive sub-measure without VAR caching",
+      "expected_fix": "Ratio = VAR base = [Base Sales] RETURN DIVIDE([Total Sales], base)\nDiff = VAR base = [Base Sales] RETURN [Total Sales] - base",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-perf-089: ALLEXCEPT with many columns specified — REMOVEFILTERS on spe",
+      "input": "Market Share = CALCULATE([Sales], ALLEXCEPT(Sales, Sales[Year], Sales[Quarter], Sales[Month], Sales[Region]))",
+      "expected_rule": "adv-perf-089",
+      "expected_issue": "adv-perf-089: ALLEXCEPT with many columns specified — REMOVEFILTERS on specific columns is cleaner",
+      "expected_fix": "Market Share = CALCULATE([Sales], REMOVEFILTERS(Sales[Customer], Sales[Product]))",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-perf-093: PARALLELPERIOD used for rolling window — shifts whole calend",
+      "input": "Prev30 = CALCULATE([Rev], PARALLELPERIOD('Date'[Date], -1, MONTH))",
+      "expected_rule": "adv-perf-093",
+      "expected_issue": "adv-perf-093: PARALLELPERIOD used for rolling window — shifts whole calendar period, not a sliding window",
+      "expected_fix": "Prev30 = CALCULATE([Rev], DATESINPERIOD('Date'[Date], MAX('Date'[Date]) - 30, -30, DAY))",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-cor-092: FIRSTNONBLANK vs FIRSTDATE — different semantics: FIRSTNONBL",
+      "input": "First Sale Date = FIRSTDATE(FactSales[OrderDate])",
+      "expected_rule": "adv-cor-092",
+      "expected_issue": "adv-cor-092: FIRSTNONBLANK vs FIRSTDATE — different semantics: FIRSTNONBLANK finds first date where measure is non-blank",
+      "expected_fix": "First Sale Date = FIRSTNONBLANK(DimDate[Date], [Total Sales])",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-model-082: Calculated table depending on another calculated table — ref",
+      "input": "FactAdjusted = ADDCOLUMNS(FactSales, \"Margin\", FactSales[Revenue] - FactSales[Cost])\nSummary = SUMMARIZECOLUMNS(FactAdjusted[Category], \"Total\", SUM(FactAdjusted[Margin]))",
+      "expected_rule": "adv-model-082",
+      "expected_issue": "adv-model-082: Calculated table depending on another calculated table — refresh order may cause stale data",
+      "expected_fix": "// Build transformation chain in Power Query instead of chained calculated tables",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-model-085: High-cardinality text column imported without need — inflate",
+      "input": "// DimProduct[Description] is a free-text column with 50,000 unique values",
+      "expected_rule": "adv-model-085",
+      "expected_issue": "adv-model-085: High-cardinality text column imported without need — inflates model size and compression ratio",
+      "expected_fix": "// Remove column in Power Query: Table.RemoveColumns(Source, {\"Description\"}). Show in tooltip via drill-through page instead.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-model-086: Composite model mixing Import and DirectQuery in same visual",
+      "input": "// Visual combines [Total Sales] (Import) with [Live Inventory] (DirectQuery)",
+      "expected_rule": "adv-model-086",
+      "expected_issue": "adv-model-086: Composite model mixing Import and DirectQuery in same visual — some DAX functions not supported in DirectQuery",
+      "expected_fix": "// Check DirectQuery DAX limitations. Consider caching DirectQuery table as Import for frequently-used aggregations.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-model-088: Large fact table in DirectQuery with no aggregation table — ",
+      "input": "// 50M row FactUsage in DirectQuery; no aggregation table configured",
+      "expected_rule": "adv-model-088",
+      "expected_issue": "adv-model-088: Large fact table in DirectQuery with no aggregation table — all queries hit full source",
+      "expected_fix": "// Create monthly aggregation table in Power BI. Configure under: Model → Manage Aggregations.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-model-090: RLS filter using IN() with a long list of hardcoded values —",
+      "input": "[RLS] = DimTerritory[Region] IN {\"North\", \"South\", \"East\", \"West\", \"Central\"}",
+      "expected_rule": "adv-model-090",
+      "expected_issue": "adv-model-090: RLS filter using IN() with a long list of hardcoded values — brittle, doesn't scale",
+      "expected_fix": "// Use a UserMapping table: join USERPRINCIPALNAME() to a UserPermissions table that maps users to regions.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-pq-005: Table.TransformColumns with custom function — may break quer",
+      "input": "Table.TransformColumns(Source, {{\"Amount\", each _ * 1.1, type number}})",
+      "expected_rule": "adv-pq-005",
+      "expected_issue": "adv-pq-005: Table.TransformColumns with custom function — may break query folding",
+      "expected_fix": "// Apply the transformation in SQL source (computed column) or verify folding with View Native Query",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-pq-006: try...otherwise null hiding data errors — bad rows silently ",
+      "input": "[Amount] = try [RawAmount] otherwise null",
+      "expected_rule": "adv-pq-006",
+      "expected_issue": "adv-pq-006: try...otherwise null hiding data errors — bad rows silently become null",
+      "expected_fix": "// Log errors to separate audit query. Use Table.SelectRows to remove bad rows explicitly.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-pq-007: Untyped Power Query parameter — inferred as text, causes ari",
+      "input": "let StartDate = #date(2024,1,1) in StartDate  // parameter has no declared type",
+      "expected_rule": "adv-pq-007",
+      "expected_issue": "adv-pq-007: Untyped Power Query parameter — inferred as text, causes arithmetic or date failures",
+      "expected_fix": "// Declare type: StartDate as date = #date(2024,1,1)",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-pq-009: List.Generate for date range expansion — never folds to SQL ",
+      "input": "List.Generate(() => StartDate, each _ <= EndDate, each Date.AddDays(_, 1))",
+      "expected_rule": "adv-pq-009",
+      "expected_issue": "adv-pq-009: List.Generate for date range expansion — never folds to SQL source",
+      "expected_fix": "// Use a pre-built calendar table in SQL, or use Power BI's CALENDAR() DAX function for DimDate",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-pq-010: Binary or image column loaded in model — inflates file size ",
+      "input": "// Power Query loads Product[ImageBinary] column into model",
+      "expected_rule": "adv-pq-010",
+      "expected_issue": "adv-pq-010: Binary or image column loaded in model — inflates file size with non-queryable data",
+      "expected_fix": "Table.RemoveColumns(Source, {\"ImageBinary\", \"PDF\", \"Photo\"})",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-vis-001: Card visual showing SUM when COUNT or AVERAGE was intended",
+      "input": "// Card: value = SUM(DimCustomer[Age]) — shows total of all ages, not average",
+      "expected_rule": "adv-vis-001",
+      "expected_issue": "adv-vis-001: Card visual showing SUM when COUNT or AVERAGE was intended",
+      "expected_fix": "// Change to AVERAGE(DimCustomer[Age]) or DIVIDE(SUM, COUNT) for meaningful card value",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-vis-004: Matrix visual with 5+ row or column fields — performance deg",
+      "input": "// Matrix: rows = [Region, Country, City, Store, Product], columns = [Year, Quarter, Month]",
+      "expected_rule": "adv-vis-004",
+      "expected_issue": "adv-vis-004: Matrix visual with 5+ row or column fields — performance degrades, visual becomes unreadable",
+      "expected_fix": "// Reduce to 3 row fields maximum. Use drill-through pages for lower-level detail.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-vis-006: Tooltip page using heavy measures — tooltip loads slowly, ba",
+      "input": "// Tooltip page has 8 measures each requiring full table scan",
+      "expected_rule": "adv-vis-006",
+      "expected_issue": "adv-vis-006: Tooltip page using heavy measures — tooltip loads slowly, bad user experience",
+      "expected_fix": "// Pre-aggregate tooltip measures as calculated columns, or reduce measure count on tooltip page",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-vis-008: KPI visual target is a hardcoded number — doesn't adjust wit",
+      "input": "// KPI: value = [Revenue], target = 1000000 (hardcoded constant)",
+      "expected_rule": "adv-vis-008",
+      "expected_issue": "adv-vis-008: KPI visual target is a hardcoded number — doesn't adjust with time period filter",
+      "expected_fix": "// Make target a measure: Target = CALCULATE(SUM(DimBudget[TargetAmount]), ALLEXCEPT(DimDate, DimDate[Year]))",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-vis-009: Scatter chart with millions of data points — visual is unrea",
+      "input": "// Scatter: X=[Revenue], Y=[Margin], Detail=FactSales[OrderID] — 8M points",
+      "expected_rule": "adv-vis-009",
+      "expected_issue": "adv-vis-009: Scatter chart with millions of data points — visual is unreadable and browser may freeze",
+      "expected_fix": "// Aggregate to category or region level. Use sampling or Top N filter on detail field.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-vis-010: Report-level filter hiding data — users see filtered report ",
+      "input": "// Report-level filter: DimDate[Year] = 2024 — invisible to users",
+      "expected_rule": "adv-vis-010",
+      "expected_issue": "adv-vis-010: Report-level filter hiding data — users see filtered report without knowing filter is active",
+      "expected_fix": "// Add a visible label or slicer showing the active filter. Document filters in report description.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-sec-001: RLS not configured — all users see all data in published rep",
+      "input": "// No RLS roles defined; report contains sensitive financial or HR data",
+      "expected_rule": "adv-sec-001",
+      "expected_issue": "adv-sec-001: RLS not configured — all users see all data in published report",
+      "expected_fix": "// Add RLS role in Power BI Desktop → Security. Test with 'View as Role' before publishing.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-sec-003: RLS on dimension with bidirectional filter to fact — securit",
+      "input": "// DimTerritory has bidirectional filter to FactSales; RLS on DimTerritory leaks to DimCustomer",
+      "expected_rule": "adv-sec-003",
+      "expected_issue": "adv-sec-003: RLS on dimension with bidirectional filter to fact — security filter leaks through to other dimensions",
+      "expected_fix": "// Set relationship to single-direction. Apply RLS on FactSales directly or use CROSSFILTER only within measures.",
+      "auto_generated": true
+    },
+    {
+      "name": "[auto] adv-sec-004: Object-level security (OLS) not used for sensitive columns —",
+      "input": "// DimEmployee[Salary] visible to all users — not protected by OLS",
+      "expected_rule": "adv-sec-004",
+      "expected_issue": "adv-sec-004: Object-level security (OLS) not used for sensitive columns — column visible even if not in visual",
+      "expected_fix": "// Configure OLS in Tabular Editor or XMLA endpoint to restrict column access by role.",
+      "auto_generated": true
     }
   ],
   "negative_cases": [
