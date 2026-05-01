@@ -41,7 +41,9 @@
     settings: { ...DEFAULT_SETTINGS },
     lastScreenshot: null,
     currentPlan: null,
-    actLog: []
+    actLog: [],
+    stopRequested: false,
+    failureLog: []
   };
 
   const rootHost = document.createElement("div");
@@ -847,188 +849,73 @@
             <button class="btn" id="clearKnowledge">Clear custom notes</button>
           </div>
           <div id="knowledgeList"></div>
+          <hr style="margin:12px 0;border:0;border-top:1px solid var(--pbi-line)">
+          <div style="font-size:12px;font-weight:800;margin-bottom:6px">Failure Log</div>
+          <div class="actions" style="gap:6px">
+            <button class="btn" id="exportFailuresBtn">Export Failed Cases</button>
+            <button class="btn" id="clearFailuresBtn">Clear Failures</button>
+          </div>
+          <div id="failureCount" style="font-size:11px;color:var(--pbi-muted);margin-top:4px"></div>
         </section>
 
         <section class="section" data-section="act">
-
-          <!-- 1. Screenshot + Vision AI -->
-          <div class="context-card">
-            <strong>Screenshot + Vision AI</strong>
-            <p>Capture the screen, then ask Claude to analyze it.</p>
-            <div class="actions">
-              <button class="btn primary" id="takeScreenshot">Capture</button>
-              <button class="btn" id="copyScreenshot">Copy URL</button>
-            </div>
-            <div id="screenshotWrap" style="display:none; margin-top:10px;">
-              <img id="screenshotImg" class="act-screenshot" style="display:block;" alt="Screenshot">
-            </div>
-            <div class="field" style="margin-top:10px;">
-              <label for="visionPrompt">Ask Claude about the screenshot <span>needs proxy endpoint</span></label>
-              <textarea id="visionPrompt" style="min-height:64px;" placeholder="Describe what visuals you see, identify any errors, review the layout..."></textarea>
-            </div>
-            <div class="actions">
-              <button class="btn" data-vision-template="layout">Layout review</button>
-              <button class="btn" data-vision-template="errors">Find errors</button>
-              <button class="btn" data-vision-template="fields">Identify fields</button>
-              <button class="btn blue" id="sendVisionPrompt">Analyze with AI</button>
-            </div>
-            <div class="result" id="visionResult">
-              <div class="result-header">
-                <strong>Vision analysis</strong>
-                <button class="btn" data-copy="#visionOutput">Copy</button>
+          <!-- Goal -->
+          <div class="field">
+            <label for="actGoal">Goal <span>describe what you want to automate</span></label>
+            <textarea id="actGoal" rows="3" placeholder="Example: Open the modeling tab, create a new measure called Total Revenue, paste the DAX formula, and save it."></textarea>
+          </div>
+          <!-- Screenshot row -->
+          <div class="actions" style="gap:6px;flex-wrap:wrap">
+            <button class="btn primary" id="actCaptureBtn">Capture Screen</button>
+            <button class="btn" id="actAnalyzeBtn">Analyze Screen</button>
+            <button class="btn blue" id="actPlanBtn">Generate Plan</button>
+          </div>
+          <img class="act-screenshot" id="actScreenshot" alt="Screenshot preview">
+          <!-- Vision result -->
+          <div id="actVisionResult" style="display:none;margin-top:10px;border:1px solid var(--pbi-line);border-radius:6px;background:#fff;padding:10px">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px">Screen Analysis</div>
+            <pre id="actVisionOutput" style="max-height:160px;font-size:11px;"></pre>
+          </div>
+          <!-- Action plan -->
+          <div id="actPlanArea" style="margin-top:10px;display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <strong style="font-size:12px">Action Plan</strong>
+              <div style="display:flex;gap:6px">
+                <button class="btn" id="approveAllBtn" style="padding:3px 8px;font-size:11px">Approve All</button>
+                <button class="btn blue" id="actRunBtn" style="padding:3px 8px;font-size:11px">Run Approved</button>
+                <button class="btn" id="actStopBtn" style="padding:3px 8px;font-size:11px;background:var(--pbi-red);color:#fff;border-color:var(--pbi-red)">Stop</button>
               </div>
-              <pre id="visionOutput"></pre>
+            </div>
+            <div id="planSteps"></div>
+            <div id="planStatus" style="display:none;margin-top:6px;font-size:12px;color:var(--pbi-muted)"></div>
+          </div>
+          <hr style="margin:12px 0;border:0;border-top:1px solid var(--pbi-line)">
+          <!-- Deploy DAX -->
+          <div style="font-size:12px;font-weight:800;margin-bottom:6px">Deploy DAX Measure</div>
+          <div class="field">
+            <textarea id="deployDaxInput" rows="4" placeholder="Paste DAX measure here..."></textarea>
+          </div>
+          <div class="actions" style="gap:6px">
+            <button class="btn primary" id="deployDaxBtn">Deploy to Power BI</button>
+          </div>
+          <div id="deployDaxStatus" style="display:none;font-size:12px;margin-top:6px;padding:6px 8px;border-radius:4px;background:var(--pbi-soft)"></div>
+          <hr style="margin:12px 0;border:0;border-top:1px solid var(--pbi-line)">
+          <!-- DOM Scanner -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <strong style="font-size:12px">DOM Scanner</strong>
+            <div style="display:flex;gap:4px">
+              <button class="btn" id="scanAllBtn" style="padding:3px 7px;font-size:11px">All</button>
+              <button class="btn" id="scanPbiBtn" style="padding:3px 7px;font-size:11px">PBI Only</button>
             </div>
           </div>
-
-          <!-- 2. Action Planner -->
-          <div class="context-card">
-            <strong>Action Planner</strong>
-            <p>Describe your goal. Claude proposes steps. You approve before anything runs.</p>
-            <div class="field">
-              <label for="planGoal">Goal</label>
-              <textarea id="planGoal" style="min-height:64px;" placeholder="Example: Create a YoY % measure for Sales, add it to the bar chart, and format it as a percentage."></textarea>
-            </div>
-            <div class="actions">
-              <button class="btn blue" id="generatePlan">Generate plan</button>
-              <button class="btn" id="runApprovedSteps" disabled>Run approved steps</button>
-              <button class="btn" id="clearPlan">Clear</button>
-            </div>
-            <div id="planStatus" class="note" style="display:none; margin-top:8px;"></div>
-            <div id="planSteps" style="margin-top:8px;"></div>
+          <div class="el-list" id="pageElementsList"></div>
+          <hr style="margin:12px 0;border:0;border-top:1px solid var(--pbi-line)">
+          <!-- Action Log -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <strong style="font-size:12px">Action Log</strong>
+            <button class="btn" id="clearLogBtn" style="padding:2px 7px;font-size:11px">Clear</button>
           </div>
-
-          <!-- 3. Extended Action Executor -->
-          <div class="context-card">
-            <strong>Action executor</strong>
-            <p>Manual controls — click, type, scroll, keyboard shortcuts, and more.</p>
-
-            <div class="grid-2" style="margin-bottom:10px;">
-              <div class="field">
-                <label for="clickTarget">Click — label or text</label>
-                <input id="clickTarget" placeholder="Format pane, Fields...">
-              </div>
-              <div class="actions" style="align-items:flex-end; margin:0;">
-                <button class="btn primary" id="doClickElement">Click</button>
-                <button class="btn" id="doHighlightElement">Highlight</button>
-              </div>
-            </div>
-
-            <div class="grid-2" style="margin-bottom:10px;">
-              <div class="field">
-                <label for="coordX">Coordinate click X</label>
-                <input id="coordX" type="number" placeholder="420">
-              </div>
-              <div class="field">
-                <label for="coordY">Y</label>
-                <input id="coordY" type="number" placeholder="300">
-              </div>
-            </div>
-            <div class="actions" style="margin-bottom:10px;">
-              <button class="btn" id="doCoordClick">Left click XY</button>
-              <button class="btn" id="doCoordRightClick">Right click XY</button>
-              <button class="btn" id="doCoordDoubleClick">Double click XY</button>
-            </div>
-
-            <div class="grid-2" style="margin-bottom:10px;">
-              <div class="field">
-                <label for="typeTarget">Type — target label <span>blank = focused</span></label>
-                <input id="typeTarget" placeholder="DAX editor, search...">
-              </div>
-              <div class="field">
-                <label for="typeText">Text</label>
-                <input id="typeText" placeholder="Enter text...">
-              </div>
-            </div>
-            <div class="actions" style="margin-bottom:10px;">
-              <button class="btn primary" id="doTypeInField">Type</button>
-              <button class="btn" id="doClearField">Clear field</button>
-            </div>
-
-            <div class="grid-2" style="margin-bottom:10px;">
-              <div class="field">
-                <label for="keyCombo">Keyboard shortcut</label>
-                <input id="keyCombo" placeholder="Ctrl+A, Enter, Escape, Tab">
-              </div>
-              <div class="actions" style="align-items:flex-end; margin:0;">
-                <button class="btn primary" id="doPressKey">Send key</button>
-              </div>
-            </div>
-
-            <div class="grid-2" style="margin-bottom:10px;">
-              <div class="field">
-                <label for="scrollDir">Scroll direction</label>
-                <select id="scrollDir">
-                  <option value="down">Down</option>
-                  <option value="up">Up</option>
-                  <option value="right">Right</option>
-                  <option value="left">Left</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="scrollAmt">Amount (px)</label>
-                <input id="scrollAmt" type="number" value="300" placeholder="300">
-              </div>
-            </div>
-            <div class="actions" style="margin-bottom:10px;">
-              <button class="btn" id="doScroll">Scroll</button>
-              <button class="btn" id="doWait">Wait 500 ms</button>
-            </div>
-
-            <div class="grid-2">
-              <div class="field">
-                <label for="rightClickTarget">Right-click label</label>
-                <input id="rightClickTarget" placeholder="Visual name...">
-              </div>
-              <div class="field">
-                <label for="dblClickTarget">Double-click label</label>
-                <input id="dblClickTarget" placeholder="Visual title...">
-              </div>
-            </div>
-            <div class="actions">
-              <button class="btn" id="doRightClick">Right-click</button>
-              <button class="btn" id="doDoubleClick">Double-click</button>
-            </div>
-
-            <div id="execFeedback" class="note" style="display:none; margin-top:8px;"></div>
-          </div>
-
-          <!-- 4. DOM Scanner -->
-          <div class="context-card">
-            <strong>DOM scanner</strong>
-            <p>Scan visible interactive elements and click them directly.</p>
-            <div class="actions">
-              <button class="btn primary" id="readPage">Scan all</button>
-              <button class="btn" id="readPbiElements">Power BI only</button>
-            </div>
-            <div id="pageElementsList" class="el-list"></div>
-          </div>
-
-          <!-- 5. Power BI Shortcuts -->
-          <div class="context-card">
-            <strong>Power BI shortcuts</strong>
-            <p>Common report-editing actions.</p>
-            <div class="actions">
-              <button class="btn" id="pbiOpenFormat">Format pane</button>
-              <button class="btn" id="pbiOpenFields">Fields list</button>
-              <button class="btn" id="pbiOpenDax">New measure</button>
-              <button class="btn" id="pbiSaveMeasure">Save measure ✓</button>
-              <button class="btn" id="pbiRefreshVisual">Refresh</button>
-              <button class="btn" id="pbiSelectAllVisuals">Select all visuals</button>
-            </div>
-            <div id="pbiActionFeedback" class="note" style="display:none; margin-top:8px;"></div>
-          </div>
-
-          <!-- 6. Action Log -->
-          <div class="context-card">
-            <strong>Action log</strong>
-            <p>Every action executed this session.</p>
-            <div class="actions">
-              <button class="btn" id="clearActLog">Clear log</button>
-            </div>
-            <div id="actLogList" class="el-list" style="max-height:220px;"></div>
-          </div>
-
+          <div id="actLogList" style="max-height:140px;overflow:auto"></div>
         </section>
       </main>
 
@@ -1156,224 +1043,75 @@
 
     // ── Act tab ──────────────────────────────────────────────────────────
 
-    // Screenshot capture
-    $("#takeScreenshot").addEventListener("click", async () => {
-      toast("Capturing screenshot...");
+    $("#actCaptureBtn")?.addEventListener("click", async () => {
+      const btn = $("#actCaptureBtn");
+      btn.textContent = "Capturing..."; btn.disabled = true;
       try {
-        const response = await captureScreenshot();
-        if (response?.dataUrl) {
-          state.lastScreenshot = response.dataUrl;
-          const img = $("#screenshotImg");
-          const wrap = $("#screenshotWrap");
-          img.src = response.dataUrl;
-          wrap.style.display = "block";
-          logAction("screenshot", "visible tab", "Captured");
-          toast("Screenshot captured.");
-        } else {
-          toast("Screenshot failed — " + (response?.error || "unknown error"));
+        const res = await captureScreenshot();
+        if (res.ok) { state.lastScreenshot = res.dataUrl; updateScreenshotPreview(res.dataUrl); toast("Screenshot captured."); }
+        else { toast("Screenshot failed: " + res.error); }
+      } catch (err) { toast("Error: " + err.message); }
+      finally { btn.textContent = "Capture Screen"; btn.disabled = false; }
+    });
+
+    $("#actAnalyzeBtn")?.addEventListener("click", async () => {
+      const btn = $("#actAnalyzeBtn");
+      btn.textContent = "Analyzing..."; btn.disabled = true;
+      try {
+        if (!state.lastScreenshot) {
+          const res = await captureScreenshot();
+          if (res.ok) { state.lastScreenshot = res.dataUrl; updateScreenshotPreview(res.dataUrl); }
         }
-      } catch (err) {
-        toast("Screenshot error: " + err.message);
-      }
-    });
-
-    $("#copyScreenshot").addEventListener("click", async () => {
-      if (!state.lastScreenshot) return toast("Take a screenshot first.");
-      await navigator.clipboard.writeText(state.lastScreenshot);
-      toast("Screenshot data URL copied.");
-    });
-
-    // Vision prompt templates
-    $$("[data-vision-template]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const templates = {
-          layout: "Review this Power BI report screenshot. Describe the layout, identify which visuals are present, and suggest any improvements to the layout or visual hierarchy.",
-          errors: "Look at this Power BI screenshot. Are there any error messages, broken visuals, or loading failures? List each problem you can see and suggest what may have caused it.",
-          fields: "Examine this Power BI screenshot. Identify the field names, measure names, column headers, and axis labels that are visible. List them clearly."
-        };
-        $("#visionPrompt").value = templates[btn.dataset.visionTemplate] || "";
-      });
-    });
-
-    // Vision AI analysis
-    $("#sendVisionPrompt").addEventListener("click", async () => {
-      if (!state.lastScreenshot) return toast("Capture a screenshot first.");
-      const prompt = $("#visionPrompt").value.trim();
-      if (!prompt) return toast("Enter a prompt for the vision analysis.");
-      if (!state.settings.fallbackEndpoint || !state.settings.fallbackEnabled) {
-        return toast("Enable the fallback proxy endpoint in the Train tab first.");
-      }
-      showResult("#visionResult", "#visionOutput", "Sending to Claude vision...");
-      try {
+        const goal = $("#actGoal")?.value || "";
+        const visionSchema = '{"summary":"","detected_powerbi_state":"","visible_visuals":[],"visible_errors":[],"fields_or_measures_seen":[],"layout_issues":[],"recommended_next_actions":[],"requires_action_plan":true}';
+        const prompt = `Analyze this Power BI screenshot. User goal: "${goal}". Return ONLY valid JSON matching this schema: ${visionSchema}`;
         const text = await callVisionApi(prompt, state.lastScreenshot);
-        showResult("#visionResult", "#visionOutput", text);
-        logAction("vision", "screenshot", "Analysis received");
-      } catch (err) {
-        showResult("#visionResult", "#visionOutput", "Vision API error: " + err.message);
-      }
+        const visionResult = $("#actVisionResult");
+        const visionOutput = $("#actVisionOutput");
+        if (visionResult) visionResult.style.display = "block";
+        if (visionOutput) visionOutput.textContent = text;
+        toast("Screen analyzed.");
+      } catch (err) { toast("Analysis error: " + err.message); captureFailureEvent("vision", "", {}, {}, err.message); }
+      finally { btn.textContent = "Analyze Screen"; btn.disabled = false; }
     });
 
-    // Action Planner
-    $("#generatePlan").addEventListener("click", async () => {
-      const goal = $("#planGoal").value.trim();
-      if (!goal) return toast("Describe your goal first.");
-      if (!state.settings.fallbackEndpoint || !state.settings.fallbackEnabled) {
-        return toast("Enable the fallback proxy endpoint in the Train tab first.");
-      }
-      const planStatus = $("#planStatus");
-      planStatus.textContent = "Generating action plan...";
-      planStatus.style.display = "block";
-      $("#planSteps").innerHTML = "";
-      $("#runApprovedSteps").disabled = true;
-
+    $("#actPlanBtn")?.addEventListener("click", async () => {
+      const btn = $("#actPlanBtn");
+      const goal = ($("#actGoal")?.value || "").trim();
+      if (!goal) { toast("Enter a goal first."); return; }
+      btn.textContent = "Generating..."; btn.disabled = true;
       try {
-        const screenshot = state.lastScreenshot || null;
-        const plan = await callActionPlanApi(goal, screenshot);
+        if (!state.lastScreenshot) {
+          const res = await captureScreenshot();
+          if (res.ok) { state.lastScreenshot = res.dataUrl; updateScreenshotPreview(res.dataUrl); }
+        }
+        const plan = await callActionPlanApi(goal, state.lastScreenshot);
         state.currentPlan = plan;
         renderActionPlan(plan);
-        $("#runApprovedSteps").disabled = false;
-        planStatus.textContent = `Plan ready — ${plan.steps.length} steps. Approve each step before running.`;
-        logAction("plan", goal.slice(0, 50), `${plan.steps.length} steps generated`);
-      } catch (err) {
-        planStatus.textContent = "Plan error: " + err.message;
-      }
+        const planArea = $("#actPlanArea");
+        if (planArea) planArea.style.display = "block";
+        toast(`Plan ready: ${plan.steps.length} steps`);
+      } catch (err) { toast("Plan error: " + err.message); captureFailureEvent("action_plan", goal, {}, {}, err.message); }
+      finally { btn.textContent = "Generate Plan"; btn.disabled = false; }
     });
 
-    $("#runApprovedSteps").addEventListener("click", async () => {
-      if (!state.currentPlan?.steps?.length) return toast("Generate a plan first.");
-      const approved = state.currentPlan.steps.filter((s) => s.approved && !s.done && !s.skipped);
-      if (!approved.length) return toast("Approve at least one step first.");
-      await runApprovedSteps();
+    $("#actRunBtn")?.addEventListener("click", () => runApprovedSteps());
+    $("#actStopBtn")?.addEventListener("click", () => { state.stopRequested = true; toast("Stopping..."); });
+    $("#approveAllBtn")?.addEventListener("click", () => { if (state.currentPlan) renderActionPlan(state.currentPlan); });
+    $("#deployDaxBtn")?.addEventListener("click", async () => {
+      const dax = ($("#deployDaxInput")?.value || "").trim();
+      if (!dax) { toast("Paste DAX first."); return; }
+      await deployDaxMeasure(dax);
     });
-
-    $("#clearPlan").addEventListener("click", () => {
-      state.currentPlan = null;
-      $("#planSteps").innerHTML = "";
-      $("#planStatus").style.display = "none";
-      $("#runApprovedSteps").disabled = true;
-    });
-
-    // Extended action executor — label click
-    $("#doClickElement").addEventListener("click", () => {
-      const target = $("#clickTarget").value.trim();
-      if (!target) return toast("Enter a label or text.");
-      const result = findAndActElement(target, "click");
-      showExecFeedback(result);
-    });
-
-    $("#doHighlightElement").addEventListener("click", () => {
-      const target = $("#clickTarget").value.trim();
-      if (!target) return toast("Enter a label or text.");
-      const result = findAndActElement(target, "highlight");
-      showExecFeedback(result);
-    });
-
-    // Coordinate actions
-    $("#doCoordClick").addEventListener("click", () => {
-      showExecFeedback(coordAction(false, false));
-    });
-
-    $("#doCoordRightClick").addEventListener("click", () => {
-      showExecFeedback(coordAction(false, true));
-    });
-
-    $("#doCoordDoubleClick").addEventListener("click", () => {
-      showExecFeedback(coordAction(true, false));
-    });
-
-    // Type / clear
-    $("#doTypeInField").addEventListener("click", () => {
-      const targetLabel = $("#typeTarget").value.trim();
-      const text = $("#typeText").value;
-      if (!text) return toast("Enter text to type.");
-      typeIntoField(targetLabel, text);
-    });
-
-    $("#doClearField").addEventListener("click", () => {
-      clearFieldByLabel($("#typeTarget").value.trim());
-    });
-
-    // Keyboard shortcut
-    $("#doPressKey").addEventListener("click", () => {
-      const combo = $("#keyCombo").value.trim();
-      if (!combo) return toast("Enter a key combo.");
-      showExecFeedback(pressKeyCombo(combo));
-    });
-
-    // Scroll + wait
-    $("#doScroll").addEventListener("click", () => {
-      const dir = $("#scrollDir").value;
-      const amt = parseInt($("#scrollAmt").value, 10) || 300;
-      scrollPage(dir, amt);
-    });
-
-    $("#doWait").addEventListener("click", async () => {
-      toast("Waiting 500 ms...");
-      await wait(500);
-      toast("Done.");
-      logAction("wait", "500ms", "OK");
-    });
-
-    // Right / double click
-    $("#doRightClick").addEventListener("click", () => {
-      const target = $("#rightClickTarget").value.trim();
-      if (!target) return toast("Enter a label to right-click.");
-      showExecFeedback(findAndActElement(target, "rightclick"));
-    });
-
-    $("#doDoubleClick").addEventListener("click", () => {
-      const target = $("#dblClickTarget").value.trim();
-      if (!target) return toast("Enter a label to double-click.");
-      showExecFeedback(findAndActElement(target, "doubleclick"));
-    });
-
-    // DOM Scanner
-    $("#readPage").addEventListener("click", () => {
-      renderPageElements(readPageElements(false));
-    });
-
-    $("#readPbiElements").addEventListener("click", () => {
-      renderPageElements(readPageElements(true));
-    });
-
-    // Power BI shortcuts
-    $("#pbiOpenFormat").addEventListener("click", () => {
-      pbiShortcut(["Format", "Format your visuals", "Format pane", "Format visual", "Visualizations"], "Format pane");
-    });
-
-    $("#pbiOpenFields").addEventListener("click", () => {
-      pbiShortcut(["Fields", "Fields pane", "Data pane", "Data", "Show data pane"], "Fields pane");
-    });
-
-    $("#pbiOpenDax").addEventListener("click", () => {
-      pbiShortcut(["New measure", "New quick measure", "Edit measure", "Quick measure"], "measure editor");
-    });
-
-    $("#pbiSaveMeasure").addEventListener("click", () => {
-      // Click the checkmark save button in Power BI DAX editor
-      const saved = pbiShortcut(
-        ["Commit", "Apply", "Save measure", "✓", "Check mark", "Done"],
-        "save button"
-      );
-      if (!saved) {
-        // Fallback: dispatch Enter key
-        pressKeyCombo("Enter");
-        logAction("key", "Enter", "Sent (measure save fallback)");
-      }
-    });
-
-    $("#pbiRefreshVisual").addEventListener("click", () => {
-      pbiShortcut(["Refresh", "Refresh visuals", "Refresh now", "Refresh visual"], "refresh");
-    });
-
-    $("#pbiSelectAllVisuals").addEventListener("click", () => {
-      pressKeyCombo("Ctrl+A");
-    });
-
-    // Action log
-    $("#clearActLog").addEventListener("click", () => {
-      state.actLog = [];
-      renderActLog();
+    $("#scanAllBtn")?.addEventListener("click", () => { renderPageElements(readPageElements(false)); });
+    $("#scanPbiBtn")?.addEventListener("click", () => { renderPageElements(readPageElements(true)); });
+    $("#clearLogBtn")?.addEventListener("click", () => { state.actLog = []; renderActLog(); });
+    $("#exportFailuresBtn")?.addEventListener("click", () => exportFailureCases());
+    $("#clearFailuresBtn")?.addEventListener("click", () => {
+      state.failureLog = [];
+      chrome.storage.local.remove("pbiFailures");
+      const fc = $("#failureCount"); if (fc) fc.textContent = "0 failures stored.";
+      toast("Failure log cleared.");
     });
   }
 
@@ -2019,9 +1757,10 @@
 
   async function captureScreenshot() {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ type: "TAKE_SCREENSHOT" }, (res) => {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve(res);
+      chrome.runtime.sendMessage({ type: "PBI_CAPTURE_VISIBLE_TAB" }, (res) => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        if (!res?.ok) return reject(new Error(res?.error || "Screenshot failed"));
+        resolve(res);
       });
     });
   }
@@ -2029,64 +1768,64 @@
   // ── Vision API ─────────────────────────────────────────────────────────
 
   async function callVisionApi(prompt, screenshotDataUrl) {
-    const response = await fetch(state.settings.fallbackEndpoint, {
+    const endpoint = state.settings.fallbackEndpoint || "http://localhost:8787/fallback";
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        provider: "anthropic",
-        model: state.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
         type: "vision",
         prompt,
-        screenshot: screenshotDataUrl,
+        screenshot: { dataUrl: screenshotDataUrl, mimeType: "image/png" },
         context: state.context,
-        knowledge: state.knowledge
+        knowledge: state.knowledge,
+        model: state.settings.anthropicModel || "claude-sonnet-4-6"
       })
     });
     if (!response.ok) throw new Error(`Vision endpoint HTTP ${response.status}`);
     const data = await response.json();
-    return data.text || data.content || data.message || JSON.stringify(data);
+    if (data.error) throw new Error(data.error);
+    return data.text || JSON.stringify(data.json || data);
   }
 
   // ── Action Planner API ────────────────────────────────────────────────
 
   async function callActionPlanApi(goal, screenshotDataUrl) {
-    const systemPrompt = [
-      "You are a Power BI automation assistant.",
-      "Given a goal and optionally a screenshot of the current Power BI page, return a JSON action plan.",
-      "Response must be valid JSON in this exact shape:",
-      '{ "summary": "...", "steps": [ { "n": 1, "action": "click|type|key|scroll|wait|rightclick|doubleclick", "target": "aria-label or text", "text": "text to type", "combo": "Ctrl+S", "direction": "down", "amount": 300, "ms": 500, "description": "what this step does" } ] }',
-      "Only include fields relevant to each action type.",
-      "Keep steps granular — one action per step.",
-      "Include a wait step after any click that may cause Power BI to load (500ms minimum).",
-      "Target fields use Power BI aria-labels where possible."
-    ].join(" ");
-
-    const response = await fetch(state.settings.fallbackEndpoint, {
+    const endpoint = state.settings.fallbackEndpoint || "http://localhost:8787/fallback";
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        provider: "anthropic",
-        model: state.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
         type: "action_plan",
-        systemPrompt,
-        prompt: `Goal: ${goal}`,
-        screenshot: screenshotDataUrl,
+        goal,
+        screenshot: screenshotDataUrl ? { dataUrl: screenshotDataUrl, mimeType: "image/png" } : null,
         context: state.context,
-        knowledge: state.knowledge
+        availableActions: ["click","double_click","right_click","type","key","scroll","wait","screenshot","drag"],
+        knowledge: state.knowledge,
+        model: state.settings.anthropicModel || "claude-sonnet-4-6"
       })
     });
-
     if (!response.ok) throw new Error(`Planner endpoint HTTP ${response.status}`);
     const data = await response.json();
-    const raw = data.text || data.content || data.message || "";
-
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("Could not parse JSON plan from response.");
-
-    const plan = JSON.parse(jsonMatch[0]);
+    if (data.error) throw new Error(data.error);
+    const raw = data.text || "";
+    let plan;
+    try {
+      plan = data.json || JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || "{}");
+    } catch { throw new Error("Could not parse JSON plan from response."); }
     if (!Array.isArray(plan.steps)) throw new Error("Plan has no steps array.");
-
-    plan.steps = plan.steps.map((s) => ({ ...s, approved: false, done: false, skipped: false }));
+    // Validate steps
+    const validTypes = new Set(["click","double_click","right_click","type","key","scroll","wait","screenshot","drag"]);
+    const HIGH_RISK_WORDS = /delete|remove|publish|save|overwrite|export|share|replace|submit|apply changes|manage access/i;
+    plan.steps = plan.steps.map((s, i) => {
+      const type = (s.type || s.action || "").toLowerCase().replace(/ /g, "_");
+      if (!validTypes.has(type)) s._invalid = true;
+      if (HIGH_RISK_WORDS.test(s.reason || s.target || "")) s.risk_level = "high";
+      s.requires_approval = s.requires_approval !== false;
+      s.approved = false; s.done = false; s.skipped = false;
+      s.id = s.id || `STEP_${String(i+1).padStart(3,"0")}`;
+      s.type = type;
+      return s;
+    });
     return plan;
   }
 
@@ -2094,125 +1833,413 @@
 
   function renderActionPlan(plan) {
     const container = $("#planSteps");
+    if (!container) return;
     container.innerHTML = "";
+    state.stopRequested = false;
 
     if (plan.summary) {
       const sum = document.createElement("div");
-      sum.className = "note";
-      sum.style.marginBottom = "8px";
-      sum.textContent = plan.summary;
+      sum.className = "note"; sum.style.marginBottom = "8px";
+      sum.textContent = `${plan.summary} | Risk: ${plan.risk_level || "unknown"}`;
       container.appendChild(sum);
     }
 
+    const HIGH_RISK_WORDS = /delete|remove|publish|save|overwrite|export|share|replace|submit|apply changes|manage access/i;
+
     plan.steps.forEach((step, i) => {
+      const isHighRisk = step.risk_level === "high" || HIGH_RISK_WORDS.test((step.reason || "") + " " + (step.target || ""));
+      const riskColor = step.risk_level === "high" ? "var(--pbi-red)" : step.risk_level === "medium" ? "#b45309" : "var(--pbi-green)";
+
       const card = document.createElement("div");
       card.className = "step-card";
       card.id = `step-card-${i}`;
+      if (step._invalid) card.style.opacity = "0.4";
       card.innerHTML = `
-        <span class="step-num">${step.n || i + 1}</span>
+        <span class="step-num">${i + 1}</span>
         <div class="step-body">
           <div class="step-desc"></div>
           <div class="step-detail"></div>
+          <div class="step-risk" style="font-size:10px;font-weight:700;margin-top:2px;color:${riskColor}"></div>
         </div>
         <div class="step-actions">
-          <button class="step-btn approve">Approve</button>
+          <button class="step-btn approve" ${step._invalid ? "disabled" : ""}>Approve</button>
           <button class="step-btn skip">Skip</button>
         </div>
       `;
-      card.querySelector(".step-desc").textContent = step.description || step.action;
-      const details = [step.action.toUpperCase()];
+      card.querySelector(".step-desc").textContent = step.reason || step.type || "step";
+      const details = [step.type?.toUpperCase() || "?"];
       if (step.target) details.push(`→ ${step.target}`);
-      if (step.text) details.push(`"${step.text.slice(0, 40)}"`);
-      if (step.combo) details.push(step.combo);
-      if (step.ms) details.push(`${step.ms}ms`);
+      if (step.text) details.push(`"${step.text.slice(0,40)}"`);
+      if (step.keys) details.push(step.keys);
+      if (step.duration_ms) details.push(`${step.duration_ms}ms`);
       card.querySelector(".step-detail").textContent = details.join(" ");
+      card.querySelector(".step-risk").textContent = `Risk: ${step.risk_level || "low"}${isHighRisk ? " ⚠ requires approval" : ""}`;
 
       const approveBtn = card.querySelector(".approve");
       const skipBtn = card.querySelector(".skip");
-
       approveBtn.addEventListener("click", () => {
         step.approved = !step.approved;
         approveBtn.textContent = step.approved ? "Approved ✓" : "Approve";
-        approveBtn.style.background = step.approved ? "var(--pbi-green)" : "";
-        approveBtn.style.color = step.approved ? "#fff" : "";
-        approveBtn.style.borderColor = step.approved ? "var(--pbi-green)" : "";
+        approveBtn.style.cssText = step.approved ? "background:var(--pbi-green);color:#fff;border-color:var(--pbi-green)" : "";
       });
-
       skipBtn.addEventListener("click", () => {
-        step.skipped = true;
-        step.approved = false;
-        card.classList.add("step-skipped");
-        approveBtn.disabled = true;
-        skipBtn.disabled = true;
+        step.skipped = true; step.approved = false;
+        card.classList.add("step-skipped"); approveBtn.disabled = true; skipBtn.disabled = true;
       });
-
       container.appendChild(card);
     });
+
+    const approveAll = $("#approveAllBtn");
+    if (approveAll) {
+      approveAll.addEventListener("click", () => {
+        plan.steps.forEach((s, i) => {
+          if (!s.skipped && !s._invalid) { s.approved = true; }
+          const btn = $(`#step-card-${i}`)?.querySelector(".approve");
+          if (btn && !btn.disabled) { btn.textContent = "Approved ✓"; btn.style.cssText = "background:var(--pbi-green);color:#fff;border-color:var(--pbi-green)"; }
+        });
+      });
+    }
   }
 
   async function runApprovedSteps() {
-    const steps = state.currentPlan.steps.filter((s) => s.approved && !s.done && !s.skipped);
+    if (!state.currentPlan) return;
+    const steps = state.currentPlan.steps.filter((s) => s.approved && !s.done && !s.skipped && !s._invalid);
     const planStatus = $("#planStatus");
+    state.stopRequested = false;
+
+    if (!steps.length) { if (planStatus) planStatus.textContent = "No approved steps to run."; return; }
+
+    // Before screenshot for medium/high risk plans
+    if (["medium","high"].includes(state.currentPlan.risk_level)) {
+      try { const s = await captureScreenshot(); if (s.ok) state.lastScreenshot = s.dataUrl; } catch {}
+    }
 
     for (const step of steps) {
-      const card = $(`#step-card-${step.n - 1}`);
+      if (state.stopRequested) { if (planStatus) planStatus.textContent = "Stopped by user."; return; }
+      const card = $(`#step-card-${state.currentPlan.steps.indexOf(step)}`);
       if (card) card.classList.add("step-running");
-      planStatus.textContent = `Running step ${step.n}: ${step.description || step.action}...`;
-      planStatus.style.display = "block";
+      if (planStatus) planStatus.textContent = `Step ${step.id || step.n}: ${step.reason || step.type}...`;
 
       try {
         const result = await executeStep(step);
         step.done = true;
         if (card) { card.classList.remove("step-running"); card.classList.add("step-done"); }
-        logAction(step.action, step.target || step.text || "", result);
+        logAction(step.type, step.target || step.text || "", result);
       } catch (err) {
-        if (card) { card.classList.remove("step-running"); }
-        logAction(step.action, step.target || "", "ERROR: " + err.message);
-        planStatus.textContent = `Step ${step.n} failed: ${err.message}. Stopped.`;
+        if (card) card.classList.remove("step-running");
+        logAction(step.type, step.target || "", "ERROR: " + err.message);
+        if (planStatus) planStatus.textContent = `Step ${step.id || step.n} failed: ${err.message}. Stopped.`;
+        captureFailureEvent("action_plan", JSON.stringify(step), {}, {}, err.message);
+        // After screenshot on failure
+        try { const s = await captureScreenshot(); if (s.ok) { state.lastScreenshot = s.dataUrl; updateScreenshotPreview(s.dataUrl); } } catch {}
         return;
       }
-
-      await wait(step.postDelay || 120);
+      await wait(120);
     }
 
-    planStatus.textContent = `All ${steps.length} approved steps complete.`;
+    // After screenshot for medium/high risk
+    if (["medium","high"].includes(state.currentPlan.risk_level)) {
+      try { const s = await captureScreenshot(); if (s.ok) state.lastScreenshot = s.dataUrl; } catch {}
+    }
+    if (planStatus) planStatus.textContent = `All ${steps.length} steps complete.`;
+  }
+
+  // ── Power BI State Detector ────────────────────────────────────────────
+
+  function isPowerBILoading() {
+    const indicators = [
+      '[role="progressbar"]',
+      '[class*="spinner"]',
+      '[class*="loading"]',
+      '[class*="progress"]',
+      '[aria-busy="true"]',
+      '[class*="loadingOverlay"]',
+      '[class*="busy"]'
+    ];
+    for (const sel of indicators) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) return true;
+    }
+    const text = document.body.innerText || "";
+    if (/loading\.\.\.|please wait/i.test(text)) return true;
+    return false;
+  }
+
+  function waitForPowerBIIdle(timeoutMs = 8000) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const check = () => {
+        if (!isPowerBILoading()) return resolve(true);
+        if (Date.now() - start > timeoutMs) return resolve(false);
+        setTimeout(check, 200);
+      };
+      setTimeout(check, 300);
+    });
+  }
+
+  function detectPowerBIVisualErrors() {
+    const errorPhrases = [
+      "Something went wrong",
+      "Can't display the visual",
+      "This visual has exceeded",
+      "Couldn't load the data",
+      "See details",
+      "Query exceeded",
+      "The visual has timed out",
+      "Data reduction was applied"
+    ];
+    const found = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const t = node.textContent.trim();
+      for (const phrase of errorPhrases) {
+        if (t.includes(phrase) && !found.includes(phrase)) found.push(phrase);
+      }
+    }
+    return found;
+  }
+
+  function detectPowerBIEditorOpen() {
+    return !!(
+      document.querySelector('[class*="monaco-editor"]') ||
+      document.querySelector('[aria-label*="DAX"]') ||
+      document.querySelector('[aria-label*="formula bar"]') ||
+      document.querySelector('[data-testid*="formula"]')
+    );
+  }
+
+  function detectPowerBIPanes() {
+    return {
+      formatPane: !!document.querySelector('[aria-label*="Format"]'),
+      fieldsPane: !!document.querySelector('[aria-label*="Fields"]'),
+      filterPane: !!document.querySelector('[aria-label*="Filter"]'),
+      visualsPane: !!document.querySelector('[aria-label*="Visualizations"]')
+    };
+  }
+
+  function findElementByLabel(label) {
+    if (!label) return null;
+    const lower = label.toLowerCase();
+    const candidates = Array.from(document.querySelectorAll('button,input,select,textarea,[role="button"],[role="tab"],[role="menuitem"],[aria-label],[title]'));
+    return candidates.sort((a, b) => {
+      const scoreEl = (el) => {
+        const a2 = (el.getAttribute("aria-label") || "").toLowerCase();
+        const t = (el.getAttribute("title") || "").toLowerCase();
+        const tx = (el.textContent || "").replace(/\s+/g," ").trim().toLowerCase();
+        if (a2 === lower || t === lower || tx === lower) return 100;
+        if (a2.includes(lower) || t.includes(lower)) return 60;
+        if (tx.includes(lower) && tx.length < 80) return 40;
+        return 0;
+      };
+      return scoreEl(b) - scoreEl(a);
+    }).find(el => {
+      const a2 = (el.getAttribute("aria-label") || "").toLowerCase();
+      const t = (el.getAttribute("title") || "").toLowerCase();
+      const tx = (el.textContent || "").replace(/\s+/g," ").trim().toLowerCase();
+      return a2.includes(lower) || t.includes(lower) || (tx.includes(lower) && tx.length < 80);
+    }) || null;
   }
 
   async function executeStep(step) {
-    switch (step.action) {
-      case "click":
-        if (step.target) return findAndActElement(step.target, "click");
-        if (step.x != null && step.y != null) return clickAtCoord(step.x, step.y, "left", false);
-        throw new Error("click step has no target or coordinates");
+    if (state.stopRequested) throw new Error("Stopped by user.");
+    const type = (step.type || step.action || "").toLowerCase().replace(/ /g, "_");
 
-      case "rightclick":
-        if (step.target) return findAndActElement(step.target, "rightclick");
-        if (step.x != null && step.y != null) return clickAtCoord(step.x, step.y, "right", false);
-        throw new Error("rightclick step has no target");
+    // Wait for Power BI to be idle before each step
+    await waitForPowerBIIdle(5000);
 
-      case "doubleclick":
-        if (step.target) return findAndActElement(step.target, "doubleclick");
-        if (step.x != null && step.y != null) return clickAtCoord(step.x, step.y, "left", true);
-        throw new Error("doubleclick step has no target");
-
-      case "type":
-        typeIntoField(step.target || "", step.text || "");
-        return `Typed: ${(step.text || "").slice(0, 30)}`;
-
-      case "key":
-        return pressKeyCombo(step.combo || step.key || "");
-
-      case "scroll":
-        scrollPage(step.direction || "down", step.amount || 300);
-        return `Scrolled ${step.direction || "down"} ${step.amount || 300}px`;
-
-      case "wait":
-        await wait(step.ms || 500);
-        return `Waited ${step.ms || 500}ms`;
-
+    switch (type) {
+      case "click": {
+        let el = step.selector ? document.querySelector(step.selector) : null;
+        if (!el && step.target) el = findElementByLabel(step.target);
+        if (!el && step.x != null) return clickAtCoord(step.x, step.y, "left", false);
+        if (!el) throw new Error(`click: no element found for target="${step.target}" selector="${step.selector}"`);
+        el.scrollIntoView({ block: "center" });
+        el.focus(); el.click();
+        el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        return `Clicked: ${step.target || step.selector}`;
+      }
+      case "double_click": {
+        let el = step.selector ? document.querySelector(step.selector) : findElementByLabel(step.target);
+        if (!el && step.x != null) return clickAtCoord(step.x, step.y, "left", true);
+        if (!el) throw new Error(`double_click: no element for "${step.target}"`);
+        el.focus();
+        el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+        return `Double-clicked: ${step.target || step.selector}`;
+      }
+      case "right_click": {
+        let el = step.selector ? document.querySelector(step.selector) : findElementByLabel(step.target);
+        if (!el) throw new Error(`right_click: no element for "${step.target}"`);
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+        return `Right-clicked: ${step.target || step.selector}`;
+      }
+      case "type": {
+        let el = step.selector ? document.querySelector(step.selector) : null;
+        if (!el && step.target) el = findElementByLabel(step.target) || document.activeElement;
+        if (!el || el === document.body) el = document.querySelector('[contenteditable="true"]') || document.querySelector('input:not([type="hidden"])');
+        if (!el) throw new Error("type: no input element found");
+        el.focus();
+        if (el.getAttribute("contenteditable") === "true") {
+          document.execCommand("selectAll", false);
+          document.execCommand("insertText", false, step.text || "");
+        } else {
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set
+            || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+          if (setter) setter.call(el, step.text || ""); else el.value = step.text || "";
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        return `Typed ${(step.text||"").length} chars`;
+      }
+      case "key": {
+        const combo = step.keys || step.text || "";
+        return pressKeyCombo(combo);
+      }
+      case "scroll": {
+        const target = step.selector ? document.querySelector(step.selector) : null;
+        if (target) target.scrollBy(step.dx || 0, step.dy || 300);
+        else window.scrollBy(step.dx || 0, step.dy || 300);
+        return `Scrolled`;
+      }
+      case "wait": {
+        await wait(step.duration_ms || 500);
+        await waitForPowerBIIdle(5000);
+        return `Waited ${step.duration_ms || 500}ms`;
+      }
+      case "screenshot": {
+        const res = await captureScreenshot();
+        if (res.ok) { state.lastScreenshot = res.dataUrl; updateScreenshotPreview(res.dataUrl); }
+        return res.ok ? "Screenshot captured" : `Screenshot failed: ${res.error}`;
+      }
+      case "drag": {
+        const startX = step.x || 0, startY = step.y || 0;
+        const endX = startX + (step.dx || 0), endY = startY + (step.dy || 0);
+        const origin = document.elementFromPoint(startX, startY);
+        if (!origin) throw new Error(`drag: no element at (${startX},${startY})`);
+        origin.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: startX, clientY: startY }));
+        for (let i = 1; i <= 5; i++) {
+          const ix = startX + (endX - startX) * (i / 5);
+          const iy = startY + (endY - startY) * (i / 5);
+          origin.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: ix, clientY: iy }));
+          await wait(20);
+        }
+        const dest = document.elementFromPoint(endX, endY) || origin;
+        dest.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: endX, clientY: endY }));
+        return `Dragged from (${startX},${startY}) to (${endX},${endY})`;
+      }
       default:
-        throw new Error(`Unknown action type: ${step.action}`);
+        throw new Error(`Unknown action type: ${type}`);
     }
+  }
+
+  // ── Screenshot preview helper ──────────────────────────────────────────
+
+  function updateScreenshotPreview(dataUrl) {
+    const img = $("#actScreenshot");
+    if (!img) return;
+    img.src = dataUrl;
+    img.style.display = "block";
+  }
+
+  // ── DAX Deploy Workflow ────────────────────────────────────────────────
+
+  async function deployDaxMeasure(daxText) {
+    const deployStatus = $("#deployDaxStatus");
+    const setStatus = (msg, isErr) => {
+      if (deployStatus) { deployStatus.textContent = msg; deployStatus.style.color = isErr ? "var(--pbi-red)" : "var(--pbi-green)"; deployStatus.style.display = "block"; }
+      logAction("deploy_dax", msg.slice(0,40), isErr ? "ERROR" : "OK");
+    };
+
+    if (!daxText?.trim()) { setStatus("No DAX text provided.", true); return; }
+
+    setStatus("Capturing before screenshot...");
+    let beforeUrl = null;
+    try { const s = await captureScreenshot(); if (s.ok) beforeUrl = s.dataUrl; } catch {}
+
+    setStatus("Looking for New measure button...");
+    await waitForPowerBIIdle(5000);
+    const newMeasureLabels = ["New measure", "New Measure", "Add measure", "Neues Measure"];
+    let clicked = false;
+    for (const lbl of newMeasureLabels) {
+      const el = findElementByLabel(lbl);
+      if (el) { el.click(); clicked = true; break; }
+    }
+    if (!clicked) { setStatus("Could not find 'New measure' button. Open the Modeling tab first.", true); return; }
+
+    setStatus("Waiting for DAX editor...");
+    await wait(800);
+    await waitForPowerBIIdle(5000);
+
+    if (!detectPowerBIEditorOpen()) {
+      setStatus("DAX editor did not open. Try clicking the measure editor manually.", true);
+      return;
+    }
+
+    setStatus("Selecting all and typing DAX...");
+    const editor = document.querySelector('[class*="monaco-editor"] [contenteditable="true"]')
+      || document.querySelector('[contenteditable="true"]');
+    if (!editor) { setStatus("DAX editor element not found.", true); return; }
+    editor.focus();
+    document.execCommand("selectAll", false);
+    await wait(100);
+    document.execCommand("insertText", false, daxText);
+    await wait(300);
+
+    setStatus("Waiting for Power BI to process...");
+    await waitForPowerBIIdle(6000);
+
+    const errors = detectPowerBIVisualErrors();
+    if (errors.length) { setStatus(`Errors detected: ${errors[0]}`, true); return; }
+
+    setStatus("Capturing after screenshot...");
+    try { const s = await captureScreenshot(); if (s.ok) state.lastScreenshot = s.dataUrl; } catch {}
+
+    setStatus("DAX deployed. Review the measure name and save manually.");
+    captureFailureEvent("dax", daxText, {}, { status: "deployed" }, "DAX deploy workflow completed");
+  }
+
+  // ── Failure Capture ────────────────────────────────────────────────────
+
+  async function captureFailureEvent(type, input, engineOutput, claudeOutput, expectedBehavior) {
+    const event = {
+      id: `fail_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+      type,
+      input: String(input).slice(0, 2000),
+      context: { url: location.href, pageMode: state.context?.pageMode, title: document.title },
+      screenshot: state.lastScreenshot
+        ? { capturedAt: new Date().toISOString(), hasImage: true }
+        : { hasImage: false },
+      engineOutput,
+      claudeOutput,
+      expectedBehavior,
+      actionLog: state.actLog.slice(0, 20),
+      createdAt: new Date().toISOString()
+    };
+    state.failureLog.unshift(event);
+    if (state.failureLog.length > 100) state.failureLog.pop();
+    // Persist to chrome.storage.local
+    chrome.storage.local.get(["pbiFailures"], (result) => {
+      const existing = Array.isArray(result.pbiFailures) ? result.pbiFailures : [];
+      const updated = [event, ...existing].slice(0, 200);
+      chrome.storage.local.set({ pbiFailures: updated });
+    });
+  }
+
+  async function loadFailureLog() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(["pbiFailures"], (result) => {
+        state.failureLog = Array.isArray(result.pbiFailures) ? result.pbiFailures : [];
+        resolve(state.failureLog);
+      });
+    });
+  }
+
+  function exportFailureCases() {
+    const blob = new Blob([JSON.stringify(state.failureLog, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `pbi_failures_${Date.now()}.json`; a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ── DOM Scanner ────────────────────────────────────────────────────────

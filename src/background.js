@@ -41,13 +41,14 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "TAKE_SCREENSHOT") {
-    const tabId = sender?.tab?.id;
+  const type = message?.type;
+
+  if (type === "PBI_CAPTURE_VISIBLE_TAB" || type === "TAKE_SCREENSHOT") {
     chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
       if (chrome.runtime.lastError) {
-        sendResponse({ error: chrome.runtime.lastError.message });
+        sendResponse({ ok: false, error: chrome.runtime.lastError.message });
       } else {
-        sendResponse({ dataUrl });
+        sendResponse({ ok: true, dataUrl, capturedAt: new Date().toISOString() });
       }
     });
     return true;
