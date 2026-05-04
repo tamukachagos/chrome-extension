@@ -1,1 +1,20 @@
-{ "name": "pbi-anthropic-proxy", "version": "1.0.0", "scripts": { "start": "node server.js" }, "engines": { "node": ">=18" } }
+{
+  "name": "data-analyst-ai-proxy",
+  "version": "1.1.0",
+  "description": "Local proxy for Data Analyst AI Chrome extension. Forwards requests to the Anthropic API and executes SQL queries.",
+  "scripts": {
+    "start": "node server.js",
+    "install-drivers": "npm install pg mssql mysql2"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "mssql": "^10.0.4",
+    "mysql2": "^3.9.0"
+  },
+  "optionalDependencies": {
+    "pg": "^8.11.3",
+    "mssql": "^10.0.4",
+    "mysql2": "^3.9.0"
+  }
+}

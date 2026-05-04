@@ -1,0 +1,31 @@
+{
+  "description": "Generic browser-tab scenarios used by the overnight training runner. Chrome internal pages such as chrome:// cannot be scripted by extensions; use regular http/https pages.",
+  "open_tabs": [
+    {
+      "name": "Power BI Service",
+      "url": "https://app.powerbi.com/",
+      "purpose": "Power BI-specific panel, screenshot, and action-planning context"
+    },
+    {
+      "name": "Microsoft Learn Power BI Docs",
+      "url": "https://learn.microsoft.com/power-bi/",
+      "purpose": "Generic documentation tab to validate non-Power-BI page context capture"
+    },
+    {
+      "name": "Example Regular Web Page",
+      "url": "https://example.com/",
+      "purpose": "Low-risk static page for generic browser-tab smoke testing"
+    }
+  ],
+  "generic_context_expectations": [
+    "capture page URL, title, headings, selected text, forms, links, and visible text",
+    "screenshot capture should work on regular http/https pages",
+    "action planning may inspect regular pages but should not submit, save, publish, delete, or share without approval"
+  ],
+  "blocked_contexts": [
+    "chrome:// pages",
+    "Chrome Web Store extension pages",
+    "browser settings pages",
+    "other extension pages unless explicitly permitted"
+  ]
+}

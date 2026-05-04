@@ -1,28 +1,59 @@
 {
   "manifest_version": 3,
-  "name": "Power BI Web Copilot",
-  "description": "A local Power BI Service assistant for DAX measures, visual planning, model review, and report-building guidance.",
-  "version": "0.9.1",
+  "name": "Data Analyst AI",
+  "description": "AI data analyst for Power BI, Tableau, and SQL — writes measures, audits visuals, executes goals, and tracks KPIs from a persistent side panel.",
+  "version": "1.1.0",
   "options_page": "rule-tester.html",
   "permissions": [
     "activeTab",
     "tabs",
     "storage",
-    "scripting"
+    "scripting",
+    "sidePanel",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://app.powerbi.com/*",
     "https://*.powerbi.com/*",
+    "https://*.tableau.com/*",
+    "https://public.tableau.com/*",
+    "https://api.powerbi.com/*",
+    "https://*/*",
+    "http://*/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "src/background.js"
   },
+  "side_panel": {
+    "default_path": "src/sidepanel.html"
+  },
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_title": "Power BI Web Copilot"
+    "default_title": "Data Analyst AI",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://app.powerbi.com/*",
+        "https://*.powerbi.com/*"
+      ],
+      "js": [
+        "src/pbiApi.js"
+      ],
+      "run_at": "document_start"
+    },
     {
       "matches": [
         "https://app.powerbi.com/*",
@@ -34,7 +65,31 @@
         "src/skills.js",
         "src/contentScript.js"
       ],
-      "run_at": "document_start"
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.tableau.com/*",
+        "https://public.tableau.com/*"
+      ],
+      "js": [
+        "src/tableauAdapter.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://app.powerbi.com/*",
+        "https://*.powerbi.com/*",
+        "https://*.tableau.com/*",
+        "https://public.tableau.com/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/platformAdapter.js",
+        "src/actionExecutor.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
@@ -45,11 +100,11 @@
         "rules/performance_rules.json",
         "rules/correctness_rules.json",
         "rules/modeling_rules.json",
+        "training/rules_advanced.json",
         "src/daxEngine.js"
       ],
       "matches": [
-        "https://app.powerbi.com/*",
-        "https://*.powerbi.com/*"
+        "<all_urls>"
       ]
     }
   ]

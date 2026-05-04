@@ -1,0 +1,56 @@
+name: Deterministic Training
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: "Run strict gates instead of baseline gates"
+        required: false
+        default: "false"
+
+jobs:
+  training:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install browser runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Run baseline training pipeline
+        if: ${{ github.event.inputs.strict != 'true' }}
+        run: node scripts/runEnterpriseTrainingPipeline.js --browser
+
+      - name: Run strict training pipeline
+        if: ${{ github.event.inputs.strict == 'true' }}
+        run: node scripts/runEnterpriseTrainingPipeline.js --strict --browser
+
+      - name: Upload training artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-reports
+          path: |
+            training/training_report.json
+            training/training_report.md
+            training/browser_smoke_report.json
+            training/reports/
+            training/browser_reports/

@@ -140,6 +140,59 @@ The extension learns from two sources:
 - Export all failure cases as JSON with the **Export Failed Cases** button in the Train tab.
 - Use the exported JSON to improve rules, prompts, or report bugs.
 
+### Overnight deterministic training
+
+Run a single full cycle:
+
+```powershell
+.\scripts\runOvernightTraining.ps1 -Once
+```
+
+Run overnight for 8 hours, every 30 minutes:
+
+```powershell
+.\scripts\runOvernightTraining.ps1 -Hours 8 -IntervalMinutes 30
+```
+
+Open configured regular web tabs at the start of each cycle:
+
+```powershell
+.\scripts\runOvernightTraining.ps1 -Hours 8 -IntervalMinutes 30 -OpenBrowser
+```
+
+The overnight runner performs this loop:
+
+1. Generate and deduplicate synthetic training data.
+2. Expand bulk domain-specific synthetic cases.
+3. Run structural validation with `scripts/testRunner.js`.
+4. Score deterministic matcher behavior with `scripts/trainDeterministicEngine.js`.
+5. Write the latest report to `training/training_report.json`.
+
+Generic browser tabs are configured in `training/browser_tab_scenarios.json`. Chrome extensions cannot inject into `chrome://` browser settings pages, but regular `http://` and `https://` pages can be opened and inspected when the extension has host access.
+
+### Enterprise training pipeline
+
+Run the reproducible baseline pipeline locally:
+
+```powershell
+npm install
+node .\scripts\runEnterpriseTrainingPipeline.js
+```
+
+Run with controlled browser smoke tests:
+
+```powershell
+node .\scripts\runEnterpriseTrainingPipeline.js --browser
+```
+
+Run strict gates when the matcher has improved enough:
+
+```powershell
+node .\scripts\runEnterpriseTrainingPipeline.js --strict --browser
+```
+
+Quality gates are configured in `training/quality_gates.json`. Baseline mode prevents regressions from the current matcher while strict mode defines the production target. CI runs the baseline pipeline on push, pull request, and nightly schedule; strict mode can be triggered manually from GitHub Actions.
+
 ---
 
 ## Troubleshooting

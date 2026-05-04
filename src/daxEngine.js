@@ -765,7 +765,7 @@ function scoreMatch(rule, dax) {
   return scoreMatchParsed(rule, dax, parsed);
 }
 
-function scoreMatchParsed(rule, dax, parsed) {
+function scoreMatchParsed(rule, dax, parsed, modelContext) {
   const normalizedDax = normalizeRuleText(dax);
   const normalizedBadDax = normalizeRuleText(rule.bad_dax);
 
@@ -782,7 +782,7 @@ function scoreMatchParsed(rule, dax, parsed) {
 
   for (const cond of logic.conditions || []) {
     total += 1;
-    if (matchCondition(cond, dax, parsed)) {
+    if (matchCondition(cond, dax, parsed, modelContext)) {
       score += 1;
       conditionScore += 1;
     }
@@ -802,6 +802,17 @@ function scoreMatchParsed(rule, dax, parsed) {
   ) {
     return 1;
   }
+  // Text descriptor inputs (no DAX function calls) that satisfy all conditions should not be
+  // penalised by function-weight dilution — treat as a full condition-only match.
+  if (
+    functionScore.score === 0 &&
+    functionScore.total > 0 &&
+    conditionScore === conditionTotal &&
+    conditionTotal > 0 &&
+    parsed.functions.length === 0
+  ) {
+    return 1;
+  }
 
   return total === 0 ? 0 : score / total;
 }
@@ -814,7 +825,11 @@ function scoreFunctionMatch(logic, dax, parsed = parseDAX(dax)) {
       .sort((a, b) => (b.total === 0 ? 0 : b.score / b.total) - (a.total === 0 ? 0 : a.score / a.total))[0] || { score: 0, total: 0 };
   }
 
-  return scoreFunctionList(parsed, logic.primary_function, logic.secondary_functions || []);
+  const legacyFunctions = Array.isArray(logic.functions) ? logic.functions.filter(Boolean) : [];
+  const primaryFunction = logic.primary_function || legacyFunctions[0];
+  const secondaryFunctions = logic.secondary_functions || legacyFunctions.slice(1);
+
+  return scoreFunctionList(parsed, primaryFunction, secondaryFunctions || []);
 }
 
 function scoreFunctionList(parsed, primaryFunction, secondaryFunctions = []) {
@@ -834,9 +849,318 @@ function scoreFunctionList(parsed, primaryFunction, secondaryFunctions = []) {
   return { score, total };
 }
 
-function matchCondition(cond, dax, parsed = parseDAX(dax)) {
+// ── Model context helpers ─────────────────────────────────────────────────────
+// modelContext schema:
+//   relationships: [{fromTable, fromColumn, toTable, toColumn, direction:"single"|"both",
+//                    cardinality:"many-to-one"|"one-to-one"|"many-to-many", active:bool,
+//                    fromColumnType, toColumnType}]
+//   columnTypes:   {"TableName": {"ColumnName": "integer"|"decimal"|"text"|"date"|...}}
+//   storageModes:  {"TableName": "Import"|"DirectQuery"|"Dual"}
+//   rlsTables:     ["TableName", ...]
+//   hierarchies:   {"TableName": {"HierarchyName": ["Col1","Col2","Col3"]}}
+//   uniqueKeys:    {"TableName": ["ColName", ...]}
+//   dateTable:     {tableName, dateColumn, marked:bool, fiscalYearEndMonth:1-12}
+//   callingContext: "report-visual"|"dax-studio"|"api"|"unknown"
+
+function mcRels(mc)        { return Array.isArray((mc || {}).relationships) ? mc.relationships : []; }
+function mcRlsList(mc)     { return Array.isArray((mc || {}).rlsTables) ? mc.rlsTables.map(function(t){return String(t).toLowerCase();}) : []; }
+function mcHierMap(mc)     { return (mc || {}).hierarchies || {}; }
+function mcColTypes(mc)    { return (mc || {}).columnTypes || {}; }
+function mcStoreModes(mc)  { return (mc || {}).storageModes || {}; }
+function mcDateInfo(mc)    { return (mc || {}).dateTable || {}; }
+
+function mcTableHasRLS(mc, tableName) {
+  return tableName ? mcRlsList(mc).includes(String(tableName).toLowerCase()) : false;
+}
+function mcColumnInHierarchy(mc, tableName, columnName) {
+  if (!tableName || !columnName) return false;
+  var h = mcHierMap(mc);
+  var tKey = Object.keys(h).find(function(k){ return k.toLowerCase() === tableName.toLowerCase(); });
+  if (!tKey) return false;
+  return Object.values(h[tKey]).some(function(cols){ return Array.isArray(cols) && cols.some(function(c){ return String(c).toLowerCase() === columnName.toLowerCase(); }); });
+}
+function mcHasBidirectional(mc, tableName) {
+  if (!tableName) return false;
+  var tn = tableName.toLowerCase();
+  return mcRels(mc).some(function(r){ return r.direction === "both" && ((r.fromTable||"").toLowerCase()===tn || (r.toTable||"").toLowerCase()===tn); });
+}
+function mcHasActiveRelBetween(mc, t1, t2) {
+  if (!t1 || !t2) return false;
+  var a = t1.toLowerCase(), b = t2.toLowerCase();
+  return mcRels(mc).some(function(r){ return r.active !== false && (((r.fromTable||"").toLowerCase()===a&&(r.toTable||"").toLowerCase()===b)||((r.fromTable||"").toLowerCase()===b&&(r.toTable||"").toLowerCase()===a)); });
+}
+function mcAnyActiveRel(mc)     { return mcRels(mc).some(function(r){ return r.active !== false; }); }
+function mcAnyManyToMany(mc)    { return mcRels(mc).some(function(r){ return r.cardinality === "many-to-many"; }); }
+function mcAnyFloatJoinKey(mc)  { return mcRels(mc).some(function(r){ return r.fromColumnType === "decimal" || r.toColumnType === "decimal"; }); }
+function mcAnyTextJoinKey(mc)   { return mcRels(mc).some(function(r){ return r.fromColumnType === "text" || r.toColumnType === "text"; }); }
+function mcGetColType(mc, tableName, columnName) {
+  if (!tableName || !columnName) return null;
+  var ct = mcColTypes(mc);
+  var tKey = Object.keys(ct).find(function(k){ return k.toLowerCase() === tableName.toLowerCase(); });
+  if (!tKey) return null;
+  var cKey = Object.keys(ct[tKey]).find(function(k){ return k.toLowerCase() === columnName.toLowerCase(); });
+  return cKey ? ct[tKey][cKey] : null;
+}
+function mcAnyDirectQuery(mc)    { return Object.values(mcStoreModes(mc)).some(function(m){ return m === "DirectQuery"; }); }
+function mcDateTableMarked(mc)   { return mcDateInfo(mc).marked === true; }
+function mcFiscalEndMonth(mc)    { return mcDateInfo(mc).fiscalYearEndMonth || 12; }
+function mcCallingCtx(mc)        { return (mc || {}).callingContext || "unknown"; }
+// rowCounts: { "TableName": rowCount } — used for volume-aware threshold calibration
+function mcRowCounts(mc)         { return (mc || {}).rowCounts || {}; }
+// calculatedTables: [{ name, dependsOn:[], nonFoldable:bool }] — Power Query dependency graph
+function mcCalcTables(mc)        { return Array.isArray((mc || {}).calculatedTables) ? mc.calculatedTables : []; }
+function mcIsCalcTable(mc, tableName) {
+  if (!tableName) return false;
+  var tn = tableName.toLowerCase();
+  return mcCalcTables(mc).some(function(t){ return String(t.name || "").toLowerCase() === tn; });
+}
+function mcIsNonFoldable(mc, tableName) {
+  if (!tableName) return false;
+  var tn = tableName.toLowerCase();
+  var entry = mcCalcTables(mc).find(function(t){ return String(t.name || "").toLowerCase() === tn; });
+  return entry ? entry.nonFoldable === true : false;
+}
+function mcDependsOnCalcTable(mc, tableName) {
+  if (!tableName) return false;
+  var tn = tableName.toLowerCase();
+  var entry = mcCalcTables(mc).find(function(t){ return String(t.name || "").toLowerCase() === tn; });
+  if (!entry || !Array.isArray(entry.dependsOn)) return false;
+  return entry.dependsOn.some(function(dep){ return mcIsCalcTable(mc, dep); });
+}
+function mcRowCount(mc, tableName) {
+  if (!tableName) return null;
+  var rc = mcRowCounts(mc);
+  var key = Object.keys(rc).find(function(k){ return k.toLowerCase() === tableName.toLowerCase(); });
+  return key != null ? rc[key] : null;
+}
+function mcIsLargeTable(mc, tableName, threshold) {
+  var count = mcRowCount(mc, tableName);
+  return count != null && count >= (threshold || 1000000);
+}
+function mcHasContext(mc)        { return mc && (mcRels(mc).length > 0 || mcRlsList(mc).length > 0 || Object.keys(mcHierMap(mc)).length > 0 || Object.keys(mcColTypes(mc)).length > 0 || Object.keys(mcStoreModes(mc)).length > 0 || Object.keys(mcRowCounts(mc)).length > 0 || mcCalcTables(mc).length > 0 || mc.dateTable !== undefined || mc.callingContext !== undefined); }
+// ─────────────────────────────────────────────────────────────────────────────
+
+function matchCondition(cond, dax, parsed, modelContext) {
+  if (parsed === undefined) parsed = parseDAX(dax);
+  var mc = modelContext || {};
   const key = normalizeRuleText(cond).replace(/\s+/g, "_");
   const source = String(dax || "");
+
+  // ── Model-context overrides: deterministic when schema is provided ──────────
+  if (mcHasContext(mc)) {
+    // adv-cor-022: ISINSCOPE — if column IS in a known hierarchy, don't flag it
+    if (key.includes("column_argument_is_not_part_of_a_matrix") || key.includes("visual_does_not_drill_down")) {
+      if (!hasFunctionCall(source, "ISINSCOPE")) return false;
+      var sm022 = source.match(/\bISINSCOPE\s*\(\s*((?:'[^']+'|[\w ]+))\[([^\]]+)\]/i);
+      if (sm022) {
+        var t022 = cleanTableName(sm022[1]), col022 = sm022[2].trim();
+        if (Object.keys(mcHierMap(mc)).length > 0) {
+          if (mcColumnInHierarchy(mc, t022, col022)) return false; // valid drilldown column
+          var isinCount022c = (source.match(/\bISINSCOPE\s*\(/gi) || []).length;
+          return isinCount022c === 1 && !hasFunctionCall(source, "ALLSELECTED");
+        }
+      }
+    }
+    // adv-perf-038: ALL on table with RLS — definitive via rlsTables
+    if (key.includes("all_wraps_a_fact_table_that_has_rls")) {
+      if (mcRlsList(mc).length > 0) {
+        return getFunctionArgSets(source, "ALL").some(function(args){ return args.length === 1 && mcTableHasRLS(mc, cleanTableName(args[0])); });
+      }
+    }
+    // adv-model-075: REMOVEFILTERS — table has RLS
+    if (key.includes("table_has_rls_roles_defined") && !key.includes("all_wraps")) {
+      if (mcRlsList(mc).length > 0) {
+        return getFunctionArgSets(source, "REMOVEFILTERS").some(function(args){ return args.length === 1 && mcTableHasRLS(mc, cleanTableName((args[0]||"").split("[")[0])); });
+      }
+    }
+    // adv-cor-014 / adv-model-054: bidirectional relationship — definitive
+    if (key.includes("table_has_bidirectional_or_cross-filter") || key.includes("bidirectional_or_cross-filter_relationships") || key.includes("dimension_has_a_bidirectional_relationship")) {
+      if (mcRels(mc).length > 0) {
+        var bmatch = source.match(/\bHASONEFILTER\s*\(\s*((?:'[^']+'|[\w ]+))\[/i) || source.match(/(?:^|\s)((?:Dim\w+|Geo|Product|Customer|Region|Geography))\[/i);
+        var btable = bmatch ? cleanTableName(bmatch[1]) : null;
+        return btable ? mcHasBidirectional(mc, btable) : mcRels(mc).some(function(r){ return r.direction === "both"; });
+      }
+    }
+    // adv-cor-002 / adv-perf-033 / adv-perf-073: LOOKUPVALUE — active relationship exists
+    if (key.includes("lookup_key_column_matches_an_active_relationship") || key.includes("target_table_is_directly_related") || key.includes("lookupvalue_lookup_keys_match") || key.includes("a_direct_relationship_could_replace")) {
+      if (mcRels(mc).length > 0 && hasFunctionCall(source, "LOOKUPVALUE")) return mcAnyActiveRel(mc);
+    }
+    // adv-model-064: float/decimal join column
+    if (key.includes("relationship_join_column_has_decimal") || key.includes("float_comparison_can_fail")) {
+      if (mcRels(mc).length > 0) return mcAnyFloatJoinKey(mc);
+    }
+    // adv-model-065: text join column with potential mixed case
+    if (key.includes("relationship_join_column_is_text_type") || key.includes("source_data_has_inconsistent_casing")) {
+      if (mcRels(mc).length > 0) return mcAnyTextJoinKey(mc);
+    }
+    // adv-model-066: many-to-many cardinality
+    if (key.includes("power_bi_sets_cardinality_to_many-to-many") || key.includes("measure_totals_are_inflated")) {
+      if (mcRels(mc).length > 0) return mcAnyManyToMany(mc);
+    }
+    // adv-model-068: DirectQuery storage mode
+    if (key.includes("report_is_in_directquery_mode") || key.includes("fact_table_has_no_date_or_key_filter") || key.includes("visuals_load_slowly")) {
+      if (Object.keys(mcStoreModes(mc)).length > 0) return mcAnyDirectQuery(mc);
+    }
+    // adv-perf-050: no marked Date table
+    if (key.includes("no_marked_date_table") || key.includes("auto_date/time_is_enabled")) {
+      if (mc.dateTable !== undefined) return !mcDateTableMarked(mc);
+    }
+    // adv-cor-024: non-December fiscal year
+    if (key.includes("non-december_fiscal_year") || key.includes("model_documentation_or_date_table_indicates_non-december")) {
+      if (mc.dateTable !== undefined) {
+        if (!hasFunctionCall(source, "DATESYTD")) return false;
+        return mcFiscalEndMonth(mc) !== 12;
+      }
+    }
+    // adv-cor-004: calling context — ALLSELECTED in DAX Studio always returns ALL
+    if (key.includes("measure_intended_for_use_in_visual") || key.includes("no_isinscope_guard_around_allselected")) {
+      if (mc.callingContext) {
+        if (mc.callingContext === "dax-studio" || mc.callingContext === "api") return hasFunctionCall(source, "ALLSELECTED");
+        if (mc.callingContext === "report-visual") return hasFunctionCall(source, "ALLSELECTED") && !hasFunctionCall(source, "ISINSCOPE");
+      }
+    }
+    // adv-perf-036: DISTINCTCOUNT on text column — definitive via columnTypes
+    if (key.includes("argument_column_is_a_text_type_composite_key") || key.includes("distinctcount_on_text_is_slower")) {
+      if (!hasFunctionCall(source, "DISTINCTCOUNT")) return false;
+      var dcm = source.match(/\bDISTINCTCOUNT\s*\(\s*((?:'[^']+'|[\w ]+))\[([^\]]+)\]/i);
+      if (dcm && Object.keys(mcColTypes(mc)).length > 0) return mcGetColType(mc, cleanTableName(dcm[1]), dcm[2].trim()) === "text";
+    }
+    // adv-cor-020: MAX/MIN on text column — definitive via columnTypes
+    if (key.includes("applied_to_a_text_or_string_column")) {
+      var maxm = source.match(/\b(?:MAX|MIN)\s*\(\s*((?:'[^']+'|[\w ]+))\[([^\]]+)\]/i);
+      if (maxm && Object.keys(mcColTypes(mc)).length > 0) return mcGetColType(mc, cleanTableName(maxm[1]), maxm[2].trim()) === "text";
+    }
+    // adv-perf-043: isinscope_will_always_return_false — column IS in hierarchy → not an issue
+    if (key.includes("isinscope_will_always_return_false")) {
+      if (Object.keys(mcHierMap(mc)).length > 0) {
+        var isinm = source.match(/\bISINSCOPE\s*\(\s*((?:'[^']+'|[\w ]+))\[([^\]]+)\]/i);
+        if (isinm && mcColumnInHierarchy(mc, cleanTableName(isinm[1]), isinm[2].trim())) return false;
+      }
+    }
+    // adv-perf-042: TOPN — calibrate threshold using actual row count from modelContext
+    if (key.includes("n_argument_>_1000") || key.includes("applied_to_a_fact_table_not_a_dimension") || key.includes("result_immediately_aggregated")) {
+      if (Object.keys(mcRowCounts(mc)).length > 0) {
+        var topnMatch = source.match(/\bTOPN\s*\(\s*(\d+)/i);
+        if (!topnMatch) return false;
+        var topnN = Number(topnMatch[1]);
+        var topnTableMatch = source.match(/\bTOPN\s*\(\s*\d+\s*,\s*((?:'[^']+'|[\w ]+))\s*[,)]/i);
+        var topnTable = topnTableMatch ? cleanTableName(topnTableMatch[1]) : null;
+        var tableRows = topnTable ? mcRowCount(mc, topnTable) : null;
+        if (tableRows != null) {
+          // Fire if N exceeds 5% of actual row count OR exceeds 1000 absolute
+          return topnN > 1000 || topnN > tableRows * 0.05;
+        }
+        return topnN > 1000;
+      }
+    }
+    // adv-perf-032: CONTAINS inside FILTER — large table confirmed via rowCounts
+    if (key.includes("contains_inside_filter_over_a_fact") || key.includes("alternative_relationship_or_treatas")) {
+      if (Object.keys(mcRowCounts(mc)).length > 0 && hasFunctionCall(source, "CONTAINS") && hasFunctionCall(source, "FILTER")) {
+        var filterTableMatch032 = source.match(/\bFILTER\s*\(\s*((?:'[^']+'|[\w ]+))\s*[,)]/i);
+        var filterTable032 = filterTableMatch032 ? cleanTableName(filterTableMatch032[1]) : null;
+        if (filterTable032 && mcIsLargeTable(mc, filterTable032, 100000)) return true;
+      }
+    }
+    // adv-model-082: calculated table chaining — definitive via calculatedTables context
+    if (key.includes("source_table_is_a_calculated_table") || key.includes("calculated_table_references_another_calculated_table") || key.includes("full_recompute_on_every_refresh_for_both")) {
+      if (mcCalcTables(mc).length > 0) {
+        // Find any table referenced in the source that is itself a calculated table which depends on another calc table
+        var referencedTables = extractTables(extractColumns(source));
+        // Also check bare table references in FILTER/CALCULATETABLE patterns
+        var bareTableMatches = source.match(/\b(?:FILTER|CALCULATETABLE|ADDCOLUMNS|SELECTCOLUMNS|SUMMARIZE)\s*\(\s*((?:'[^']+'|[\w ]+))\s*[,)]/gi) || [];
+        bareTableMatches.forEach(function(m) {
+          var tm = m.match(/\b(?:FILTER|CALCULATETABLE|ADDCOLUMNS|SELECTCOLUMNS|SUMMARIZE)\s*\(\s*((?:'[^']+'|[\w ]+))\s*[,)]/i);
+          if (tm) referencedTables.push(cleanTableName(tm[1]));
+        });
+        return referencedTables.some(function(t) { return mcDependsOnCalcTable(mc, t); });
+      }
+    }
+    // adv-model-083: measure over table built from non-foldable M (List.Generate, Table.Buffer)
+    if (key.includes("table_was_built_from_a_non-foldable_m_expression") || key.includes("list.generate_or_table.buffer") || key.includes("incremental_refresh_will_not_apply")) {
+      if (mcCalcTables(mc).length > 0) {
+        var allTableRefs = extractTables(extractColumns(source));
+        var bareRefs083 = source.match(/\b(?:COUNTROWS|SUMX|FILTER|CALCULATETABLE)\s*\(\s*((?:'[^']+'|[\w ]+))\s*[,)]/gi) || [];
+        bareRefs083.forEach(function(m) {
+          var tm = m.match(/\b(?:COUNTROWS|SUMX|FILTER|CALCULATETABLE)\s*\(\s*((?:'[^']+'|[\w ]+))\s*[,)]/i);
+          if (tm) allTableRefs.push(cleanTableName(tm[1]));
+        });
+        return allTableRefs.some(function(t) { return mcIsNonFoldable(mc, t); });
+      }
+    }
+  }
+  // ── End model-context overrides ──────────────────────────────────────────────
+
+  // adv-cor-001: FILTER(ALL(Dim)) → replace with direct column filter
+  if (key.includes("filter_wraps_all_of_a_dimension") || key.includes("filter_would_produce_same_result") || key.includes("equality_or_range_on_a_single_column")) return filterWrapsAllDimension(source);
+  // adv-cor-008: CONCATENATEX missing 4th order-by argument
+  if (key.includes("no_order-by_expression_provided") || key.includes("displayed_in_a_card_or_label_where_order")) return concatenatexMissingOrderBy(source);
+  // adv-cor-010: FORMAT wrapping a numeric measure (not date/text)
+  if (key.includes("format_wraps_a_numeric_measure") || key.includes("result_used_in_a_visual_that_aggregates") || key.includes("not_used_exclusively_in_a_text_card")) return formatWrapsNumericMeasure(source);
+  // adv-perf-038: ALL(FactTable) bypasses RLS — exclude VAR-based intentional patterns, but also catch VAR+CALCULATE+ALL(Dim) patterns
+  if (key.includes("all_wraps_a_fact_table_that_has_rls") || key.includes("unfiltered_totals_to_all_users")) return (hasTableScopedFunctionCall(source, "ALL", isLikelyFactTable) && !/\bVAR\b/i.test(source)) || (/\bVAR\b/i.test(source) && hasFunctionCall(source, "CALCULATE") && hasTableScopedFunctionCall(source, "ALL", function(t) { return !isLikelyFactTable(t); }));
+  // adv-perf-039: IF inside SUMX or SUMX over direct fact column
+  if (key.includes("if_inside_sumx_tests_a_condition") || (key.includes("simple_column_comparison") && key.includes("calculate_filter"))) return ifInsideSumx(source) || sumxDirectFactColumn(source);
+  // adv-model-075: REMOVEFILTERS applied to full table OR a single specific column (multiple-column form is valid and excluded)
+  if (key.includes("removefilters_applied_to_a_full_table") || key.includes("table_has_rls_roles_defined") || key.includes("multiple_security_roles")) {
+    if (removefiltersOnFullTable(source)) return true;
+    const matches = source.match(/\bREMOVEFILTERS\s*\(/gi) || [];
+    return matches.length === 1 && /\bREMOVEFILTERS\s*\(\s*(?:'[^']+'|[\w ]+)\[[^\]]+\]\s*\)/i.test(source);
+  }
+  // adv-perf-069: COUNTROWS wrapping FILTER on a fact table
+  if (key.includes("countrows_wraps_a_filter_on_a_fact") || key.includes("condition_inside_filter_is_a_simple_equality") || (key.includes("no_table-level") && key.includes("iterator"))) return countrowsFilterFact(source);
+  // adv-cor-070: TOPN used as a CALCULATE filter without secondary sort (not standalone TOPN)
+  if (key.includes("topn_has_exactly_3_arguments") || key.includes("no_secondary_sort_column") || key.includes("result_is_used_in_a_calculate_filter_or_sumx")) return topnInsideCalculate(source);
+  // adv-cor-007: TOPN or CONCATENATEX missing secondary tiebreaker
+  if (key.includes("no_secondary_tiebreaker") || key.includes("only_one_order-by") || key.includes("measure_values_can_repeat")) return topnMissingTiebreaker(source) || concatenatexMissingOrderBy(source);
+  // adv-perf-074: DATEADD with -365/365 offset in DAY interval
+  // adv-perf-044 also handled here for DATEADD(-1, YEAR) — SAMEPERIODLASTYEAR is preferred
+  if (key.includes("dateadd_offset_is") || key.includes("interval_is_day") || key.includes("intent_is_to_compare_same_period") || key.includes("granularity_is_day") || key.includes("sameperiodlastyear_would_handle")) return dateaddMinus365Day(source) || dateaddMinusOneYear(source);
+  // adv-perf-075: three or more OR conditions in same CALCULATE filter
+  if (key.includes("three_or_more_or_conditions") || key.includes("all_or_branches_test_the_same_column") || key.includes("in_operator_would_express_the_same_logic")) return threeOrMoreOrConditions(source);
+  // adv-model-076: hardcoded numeric year literal used as filter
+  if (key.includes("numeric_year_literal") || key.includes("year_literal") || (key.includes("current_year") && key.includes("measure"))) return hasHardcodedYearLiteral(source);
+  if (key.includes("hardcoded_constant") && key.includes("parameter_or_slicer")) return hasHardcodedYearLiteral(source) && !hasFunctionCall(source, "YEAR") && !hasFunctionCall(source, "TODAY");
+  // adv-perf-077: RANKX over ALL() of a fact table
+  if (key.includes("rankx_first_argument_is_all") || key.includes("ranking_over_the_fact_table")) return rankxOverFactTable(source);
+  // adv-cor-078: SWITCH with duplicate case values or empty string case
+  if (key.includes("switch_first_argument_is_not_true")) return switchNotTrue(source);
+  if (key.includes("identical_strings_or_numbers") || (key.includes("second_occurrence") && key.includes("duplicate"))) return switchHasDuplicateCases(source) || switchHasEmptyStringCase(source);
+  // adv-model-079: TODAY/NOW in a calculated column with date arithmetic
+  if (key.includes("today()_or_now()_used") || (key.includes("today") && key.includes("calculated_column"))) return hasFunctionCall(source, "TODAY") || hasFunctionCall(source, "NOW");
+  if (key.includes("column_stores_age") || key.includes("days-since_value")) return todayNowInDateArithmetic(source);
+  if (key.includes("value_becomes_incorrect_between")) return todayNowInDateArithmetic(source);
+  // adv-model-082: calculated table chaining — heuristic: table name contains "Staged"|"Transformed"|"Prepared"|"Cleaned" and FILTER/CALCULATETABLE wraps another similarly-named table
+  if (key.includes("source_table_is_a_calculated_table") || key.includes("calculated_table_references_another_calculated_table") || key.includes("full_recompute_on_every_refresh_for_both")) {
+    var calcChainMatch = source.match(/\b(?:FILTER|CALCULATETABLE|ADDCOLUMNS|SELECTCOLUMNS)\s*\(\s*((?:'[^']+'|[\w ]+))\s*[,)]/i);
+    if (!calcChainMatch) return false;
+    var chainTable = cleanTableName(calcChainMatch[1]);
+    return /Staged|Transformed|Prepared|Cleaned|Processed|Derived|Computed/i.test(chainTable);
+  }
+  // adv-model-083: measure over non-foldable M table — heuristic: comment mentions Table.FromList or List.Accumulate
+  // (List.Generate and Table.Buffer are already covered by adv-model-058; avoid double-flagging)
+  if (key.includes("table_was_built_from_a_non-foldable_m_expression") || key.includes("list.generate_or_table.buffer") || key.includes("incremental_refresh_will_not_apply")) {
+    return /Table\.FromList\s*\(|List\.Accumulate\s*\(/i.test(source);
+  }
+  // adv-cor-080: SUM on semi-additive balance/snapshot column — missing time guard
+  if (key.includes("sum_aggregates_a_balance_or_snapshot_column") || key.includes("column_name_ends_in_balance_stock_inventory_or_level") || key.includes("no_lastdate_lastnonblank_or_closing_balance_wrapper")) {
+    if (!hasFunctionCall(source, "SUM")) return false;
+    var sumColMatch = source.match(/\bSUM\s*\(\s*(?:'[^']+'|[\w ]+)\[([^\]]+)\]/i);
+    if (!sumColMatch) return false;
+    var sumColName = sumColMatch[1];
+    // Qty/Count/Amount suffixes indicate additive flow columns, not balances
+    if (/(?:qty|quantity|count|amount|amt|num|number)$/i.test(sumColName)) return false;
+    if (!/balance|stock|level|position|closing|opening|ending|beginning|holdings?/i.test(sumColName)) return false;
+    return !hasFunctionCall(source, "LASTDATE") && !hasFunctionCall(source, "LASTNONBLANK") && !hasFunctionCall(source, "CLOSINGBALANCEMONTH") && !hasFunctionCall(source, "OPENINGBALANCEMONTH") && !hasFunctionCall(source, "AVERAGEX") && !hasFunctionCall(source, "SUMX");
+  }
+  // adv-cor-081: COUNTROWS on a snapshot/inventory table without date filter
+  if (key.includes("countrows_targets_a_snapshot_or_inventory_table") || key.includes("table_name_indicates_snapshot_inventory_or_positions") || key.includes("no_date_or_calculate_filter_applied")) {
+    if (!hasFunctionCall(source, "COUNTROWS")) return false;
+    var crTableMatch = source.match(/\bCOUNTROWS\s*\(\s*((?:'[^']+'|[\w ]+))\s*\)/i);
+    if (!crTableMatch) return false;
+    var crTable = cleanTableName(crTableMatch[1]);
+    if (!/snapshot|inventory|balance|stock|position|holdings?|backlog|open.order|open.item/i.test(crTable)) return false;
+    return !hasFunctionCall(source, "LASTDATE") && !hasFunctionCall(source, "CALCULATE") && !hasFunctionCall(source, "FILTER");
+  }
 
   if (key === "row_context_required_false") return isDirectColumnSumx(source);
   if (key === "filter_iterates_fact_table") return filterIteratesFactTable(source);
@@ -844,7 +1168,7 @@ function matchCondition(cond, dax, parsed = parseDAX(dax)) {
   if (key.includes("division")) return /(^|[^/])\/([^/]|$)/.test(source);
   if (key.includes("no_zero_handling")) return /(^|[^/])\/([^/]|$)/.test(source) && !hasFunctionCall(source, "DIVIDE");
   if (key.includes("denominator_is_expression")) return hasTopLevelDivision(source);
-  if (key.includes("blank")) return /=\s*BLANK\s*\(/i.test(source);
+  if (key.includes("blank") && !key.includes("returns_blank") && !key.includes("skip_blank") && !key.includes("blank_is") && !key.includes("valid_blank")) return /=\s*BLANK\s*\(/i.test(source);
   if (key.includes("or_operator")) return hasSameColumnOrFilter(source);
   if (key.includes("same_column_multi_value")) return hasSameColumnOrFilter(source) || hasConflictingFilterColumn(source);
   if (key.includes("conflicting_values")) return hasConflictingFilterColumn(source);
@@ -871,6 +1195,8 @@ function matchCondition(cond, dax, parsed = parseDAX(dax)) {
   if (key.includes("sumx_expression_direct_column")) return hasSumxFilterDirectColumn(source);
   if (key.includes("filter_simple_scalar_comparison")) return filterHasSimpleColumnPredicate(source);
   if (key.includes("filter_simple_equality")) return filterHasSimpleColumnEquality(source);
+  // adv-cor-020: MAX/MIN on text column with numeric-looking invoice/document number or Text suffix
+  if (key.includes("applied_to_a_text_or_string_column") || key.includes("column_contains_numeric-looking") || key.includes("result_is_used_as_a_date_or_numeric_threshold")) return (hasFunctionCall(source, "MAX") || hasFunctionCall(source, "MIN")) && (/\b(?:MAX|MIN)\s*\(\s*(?:'[^']+'|[\w ]+)\[[^\]]*(Invoice|Document|Receipt|Voucher|Serial)\w*Number\b[^\]]*\]/i.test(source) || /\b(?:MAX|MIN)\s*\(\s*(?:'[^']+'|[\w ]+)\[[^\]]*Text\s*\]/i.test(source));
   if (key.includes("simple_scalar_comparison") || key.includes("threshold")) return filterHasInequalityColumnPredicate(source);
   if (key.includes("filter_iterates")) return filterIteratesFactTable(source);
   if (key.includes("direct_column") || key.includes("expression_type_direct_column")) return isDirectColumnSumx(source);
@@ -910,7 +1236,351 @@ function matchCondition(cond, dax, parsed = parseDAX(dax)) {
   if (key.includes("same_fact_table_filtered_multiple_times")) return hasFunctionCall(source, "UNION") && repeatedFilterTable(source);
   if (key.includes("filters_can_be_combined")) return hasFunctionCall(source, "UNION") && repeatedFilterTable(source);
 
+  // adv-perf-046: PARALLELPERIOD with -1 offset (rolling window, not a true parallel period)
+  if (key.includes("rolling_window_not_a_parallel") || key.includes("parallelperiod_shifts_the_full")) return hasFunctionCall(source, "PARALLELPERIOD") && /\bPARALLELPERIOD\s*\([^,]+,\s*-1\s*,/i.test(source);
+  // adv-perf-001: FILTER(ALL()) valid for range conditions / fact-table security, or FILTER on non-fact dim table
+  if (key.includes("filter_wraps_all()_of_any_table") || key.includes("valid_for_range_conditions")) return hasFunctionCall(source, "CALCULATE") && /\bFILTER\s*\(\s*ALL\s*\(/i.test(source);
+  if (key.includes("filter_on_a_non-fact_dimension_table") || key.includes("multi-column_condition_—_acceptable_performance")) { if (!hasFunctionCall(source, "CALCULATE") || !hasFunctionCall(source, "FILTER")) return false; const fa0 = (getFirstFunctionArgs(source, "FILTER") || [])[0] || ""; return !/^ALL\s*\(/i.test(fa0.trim()) && !isLikelyFactTable(cleanTableName(fa0)); }
+  // adv-cor-002: LOOKUPVALUE when active relationship exists (any number of key-pairs)
+  if (key.includes("lookup_key_column_matches_an_active_relationship") || key.includes("target_table_is_directly_related")) return hasFunctionCall(source, "LOOKUPVALUE") && !hasFunctionCall(source, "SUMX") && !hasFunctionCall(source, "AVERAGEX");
+  // adv-cor-003: SELECTEDVALUE without guard, OR HASONEVALUE guarding SELECTEDVALUE (redundant), OR bare division
+  if (key.includes("no_isinscope_or_hasonevalue_guard") || (key.includes("column_is_not_a_slicer") && key.includes("single-select"))) return (hasFunctionCall(source, "SELECTEDVALUE") && !hasFunctionCall(source, "ISINSCOPE") && !hasFunctionCall(source, "HASONEVALUE") && (getFirstFunctionArgs(source, "SELECTEDVALUE") || []).length === 1) || (hasFunctionCall(source, "HASONEVALUE") && hasFunctionCall(source, "SELECTEDVALUE")) || (/\[[^\]]+\]\s*\/\s*\[[^\]]+\]/.test(source) && !hasFunctionCall(source, "DIVIDE") && !hasFunctionCall(source, "SELECTEDVALUE"));
+  if (key.includes("used_in_a_card_or_label_visual_where_blank_is_misleading")) return (hasFunctionCall(source, "SELECTEDVALUE") && !hasFunctionCall(source, "ISINSCOPE") && !hasFunctionCall(source, "HASONEVALUE") && (getFirstFunctionArgs(source, "SELECTEDVALUE") || []).length === 1) || (hasFunctionCall(source, "HASONEVALUE") && hasFunctionCall(source, "SELECTEDVALUE")) || (/\[[^\]]+\]\s*\/\s*\[[^\]]+\]/.test(source) && !hasFunctionCall(source, "DIVIDE") && !hasFunctionCall(source, "SELECTEDVALUE"));
+  // adv-cor-005: SWITCH(TRUE()) with overlapping conditions — first match makes later narrower conditions unreachable
+  if (key.includes("first_argument_is_true")) return /\bSWITCH\s*\(\s*TRUE\s*\(\s*\)/i.test(source);
+  if (key.includes("two_or_more_conditions_have_overlapping") || key.includes("narrower_condition_can_never_be_reached")) return switchTrueOverlapping(source) || (/\bSWITCH\s*\(\s*TRUE\s*\(\s*\)/i.test(source) && hasFunctionCall(source, "ISBLANK"));
+  // adv-cor-011: YEAR(TODAY()) in measure with Date table year column
+  if (key.includes("today()_used_inside_a_measure_to_derive") || key.includes("no_parameterization_via_what-if")) return hasFunctionCall(source, "YEAR") && hasFunctionCall(source, "TODAY") && !hasFunctionCall(source, "HASONEVALUE") && !(source.includes("&") && /\b(Revenue|Sales|Profit|Amount|Data|Report|Period|as\s+of|since|through|Until)\b/i.test(source));
+  if (key.includes("compared_to_a_date_table_year_column")) return /\b(?:'?Date'?|DimDate|DateDim)\[[^\]]*Year[^\]]*\]/i.test(source) && hasFunctionCall(source, "YEAR") && hasFunctionCall(source, "TODAY");
+  // adv-cor-015: CALENDAR with start date after end date
+  if (key.includes("later_than_second_argument") || key.includes("table_produces_zero_rows")) return calendarStartAfterEnd(source);
+  // adv-cor-017: INT on column that can return negative values, or on a quantity/inventory column
+  if (key.includes("applied_to_a_column_or_expression_that_can_return_negative") || key.includes("floor-toward-negative-infinity")) return hasFunctionCall(source, "INT") && (/\b(Margin|Profit|Loss|Return|Delta|Variance|Diff|Net|Discount)\b/i.test(source) || /\bINT\s*\(\s*(?:'[^']+'|[\w ]+)\[[\w\s]*(?:Quantity|Stock|Balance|Level|OnHand|OnOrder)\w*\]/i.test(source));
+  // adv-cor-019: IF explicitly returns BLANK() — not inside AVERAGEX where BLANK is intentional
+  if (key.includes("if_explicitly_returns_blank()") || key.includes("averagex_would_skip_blank")) return hasFunctionCall(source, "IF") && hasFunctionCall(source, "BLANK") && !hasFunctionCall(source, "AVERAGEX");
+  // adv-cor-021: RELATED used directly in a measure body (not inside iterator, not a calculated column, not from fact table)
+  if (key.includes("related_used_directly_in_a_measure_body") || key.includes("not_wrapped_inside_sumx")) return hasFunctionCall(source, "RELATED") && !hasFunctionCall(source, "SUMX") && !hasFunctionCall(source, "AVERAGEX") && !hasFunctionCall(source, "FILTER") && !relatedFromFactTable(source) && !/^\s*(?:'[^']+'|[\w ]+)\[[^\]]+\]\s*=/.test(source);
+  // adv-cor-072: RELATED inside FILTER predicate iterating a fact table from a measure — not wrapped in CALCULATE (which makes FILTER a filter arg, not a row-context iterator)
+  if (key.includes("related_is_used_inside_filter_iterating_a_fact_table_from_a_measure") || key.includes("related_is_being_used_in_filter_predicate_without_sumx")) return hasFunctionCall(source, "RELATED") && hasFunctionCall(source, "FILTER") && !hasFunctionCall(source, "CALCULATE") && !hasFunctionCall(source, "SUMX") && !hasFunctionCall(source, "AVERAGEX") && !/^\s*(?:'[^']+'|[\w ]+)\[[^\]]+\]\s*=/.test(source);
+  // adv-perf-043: ISINSCOPE on a column that is a surrogate key / never in a visual hierarchy
+  if (key.includes("column_argument_is_a_surrogate_key")) {
+    if (!hasFunctionCall(source, "ISINSCOPE")) return false;
+    const scopeTableMatch = source.match(/\bISINSCOPE\s*\(\s*((?:'[^']+'|[\w ]+))\[/i);
+    if (!scopeTableMatch) return false;
+    const scopeTable = cleanTableName(scopeTableMatch[1]);
+    return isLikelyFactTable(scopeTable) || /\bISINSCOPE\s*\(\s*(?:'[^']+'|[\w ]+)\[[\w\s]*(ID|Key|Trans|Transaction|Num|Number|Code)\w*\]/i.test(source);
+  }
+  if (key.includes("isinscope_will_always_return_false")) {
+    if (!hasFunctionCall(source, "ISINSCOPE")) return false;
+    const isinCount = (source.match(/\bISINSCOPE\s*\(/gi) || []).length;
+    return isinCount === 1 && !hasFunctionCall(source, "ALLSELECTED");
+  }
+  // adv-cor-013: USERPRINCIPALNAME compared to [Email] without LOWER, OR with LOWER on both sides (DirectQuery normalization concern)
+  if (key.includes("compared_to_a_column_without_lower")) return hasFunctionCall(source, "USERPRINCIPALNAME") && !hasFunctionCall(source, "LOWER") && /\w+\[Email\]/i.test(source) && !/\b(Manager|Executive|Security|Permission|Role)\[/i.test(source);
+  if (key.includes("employee[email]_column")) return hasFunctionCall(source, "USERPRINCIPALNAME") && /\w+\[Email\]/i.test(source) && !/\b(Manager|Executive|Security|Permission|Role)\[/i.test(source) && (!hasFunctionCall(source, "LOWER") || /\bLOWER\s*\(\s*USERPRINCIPALNAME\s*\(/i.test(source));
+  // adv-cor-018: CONTAINS used for membership test on a non-fact reference table
+  if (key.includes("contains_used_for_a_membership_test") || key.includes("table_and_column_arguments_could_be") || key.includes("argument_order_risk")) return containsMembershipTest(source);
+  // adv-cor-023: Nested CALCULATE with both inner/outer filters on the same table (can be flattened), or inner REMOVEFILTERS
+  if (key.includes("calculate_directly_wraps_another_calculate") || key.includes("filters_in_inner_and_outer") || key.includes("can_be_flattened_into_a_single_calculate")) return nestedCalculateSameTable(source) || (/\bCALCULATE\s*\(\s*CALCULATE\s*\(/i.test(source) && hasFunctionCall(source, "REMOVEFILTERS"));
+  // adv-cor-024: DATESYTD — missing year-end arg, non-December fiscal year arg, or fiscal context
+  if (key.includes("no_year-end_date_argument")) {
+    if (!hasFunctionCall(source, "DATESYTD")) return false;
+    return (getFirstFunctionArgs(source, "DATESYTD") || []).length < 2 && /\bFY|\bFiscal\b/i.test(getMeasureName(source));
+  }
+  if (key.includes("non-december_fiscal_year")) {
+    if (!hasFunctionCall(source, "DATESYTD")) return false;
+    const dArgs024 = getFirstFunctionArgs(source, "DATESYTD") || [];
+    if (dArgs024.length >= 2) return /["'][1-9]\d?\/\d{2}["']/.test(dArgs024[1]);
+    return /\bFY|\bFiscal\b/i.test(getMeasureName(source));
+  }
+  if (key.includes("fiscal_year_context")) {
+    if (!hasFunctionCall(source, "DATESYTD")) return false;
+    return /\bFY|\bFiscal\b/i.test(getMeasureName(source));
+  }
+  // adv-cor-025: USERNAME() deprecated in Power BI Service
+  if (key.includes("username()_used_in_rls") || (key.includes("power_bi_service") && key.includes("upn"))) return hasFunctionCall(source, "USERNAME");
+  // adv-cor-071: USERNAME() in RLS pointing at email column in a Dim table without USERPRINCIPALNAME fallback
+  if (key.includes("username()_appears_in_an_rls_expression") || key.includes("not_wrapped_with_userprincipalname()") || key.includes("target_field_is_an_email_address")) return hasFunctionCall(source, "USERNAME") && /Dim\w*\[(?:Email|UserEmail|UserPrincipalName)\]/i.test(source) && !hasFunctionCall(source, "USERPRINCIPALNAME");
+  // adv-perf-026: FORMAT inside SUMX
+  if (key.includes("format_appears_inside_a_sumx_row") || key.includes("immediately_converted_back_to_numeric")) return hasFunctionCall(source, "SUMX") && hasFunctionCall(source, "FORMAT");
+  // adv-perf-027: SEARCH where FIND would suffice (only when search string is all-uppercase — FIND is case-sensitive so result is identical)
+  if (key.includes("search_string_is_all_uppercase") || key.includes("find_would_produce_same_result")) return hasFunctionCall(source, "SEARCH") && /\bSEARCH\s*\(\s*"[A-Z]{2,}"/.test(source);
+  // adv-perf-028: SUBSTITUTE inside SUMX, or SEARCH/FIND used as CALCULATE filter on a fact table
+  if (key.includes("substitute_appears_inside_a_sumx") || key.includes("applied_to_a_fact_table_with_>") || key.includes("result_is_converted_to_numeric")) return (hasFunctionCall(source, "SUMX") && hasFunctionCall(source, "SUBSTITUTE")) || (hasFunctionCall(source, "SEARCH") && hasFunctionCall(source, "CALCULATE") && hasFunctionCall(source, "COUNTROWS"));
+  // adv-perf-045: IF(HASONEVALUE(col), SELECTEDVALUE(col), "All") — redundant guard, SELECTEDVALUE default handles it
+  if (key.includes("if(hasonevalue") || key.includes("selectedvalue(col,_default)") || key.includes("redundant_hasonevalue_check")) return hasonevalueSelectedvalueRedundant(source);
+  // adv-cor-014: HASONEFILTER used where HASONEVALUE is intended (or table has bidirectional relationships)
+  if (key.includes("used_where_hasonevalue_is_intended") || key.includes("table_has_bidirectional_or_cross-filter") || key.includes("bidirectional_or_cross-filter_relationships")) return hasFunctionCall(source, "HASONEFILTER");
+  // adv-perf-029: COUNTROWS wrapping ADDCOLUMNS
+  if (key.includes("countrows_wraps_addcolumns") || (key.includes("added_columns_are_not_used") && key.includes("filter_criteria"))) return hasFunctionCall(source, "COUNTROWS") && hasFunctionCall(source, "ADDCOLUMNS");
+  // adv-perf-030: SELECTCOLUMNS inside SUMX
+  if (key.includes("selectcolumns_produces_more_columns") || key.includes("only_one_of_the_projected_columns")) return hasFunctionCall(source, "SUMX") && hasFunctionCall(source, "SELECTCOLUMNS");
+  // adv-perf-031: GENERATE inside SUMX measure, or standalone GENERATE cross-join (not ROW, not M List.Generate)
+  if (key.includes("generate_used_inside_a_measure")) return hasFunctionCall(source, "GENERATE") && hasFunctionCall(source, "SUMX") && !hasFunctionCall(source, "ROW") && !/\bList\.Generate\b/i.test(source);
+  if (key.includes("produces_a_cross-join_materialized")) return hasFunctionCall(source, "GENERATE") && !hasFunctionCall(source, "ROW") && !/\bList\.Generate\b/i.test(source);
+  // adv-perf-032: CONTAINS inside FILTER over a fact table
+  if (key.includes("contains_inside_filter_over_a_fact") || key.includes("alternative_relationship_or_treatas")) return hasFunctionCall(source, "FILTER") && hasFunctionCall(source, "CONTAINS");
+  // adv-perf-033/073: LOOKUPVALUE inside SUMX when relationship exists
+  if (key.includes("lookupvalue_lookup_keys_match") || key.includes("lookupvalue_appears_inside_a_row_iterator") || key.includes("related_would_return_the_same") || key.includes("a_direct_relationship_could_replace")) return hasFunctionCall(source, "SUMX") && hasFunctionCall(source, "LOOKUPVALUE");
+  // adv-perf-034: UNION inside SUMX
+  if (key.includes("union_combines_two_fact-size") || key.includes("result_is_aggregated_immediately")) return hasFunctionCall(source, "SUMX") && hasFunctionCall(source, "UNION");
+  // adv-perf-035: EXCEPT inside CALCULATE filter, OR standalone EXCEPT with ALL() as first arg
+  if (key.includes("except_inside_calculate_filter") || key.includes("not_containsrow_avoids") || key.includes("produces_a_virtual_table_that_must_be_materialized")) { if (hasFunctionCall(source, "CALCULATE")) return hasFunctionCall(source, "EXCEPT"); return /\bEXCEPT\s*\(\s*ALL\s*\(/i.test(source); }
+  // adv-perf-037: SUMMARIZE with explicit measure expressions (must have a quoted name arg), or SUMMARIZE(Table, Col) with only one groupBy column
+  if (key.includes("explicit_measure_expressions_as_additional") || key.includes("microsoft_documentation_recommends_summarizecolumns")) { const sumArgs = getFirstFunctionArgs(source, "SUMMARIZE") || []; return hasFunctionCall(source, "SUMMARIZE") && !hasFunctionCall(source, "SUMMARIZECOLUMNS") && (sumArgs.some(a => /^"/.test(a.trim())) || sumArgs.length === 2); }
+  // adv-perf-040: RANKX inside ADDCOLUMNS inside CALCULATETABLE
+  if (key.includes("rankx_inside_addcolumns_inside_calculatetable") || key.includes("rankx_re-evaluates_the_full_domain")) return hasFunctionCall(source, "CALCULATETABLE") && hasFunctionCall(source, "ADDCOLUMNS") && hasFunctionCall(source, "RANKX");
+  // adv-perf-041: CROSSFILTER inside SUMX
+  if (key.includes("crossfilter_inside_sumx") || key.includes("crossfilter_could_be_applied_at_a_higher_scope")) return hasFunctionCall(source, "SUMX") && hasFunctionCall(source, "CROSSFILTER");
+  // adv-perf-042: TOPN with N > 1000
+  if (key.includes("n_argument_>_1000") || key.includes("applied_to_a_fact_table_not") || key.includes("result_immediately_aggregated")) return topnLargeN(source);
+  // adv-perf-048: GENERATE+ROW virtual table inside measure
+  if (key.includes("generate_and_row_combined") || key.includes("creates_virtual_single-row_table")) return hasFunctionCall(source, "GENERATE") && hasFunctionCall(source, "ROW");
+  // adv-perf-050: DATESYTD on a fact table column (not a Date table)
+  if (key.includes("date_argument_is_a_column_from_a_fact") || key.includes("no_marked_date_table")) return datesytdOnFactColumn(source);
+  // adv-model-051: RELATED pointing to a fact table column, or descriptor text about fact-as-dimension
+  if (key.includes("related_references_a_column_in_a_table_that_is_itself_a_fact") || key.includes("the_source_table_is_also_a_fact") || key.includes("a_proper_customer_dimension")) return relatedFromFactTable(source) || /Fact\w+\s+(?:used\s+as\s+dimension|as\s+dimension)|Snapshot\s+fact.{0,50}summ|\w+\s+stored\s+in\s+Fact\w+\s+snapshot/i.test(source);
+  // adv-model-052: ADDCOLUMNS used as a calculated fact table, or descriptor text about Dim acting as fact
+  if (key.includes("result_is_a_calculated_table_with_fact-table") || key.includes("calculated_table_with_fact-table_row") || key.includes("no_incremental_refresh_available") || key.includes("used_as_primary_fact_source")) {
+    if (/Dim\w+\s+treated\s+as\s+dimension/i.test(source)) return true;
+    const acArgs = getFirstFunctionArgs(source, "ADDCOLUMNS");
+    if (!acArgs || acArgs.length < 2) return false;
+    const firstArg = acArgs[0].trim();
+    return !firstArg.includes("(") && isLikelyFactTable(cleanTableName(firstArg));
+  }
+  // adv-model-053: CALENDAR end date is in the past OR uses MAX(FactTable[DateCol]) — date table won't cover current or future fact dates
+  if (key.includes("calendar_end_date") || key.includes("calendar_start_date") || key.includes("time_intelligence_measures_return_blank")) return calendarPastEndDate(source) || calendarEndUsesFactMax(source);
+  // adv-model-055: TODAY/NOW inside a calculated column (not a string concat, iterator, or slicer-guard measure)
+  if (key.includes("today()_inside_a_calculated_column") || key.includes("value_becomes_stale_if_dataset_is_not_refreshed") || key.includes("calculated_column_is_computed_once_at_refresh")) return (hasFunctionCall(source, "TODAY") || hasFunctionCall(source, "NOW")) && !hasFunctionCall(source, "AVERAGEX") && !hasFunctionCall(source, "TEXT") && !hasFunctionCall(source, "FORMAT") && !hasFunctionCall(source, "HASONEVALUE") && !hasFunctionCall(source, "SELECTEDVALUE") && !source.includes("&");
+  // adv-model-057: Power Query with > 20 applied steps (Step1 -> Step2 -> ... pattern)
+  if (key.includes("m_query_has_more_than_20") || key.includes("step_chain_includes_list.generate") || key.includes("source_is_a_relational_database_that_supports_folding")) return hasManyPQSteps(source);
+  // adv-model-058: List.Generate or Table.Buffer in Power Query
+  if (key.includes("m_code_contains_list.generate") || key.includes("source_is_a_foldable_relational") || key.includes("data_volume_is_large_and_folding")) return /\bList\.Generate\s*\(|\bTable\.Buffer\s*\(/i.test(source);
+  // adv-model-060/061: try...otherwise null or untyped parameter in Power Query
+  if (key.includes("try...otherwise_null") || key.includes("data_quality_issues_are_invisible") || key.includes("nullified_values_are_treated") || key.includes("parameter_definition_lacks_explicit_type") || key.includes("parameter_is_used_in_a_filter_or_join_condition") || key.includes("implicit_text_type_causes_fold")) return /\btry\b.{0,80}otherwise\b/i.test(source) || /\bparameter\b.{0,100}(type\b|annotation)/i.test(source);
+  // adv-model-063: Table or column name is a DAX reserved keyword, chained fact tables sharing a dimension, or visual comment combining two fact metrics
+  if (key.includes("table_or_column_name_is_a_dax") || key.includes("examples:_date") || key.includes("results_in_parse_errors_or_requires_constant_quoting")) return /\b(table|column)\b.{0,40}named?.{0,30}'?(Date|Filter|All|Values|Calculate|Sum|Count|Average|Min|Max)'?/i.test(source) || /Fact\w+\s+and\s+Fact\w+.{0,80}connected\s+to\s+Dim/i.test(source) || /\/\/\s*Visual\s+combines[\s\S]{0,30}\[Fact\w+/i.test(source);
+  // adv-model-071: EARLIER in a measure — only flag when inside AVERAGEX (unambiguous error context)
+  if (key.includes("earlier_appears_in_a_measure") || key.includes("only_valid_inside_calculated_columns")) return hasFunctionCall(source, "EARLIER") && hasFunctionCall(source, "AVERAGEX");
+  // adv-model-074: USERPRINCIPALNAME referencing table not in model
+  if (key.includes("rls_filter_references_a_table_that_is_excluded") || key.includes("table_is_hidden/removed")) return hasFunctionCall(source, "USERPRINCIPALNAME") && /\b(Manager|Executive|Security|Permission|Role)\b/i.test(source);
+  // adv-model-054: RLS on dimension table with bidirectional relationship to fact
+  if (key.includes("rls_filter_is_on_a_dimension_table") || key.includes("dimension_has_a_bidirectional_relationship") || key.includes("bidirectional_filter_propagates")) return (hasFunctionCall(source, "USERPRINCIPALNAME") && !/\[Email\]/i.test(source) && /(?:Dim\w+|Geo)\[/i.test(source)) || /Bidirectional\s+relationship\s+on\s+Dim/i.test(source);
+  // adv-model-059: Binary/image column in Power Query, or untyped M parameter
+  if (key.includes("power_query_query_includes_a_column_of_type_binary") || key.includes("column_is_not_used_in_any_visual") || key.includes("model_size_is_larger_than_expected")) return /(?:Image|Binary|Blob|Photo|Attachment)\w*\s*(?:column|type)|\[[\w\s]*(?:Image|Binary|Blob|Photo)\w*\]/i.test(source) || /let\s+\w+\s*=\s*#date\s*\(/i.test(source);
+  // adv-model-064: Relationship join column has Decimal Number or float type
+  if (key.includes("relationship_join_column_has_decimal") || key.includes("float_comparison_can_fail") || key.includes("missing_rows_in_visuals_despite_matching")) return /decimal\s*(number|type)|\bfloat\b.{0,40}(column|relationship|key)|relationship.{0,60}decimal/i.test(source);
+  // adv-model-065: Relationship join column has inconsistent casing across tables
+  if (key.includes("relationship_join_column_is_text_type") || key.includes("source_data_has_inconsistent_casing") || key.includes("row_count_mismatch")) return /mixed.{0,20}case|inconsistent.{0,30}cas/i.test(source);
+  // adv-model-066: Dimension table has duplicate key values (non-unique), or role-playing dim / dual date keys
+  if (key.includes("dimension_table_has_non-unique") || key.includes("power_bi_sets_cardinality_to_many-to-many") || key.includes("measure_totals_are_inflated")) return /Dim\w+\s+has\s+\d+\s+rows?\s+with\s+same|Role-playing\s+Dim\w+\s+with\s+inactive|Fact\w+\s+with\s+Start\w+Key\s+and\s+End\w+Key/i.test(source);
+  // adv-model-067: Two fact tables using different foreign keys to same logical dimension
+  if (key.includes("two_or_more_fact_tables_reference_the_same_logical") || key.includes("no_single_shared_dimension") || key.includes("filtering_one_fact_does_not_propagate")) return /Fact\w+.{0,60}Fact\w+.{0,100}different\s*(keys?|foreign\s*key)|different\s*(keys?|foreign\s*key).{0,60}Fact/i.test(source);
+  // adv-model-068: DirectQuery report with no page or visual filter
+  if (key.includes("report_is_in_directquery_mode") || key.includes("fact_table_has_no_date_or_key_filter") || key.includes("visuals_load_slowly")) return /DirectQuery.{0,100}no.{0,40}(date\s*)?filter|report.{0,60}DirectQuery.{0,40}no/i.test(source);
+  // adv-model-069: Axis dimension with 200+ unique values on bar/column/line chart, or chart comment describing a Dim axis
+  if (key.includes("axis_dimension_has_more_than_200") || key.includes("visual_type_is_bar_chart") || key.includes("user_must_scroll_far")) return /\d{3,}\+?\s*unique\s*values?|(?:bar|column|line)\s*chart.{0,80}\d{3,}/i.test(source) || /\/\/\s*(?:Bar|Column|Line|Area)\s*chart[\s\S]{0,30}axis\s*:?\s*Dim/i.test(source);
+  // adv-model-070: Many measures with no display folders
+  if (key.includes("model_has_more_than_8_tables") || key.includes("measure_count_exceeds_15") || key.includes("no_display_folder")) return /\d{2,}\s*measures?\s*(in\s*)?flat\s*list|model.{0,40}has.{0,30}\d{2,}\s*measures?/i.test(source);
+  // adv-model-072: Multiple Excel sheets loaded as separate Power Query queries with same schema
+  if (key.includes("multiple_power_query_queries_load_from_sheets") || key.includes("schemas_are_identical") || key.includes("they_are_used_in_the_same_or_similar")) return /Sheet\d+.{0,120}(?:separate|queries)|same\s*schema.{0,80}sheet/i.test(source);
+  // adv-cor-012: TREATAS column count mismatch (VALUES returns more columns than target)
+  if (key.includes("column_list_in_values_or_table_expression_has_different_cardinality") || key.includes("mismatched_count_causes_runtime_error")) return treatAsMismatch(source);
+  // adv-perf-036: DISTINCTCOUNT on text composite key (column ends in Key, and is not a density calculation inside DIVIDE)
+  if (key.includes("argument_column_is_a_text_type_composite_key") || key.includes("an_integer_surrogate_orderid_column") || key.includes("distinctcount_on_text_is_slower")) {
+    if (!hasFunctionCall(source, "DISTINCTCOUNT")) return false;
+    const isKeyOrId = /DISTINCTCOUNT\s*\(\s*\w+\[[\w\s]*(?:Key|OrderID)\s*\]/i.test(source);
+    if (!isKeyOrId) return false;
+    const divArgs = getFirstFunctionArgs(source, "DIVIDE");
+    if (divArgs && divArgs.length >= 2 && /DISTINCTCOUNT\s*\(/i.test(divArgs[1])) return false;
+    return true;
+  }
+  // adv-model-073: KEEPFILTERS(ALL(...)) net effect identity (no-op)
+  if (key.includes("keepfilters_wraps_all") || key.includes("keepfilters_preserves_existing_filter_context") || key.includes("net_effect_is_identity")) return /\bKEEPFILTERS\s*\(\s*ALL\s*\(/i.test(source);
+  // adv-cor-006: EARLIER inside FILTER(ALL()) — calculated column running total / rank pattern (also inside SUMX+FILTER+ALL)
+  if (key.includes("earlier_appears_inside_calculate") || key.includes("not_inside_a_nested_sumx") || key.includes("re-establishes_row_context")) return /\bFILTER\s*\(\s*ALL\s*\([^)]+\)\s*,[\s\S]*EARLIER\s*\(/i.test(source);
+  // adv-model-075: REMOVEFILTERS on a specific column (also fires; original handler covers full-table)
+  if (key.includes("removefilters_applied_to_a_specific_column") || key.includes("specific_column_clearance")) return /\bREMOVEFILTERS\s*\(\s*(?:'[^']+'|[\w ]+)\[[^\]]+\]\s*\)/i.test(source);
+  // adv-cor-004: ALLSELECTED used in CALCULATE/DIVIDE — visual-only context (exclude when guarded by ISINSCOPE)
+  if (key.includes("measure_intended_for_use_in_visual") || key.includes("no_isinscope_guard_around_allselected") || key.includes("allselected_outside_visual")) return hasFunctionCall(source, "ALLSELECTED") && (hasFunctionCall(source, "DIVIDE") || hasFunctionCall(source, "CALCULATE")) && !hasFunctionCall(source, "ISINSCOPE");
+  // adv-perf-031: GENERATE without SUMX (calc table or measure cross-join)
+  if (key.includes("generate_used_inside_a_calculated_table") || key.includes("cross-join_materialized_at_query_time") || (key.includes("produces_a_cross-join") && !key.includes("inside_sumx"))) return hasFunctionCall(source, "GENERATE") && !hasFunctionCall(source, "ROW");
+  // adv-perf-035: EXCEPT used standalone in calc table
+  if (key.includes("except_used_for_set_difference") || key.includes("filter_approach_or_not_containsrow")) return hasFunctionCall(source, "EXCEPT");
+  // adv-cor-024: DATESYTD without year-end argument
+  if (key.includes("datesytd_called_without_year-end") || key.includes("calendar_year_assumed")) {
+    if (!hasFunctionCall(source, "DATESYTD")) return false;
+    return (getFirstFunctionArgs(source, "DATESYTD") || []).length < 2;
+  }
+  // adv-cor-013: USERPRINCIPALNAME with LOWER on both sides — DirectQuery normalization concern
+  if (key.includes("directquery") || key.includes("lower_normalization") || key.includes("source_normalization")) return hasFunctionCall(source, "USERPRINCIPALNAME") && hasFunctionCall(source, "LOWER") && /\w+\[Email\]/i.test(source);
+  // adv-cor-022: ISINSCOPE on a non-key dimension column not present in any visual hierarchy — always returns FALSE
+  if (key.includes("column_argument_is_not_part_of_a_matrix") || key.includes("visual_does_not_drill_down")) {
+    if (!hasFunctionCall(source, "ISINSCOPE")) return false;
+    const scopeMatch022 = source.match(/\bISINSCOPE\s*\(\s*((?:'[^']+'|[\w ]+))\[([^\]]+)\]/i);
+    if (!scopeMatch022) return false;
+    const scopeTable022 = cleanTableName(scopeMatch022[1]);
+    const scopeCol022 = scopeMatch022[2].trim();
+    if (isLikelyFactTable(scopeTable022)) return false;
+    if (/(?:ID|Key|Trans|Transaction|Num|Number|Code)$/i.test(scopeCol022) || /^Surrogate/i.test(scopeCol022)) return false;
+    const isinCount022 = (source.match(/\bISINSCOPE\s*\(/gi) || []).length;
+    return isinCount022 === 1 && !hasFunctionCall(source, "ALLSELECTED");
+  }
+  // adv-perf-047: SWITCH with expensive CALCULATE branches — DAX evaluates ALL branches even though only one is returned
+  // Exclude the valid pattern where CALCULATE calls are pre-cached in VAR before the SWITCH (branches become cheap var references)
+  if (key.includes("switch_branches_contain_expensive_calculate") || key.includes("multiple_branches_with_heavy_computations") || key.includes("var_caching_of_sub-expressions")) {
+    if (!hasFunctionCall(source, "SWITCH") || !hasFunctionCall(source, "CALCULATE")) return false;
+    if (/\bVAR\b/i.test(source) && /\bRETURN\b/i.test(source)) {
+      const returnSection = source.split(/\bRETURN\b/i).slice(1).join("RETURN");
+      if (!hasFunctionCall(returnSection, "CALCULATE")) return false;
+    }
+    return true;
+  }
+
   return false;
+}
+
+function filterWrapsAllDimension(dax) {
+  const filterArgs = getFirstFunctionArgs(dax, "FILTER");
+  if (!filterArgs || filterArgs.length < 2) return false;
+  const allArgs = getFirstFunctionArgs(filterArgs[0], "ALL");
+  if (!allArgs || allArgs.length !== 1) return false;
+  return !isLikelyFactTable(cleanTableName(allArgs[0]));
+}
+
+function concatenatexMissingOrderBy(dax) {
+  const args = getFirstFunctionArgs(dax, "CONCATENATEX");
+  return args !== null && args.length < 5;
+}
+
+function formatWrapsNumericMeasure(dax) {
+  const args = getFirstFunctionArgs(dax, "FORMAT");
+  if (!args || args.length < 1) return false;
+  const expr = args[0];
+  if (/^\s*\[[^\]]+\]/.test(expr)) return true;
+  return /^\s*(?:SUM|SUMX|COUNT|COUNTROWS|AVERAGE|AVERAGEX|DIVIDE|CALCULATE)\s*\(/i.test(expr);
+}
+
+function ifInsideSumx(dax) {
+  const sumxArgs = getFirstFunctionArgs(dax, "SUMX");
+  if (!sumxArgs || sumxArgs.length < 2) return false;
+  return hasFunctionCall(sumxArgs[1], "IF");
+}
+
+function sumxDirectFactColumn(dax) {
+  const sumxArgs = getFirstFunctionArgs(dax, "SUMX");
+  if (!sumxArgs || sumxArgs.length !== 2) return false;
+  const tableExpr = sumxArgs[0].trim();
+  if (tableExpr.includes("(")) return false;
+  return isLikelyFactTable(cleanTableName(tableExpr)) && isBareColumn(sumxArgs[1]);
+}
+
+function removefiltersOnFullTable(dax) {
+  return getFunctionArgSets(dax, "REMOVEFILTERS").some(function(args) {
+    return args.length === 1 && isBareTable(args[0]);
+  });
+}
+
+function countrowsFilterFact(dax) {
+  if (!hasFunctionCall(dax, "COUNTROWS") || !hasFunctionCall(dax, "FILTER")) return false;
+  const crArgs = getFirstFunctionArgs(dax, "COUNTROWS");
+  if (!crArgs || crArgs.length !== 1) return false;
+  if (!hasFunctionCall(crArgs[0], "FILTER")) return false;
+  const filterArgs = getFirstFunctionArgs(crArgs[0], "FILTER");
+  if (!filterArgs || filterArgs.length < 1) return false;
+  if (!isLikelyFactTable(cleanTableName(filterArgs[0]))) return false;
+  if (filterArgs.length > 1 && hasFunctionCall(filterArgs[1], "EARLIER")) return false;
+  return true;
+}
+
+function topnMissingTiebreaker(dax) {
+  const args = getFirstFunctionArgs(dax, "TOPN");
+  if (!args) return false;
+  if (args.length === 3) return true;
+  if (args.length === 4) return /^\s*VALUES\s*\(/i.test(args[1].trim());
+  return false;
+}
+
+function topnInsideCalculate(dax) {
+  const calcArgs = getFirstFunctionArgs(dax, "CALCULATE");
+  if (!calcArgs || calcArgs.length < 2) return false;
+  return calcArgs.slice(1).some(function(arg) {
+    if (!hasFunctionCall(arg, "TOPN")) return false;
+    const topnArgs = getFirstFunctionArgs(arg, "TOPN");
+    return topnArgs !== null && topnArgs.length < 5;
+  });
+}
+
+function dateaddMinus365Day(dax) {
+  const args = getFirstFunctionArgs(dax, "DATEADD");
+  if (!args || args.length < 3) return false;
+  const offset = args[1].trim();
+  return (offset === "-365" || offset === "365") && args[2].trim().toUpperCase() === "DAY";
+}
+
+function dateaddMinusOneYear(dax) {
+  // DATEADD('Date'[Date], -1, YEAR) — SAMEPERIODLASTYEAR is the preferred alternative
+  const args = getFirstFunctionArgs(dax, "DATEADD");
+  if (!args || args.length < 3) return false;
+  const offset = args[1].trim();
+  return (offset === "-1" || offset === "1") && args[2].trim().toUpperCase() === "YEAR";
+}
+
+function threeOrMoreOrConditions(dax) {
+  return (String(dax || "").match(/\|\|/g) || []).length >= 2;
+}
+
+function hasHardcodedYearLiteral(dax) {
+  return /\[[^\]]*[Yy]ear[^\]]*\]\s*=\s*20[0-9]{2}\b/.test(String(dax || ""));
+}
+
+function rankxOverFactTable(dax) {
+  if (!hasFunctionCall(dax, "RANKX")) return false;
+  const rankxArgs = getFirstFunctionArgs(dax, "RANKX");
+  if (!rankxArgs || rankxArgs.length < 1) return false;
+  const allArgs = getFirstFunctionArgs(rankxArgs[0], "ALL");
+  if (!allArgs || allArgs.length !== 1) return false;
+  return isLikelyFactTable(cleanTableName(allArgs[0]));
+}
+
+function switchNotTrue(dax) {
+  const args = getFirstFunctionArgs(dax, "SWITCH");
+  if (!args || args.length < 1) return false;
+  return !/^\s*TRUE\s*\(\s*\)\s*$/i.test(args[0]);
+}
+
+function switchHasDuplicateCases(dax) {
+  const args = getFirstFunctionArgs(dax, "SWITCH");
+  if (!args || args.length < 5) return false;
+  if (/^\s*TRUE\s*\(\s*\)\s*$/i.test(args[0])) return false;
+  const caseValues = [];
+  for (let i = 1; i < args.length - 1; i += 2) caseValues.push(normalizeDax(args[i]));
+  return caseValues.some(function(v, idx) { return caseValues.indexOf(v) !== idx; });
+}
+
+function switchHasEmptyStringCase(dax) {
+  // SWITCH(col, "", result, ...) — empty string as case value is often unintentional
+  if (!hasFunctionCall(dax, "SWITCH")) return false;
+  const args = getFirstFunctionArgs(dax, "SWITCH");
+  if (!args || args.length < 3) return false;
+  if (/^\s*TRUE\s*\(\s*\)\s*$/i.test(args[0])) return false;
+  for (let i = 1; i < args.length - 1; i += 2) {
+    if (/^\s*""\s*$/.test(args[i])) return true;
+  }
+  return false;
+}
+
+function todayNowInDateArithmetic(dax) {
+  if (!hasFunctionCall(dax, "TODAY") && !hasFunctionCall(dax, "NOW")) return false;
+  if (hasFunctionCall(dax, "AVERAGEX") || hasFunctionCall(dax, "SUMX") || hasFunctionCall(dax, "MAXX") || hasFunctionCall(dax, "MINX")) return false;
+  if (hasFunctionCall(dax, "DATEDIFF")) {
+    const ddArgs = getFirstFunctionArgs(dax, "DATEDIFF");
+    if (ddArgs && ddArgs.length >= 3) {
+      const unit = ddArgs[2].trim().toUpperCase();
+      if (unit === "YEAR" || unit === "MONTH" || unit === "QUARTER") return false;
+    }
+  }
+  return hasFunctionCall(dax, "DATEDIFF") || /TODAY\s*\(\s*\)\s*-|NOW\s*\(\s*\)\s*-|-\s*TODAY\s*\(\s*\)|-\s*NOW\s*\(\s*\)/i.test(String(dax || ""));
 }
 
 function hasRepeatedFilterColumn(dax) {
@@ -1093,7 +1763,8 @@ function hasTableScopedFunctionCall(dax, fn, tablePredicate) {
 }
 
 function isLikelyFactTable(table) {
-  return /\b(fact|sales|sale|orders?|transactions?|web|returns?)\b/i.test(cleanTableName(table));
+  const clean = cleanTableName(table);
+  return /\b(fact|sales|sale|orders?|transactions?|web|returns?|shipments?)\b/i.test(clean) || clean.toLowerCase().startsWith("fact");
 }
 
 function isLikelyDimensionTable(table) {
@@ -1111,6 +1782,133 @@ function isBareColumn(value) {
 
 function isBareTable(value) {
   return /^(?:'[^']+'|[\w ]+)$/.test(String(value || "").trim());
+}
+
+function calendarStartAfterEnd(dax) {
+  const args = getFirstFunctionArgs(dax, "CALENDAR");
+  if (!args || args.length < 2) return false;
+  const start = getFirstFunctionArgs(args[0], "DATE");
+  const end = getFirstFunctionArgs(args[1], "DATE");
+  if (!start || !end || start.length < 3 || end.length < 3) return false;
+  const sy = parseInt(start[0], 10), sm = parseInt(start[1], 10), sd = parseInt(start[2], 10);
+  const ey = parseInt(end[0], 10), em = parseInt(end[1], 10), ed = parseInt(end[2], 10);
+  if (isNaN(sy) || isNaN(ey)) return false;
+  if (sy > ey) return true;
+  if (sy === ey && sm > em) return true;
+  if (sy === ey && sm === em && sd > ed) return true;
+  return false;
+}
+
+function topnLargeN(dax) {
+  const args = getFirstFunctionArgs(dax, "TOPN");
+  if (!args || args.length < 1) return false;
+  const n = parseInt(args[0].trim(), 10);
+  return !isNaN(n) && n > 1000;
+}
+
+function datesytdOnFactColumn(dax) {
+  const args = getFirstFunctionArgs(dax, "DATESYTD");
+  if (!args || args.length < 1) return false;
+  const col = args[0].trim();
+  if (!isBareColumn(col)) return false;
+  return isLikelyFactTable(cleanTableName(col.split("[")[0]));
+}
+
+function relatedFromFactTable(dax) {
+  const args = getFirstFunctionArgs(dax, "RELATED");
+  if (!args || args.length < 1) return false;
+  const col = args[0].trim();
+  if (!isBareColumn(col)) return false;
+  return isLikelyFactTable(cleanTableName(col.split("[")[0]));
+}
+
+function treatAsMismatch(dax) {
+  if (!hasFunctionCall(dax, "TREATAS")) return false;
+  const valuesMatch = dax.match(/VALUES\s*\(([^)]+)\)/i);
+  if (!valuesMatch) return false;
+  const srcCols = (valuesMatch[1].match(/\[[^\]]+\]/g) || []).length;
+  if (srcCols < 2) return false;
+  // Find columns in TREATAS after the VALUES(...) expression
+  const afterValues = dax.slice(dax.search(/VALUES\s*\([^)]+\)/i)).replace(/VALUES\s*\([^)]+\)/i, "");
+  const destCols = (afterValues.match(/\[[^\]]+\]/g) || []).length;
+  return destCols > 0 && srcCols > destCols;
+}
+
+function switchTrueOverlapping(dax) {
+  if (!/\bSWITCH\s*\(\s*TRUE\s*\(\s*\)/i.test(dax)) return false;
+  const gtMatches = dax.match(/(\[[^\]]+\])\s*>\s*(\d+)/g) || [];
+  if (gtMatches.length < 2) return false;
+  const cols = new Set(gtMatches.map(m => m.split(">")[0].trim().toLowerCase()));
+  if (cols.size !== 1) return false;
+  const bounds = gtMatches.map(m => parseInt(m.split(">")[1].trim(), 10));
+  for (let i = 1; i < bounds.length; i++) {
+    if (bounds[i] > bounds[i - 1]) return true;
+  }
+  return false;
+}
+
+function calendarPastEndDate(dax) {
+  const calArgs = getFirstFunctionArgs(dax, "CALENDAR");
+  if (!calArgs || calArgs.length < 2) return false;
+  const dateArgs = getFirstFunctionArgs(calArgs[1].trim(), "DATE");
+  if (!dateArgs || dateArgs.length < 1) return false;
+  const endYear = parseInt(dateArgs[0].trim(), 10);
+  return !isNaN(endYear) && endYear < new Date().getFullYear();
+}
+
+function calendarEndUsesFactMax(dax) {
+  // CALENDAR(DATE(...), MAX(FactTable[DateCol])) — end date depends on fact data
+  if (!hasFunctionCall(dax, "CALENDAR") || !hasFunctionCall(dax, "MAX")) return false;
+  const calArgs = getFirstFunctionArgs(dax, "CALENDAR");
+  if (!calArgs || calArgs.length < 2) return false;
+  const endArg = calArgs[1].trim();
+  if (!/\bMAX\s*\(/i.test(endArg)) return false;
+  const maxArgs = getFirstFunctionArgs(endArg, "MAX");
+  if (!maxArgs || maxArgs.length < 1) return false;
+  const col = maxArgs[0].trim();
+  const tableMatch = col.match(/^(?:'([^']+)'|([\w ]+))\[/);
+  if (!tableMatch) return false;
+  const tableName = cleanTableName(tableMatch[1] || tableMatch[2] || "");
+  return isLikelyFactTable(tableName);
+}
+
+function nestedCalculateSameTable(dax) {
+  if (!/\bCALCULATE\s*\(\s*CALCULATE\s*\(/i.test(dax)) return false;
+  const outerArgs = getFirstFunctionArgs(dax, "CALCULATE");
+  if (!outerArgs || outerArgs.length < 2) return false;
+  const innerArgs = getFirstFunctionArgs(outerArgs[0], "CALCULATE");
+  if (!innerArgs || innerArgs.length < 2) return false;
+  function getTables(filters) {
+    return filters.flatMap(function(f) {
+      return (f.match(/(?:'[^']+'|[\w ]+)\[/g) || []).map(function(m) { return cleanTableName(m.slice(0, -1)); });
+    });
+  }
+  const outer = new Set(getTables(outerArgs.slice(1)));
+  const inner = new Set(getTables(innerArgs.slice(1)));
+  return [...outer].some(function(t) { return inner.has(t); });
+}
+
+function containsMembershipTest(dax) {
+  if (!hasFunctionCall(dax, "CONTAINS") || hasFunctionCall(dax, "FILTER")) return false;
+  const args = getFirstFunctionArgs(dax, "CONTAINS");
+  if (!args || args.length < 1) return false;
+  return !isLikelyFactTable(cleanTableName(args[0].trim()));
+}
+
+function hasonevalueSelectedvalueRedundant(dax) {
+  if (!hasFunctionCall(dax, "HASONEVALUE") || !hasFunctionCall(dax, "SELECTEDVALUE")) return false;
+  const ifArgs = getFirstFunctionArgs(dax, "IF");
+  if (!ifArgs || ifArgs.length < 3) return false;
+  return /^["']All["']$/i.test(ifArgs[2].trim());
+}
+
+function hasManyPQSteps(dax) {
+  const src = String(dax || "");
+  if ((src.match(/->/g) || []).length >= 10) return true;
+  const stepMatch = src.match(/\bStep(\d{2,})\b/i);
+  if (stepMatch && parseInt(stepMatch[1], 10) >= 20 && (src.match(/->/g) || []).length >= 2) return true;
+  const stepCountMatch = src.match(/(\d+)\s+applied\s+steps/i);
+  return !!(stepCountMatch && parseInt(stepCountMatch[1], 10) >= 20);
 }
 
 function referencesLikelyFactAndDimension(dax) {
@@ -1312,10 +2110,226 @@ function printResults(dax) {
     rules = Array.isArray(nextRules) ? nextRules : [];
   }
 
-  function analyzeRuleMatches(dax) {
+  // ── Multi-measure cross-interaction analysis ──────────────────────────────────
+
+  var TIME_INT_FNS = ["DATEADD", "SAMEPERIODLASTYEAR", "PARALLELPERIOD",
+    "PREVIOUSMONTH", "PREVIOUSQUARTER", "PREVIOUSYEAR",
+    "NEXTMONTH", "NEXTQUARTER", "NEXTYEAR",
+    "DATESYTD", "DATESQTD", "DATESMTD"];
+
+  function extractMeasureRefs(dax) {
+    // Bare [Name] — NOT preceded by ] or word chars or quote (those are column refs like Table[Col])
+    var refs = [];
+    var regex = /(?<![A-Za-z0-9_'"\]])\[([^\]]+)\]/g;
+    var m;
+    while ((m = regex.exec(String(dax || ""))) !== null) {
+      refs.push(m[1]);
+    }
+    return refs;
+  }
+
+  function normalizeDaxBody(dax) {
+    var s = String(dax || "");
+    var eq = s.indexOf("=");
+    if (eq >= 0) s = s.slice(eq + 1);
+    return s.replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function hasTimeInt(dax) {
+    return TIME_INT_FNS.some(function(fn) { return hasFunctionCall(dax, fn); });
+  }
+
+  function analyzeMultiple(measures, modelContext) {
+    if (!Array.isArray(measures) || measures.length === 0) {
+      return { perMeasure: {}, crossMeasure: [] };
+    }
+
+    var mc = modelContext || {};
+    var perMeasure = {};
+    var measureSet = {};
+    var measureRefs = {};
+    var normalizedBodies = {};
+
+    for (var i = 0; i < measures.length; i++) {
+      var entry = measures[i];
+      if (!entry || !entry.name) continue;
+      var mname = entry.name;
+      var mdax = entry.dax || "";
+      measureSet[mname] = mdax;
+      perMeasure[mname] = analyzeRuleMatches(mdax, mc);
+      normalizedBodies[mname] = normalizeDaxBody(mdax);
+      measureRefs[mname] = extractMeasureRefs(mdax);
+    }
+
+    var names = Object.keys(measureSet);
+    var crossMeasure = [];
+
+    // Case-insensitive lookup: lowercase name → original name
+    var measureSetLower = {};
+    for (var li = 0; li < names.length; li++) {
+      measureSetLower[names[li].toLowerCase()] = names[li];
+    }
+    function resolveMeasureName(raw) {
+      // Return the real-cased name if it exists in the set (case-insensitive)
+      return Object.prototype.hasOwnProperty.call(measureSet, raw)
+        ? raw
+        : (measureSetLower[raw.toLowerCase()] || null);
+    }
+
+    // ── CX-001: Circular measure reference ──────────────────────────────────────
+    var graph = {};
+    for (var gi = 0; gi < names.length; gi++) {
+      var gn = names[gi];
+      graph[gn] = measureRefs[gn].filter(function(r) { return Object.prototype.hasOwnProperty.call(measureSet, r); });
+    }
+
+    function detectCycle(start, current, path, seen) {
+      var nexts = graph[current] || [];
+      for (var x = 0; x < nexts.length; x++) {
+        var next = nexts[x];
+        if (next === start && path.length > 0) return path.concat([next]);
+        if (!seen[next] && Object.prototype.hasOwnProperty.call(measureSet, next)) {
+          var seenCopy = Object.assign({}, seen);
+          seenCopy[next] = true;
+          var found = detectCycle(start, next, path.concat([next]), seenCopy);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    var reportedCycles = {};
+    for (var ci = 0; ci < names.length; ci++) {
+      var cname = names[ci];
+      var cyclePath = detectCycle(cname, cname, [], { [cname]: true });
+      if (cyclePath) {
+        var cycleKey = cyclePath.slice().sort().join("|");
+        if (!reportedCycles[cycleKey]) {
+          reportedCycles[cycleKey] = true;
+          var cycleMembers = [cname].concat(cyclePath.slice(0, -1).filter(function(m) { return m !== cname; }));
+          crossMeasure.push({
+            type: "cx-circular-reference",
+            severity: "high",
+            issue: "Circular measure reference: " + cname + " → " + cyclePath.join(" → "),
+            measures: cycleMembers,
+            fix: "Break the cycle — one measure must not reference the other. Extract shared logic into a VAR block or a non-circular base measure.",
+            details: { cycle: [cname].concat(cyclePath) }
+          });
+        }
+      }
+    }
+
+    // ── CX-002: Redundant bare CALCULATE wrapper ─────────────────────────────────
+    for (var ri = 0; ri < names.length; ri++) {
+      var rname = names[ri];
+      var rbody = normalizeDaxBody(measureSet[rname]);
+      var calcWrap = rbody.match(/^calculate\s*\(\s*\[([^\]]+)\]\s*\)$/i);
+      if (calcWrap) {
+        var calcBase = resolveMeasureName(calcWrap[1]);
+        if (calcBase && calcBase !== rname) {
+          crossMeasure.push({
+            type: "cx-redundant-calculate",
+            severity: "medium",
+            issue: "\"" + rname + "\" wraps [" + calcBase + "] in a bare CALCULATE() with no filter arguments — the wrapper is a no-op.",
+            measures: [rname, calcBase],
+            fix: "Remove the bare CALCULATE wrapper and reference [" + calcBase + "] directly, or add a meaningful filter argument.",
+            details: { wrapper: rname, base: calcBase }
+          });
+        }
+      }
+    }
+
+    // ── CX-003: Duplicate measure logic ─────────────────────────────────────────
+    var bodyMap = {};
+    for (var di = 0; di < names.length; di++) {
+      var dname = names[di];
+      var dbody = normalizedBodies[dname];
+      if (Object.prototype.hasOwnProperty.call(bodyMap, dbody)) {
+        crossMeasure.push({
+          type: "cx-duplicate-logic",
+          severity: "medium",
+          issue: "\"" + dname + "\" and \"" + bodyMap[dbody] + "\" have identical DAX logic — the duplicate adds maintenance overhead.",
+          measures: [dname, bodyMap[dbody]],
+          fix: "Consolidate into one measure. If different display formatting is needed, reference the single base measure from a thin format-only wrapper.",
+          details: { duplicateOf: bodyMap[dbody] }
+        });
+      } else {
+        bodyMap[dbody] = dname;
+      }
+    }
+
+    // ── CX-004: Measure reference inside FILTER predicate ────────────────────────
+    for (var fi = 0; fi < names.length; fi++) {
+      var fname = names[fi];
+      var filterPredicate = extractFilterConditions(measureSet[fname]);
+      if (filterPredicate) {
+        var refsInFilter = extractMeasureRefs(filterPredicate).filter(function(r) {
+          return Object.prototype.hasOwnProperty.call(measureSet, r);
+        });
+        for (var fj = 0; fj < refsInFilter.length; fj++) {
+          var refName = refsInFilter[fj];
+          crossMeasure.push({
+            type: "cx-measure-in-filter",
+            severity: "high",
+            issue: "\"" + fname + "\" evaluates [" + refName + "] inside a FILTER predicate — measures inside FILTER are re-evaluated per row, causing full table scans.",
+            measures: [fname, refName],
+            fix: "Replace FILTER(Table, [" + refName + "] > x) with CALCULATE(..., KEEPFILTERS(Table[Col] = x)) or move the measure condition outside of FILTER.",
+            details: { host: fname, referenced: refName }
+          });
+        }
+      }
+    }
+
+    // ── CX-005: Double time-shift chain ─────────────────────────────────────────
+    for (var ti = 0; ti < names.length; ti++) {
+      var tname = names[ti];
+      if (!hasTimeInt(measureSet[tname])) continue;
+      var tRefs = measureRefs[tname].filter(function(r) {
+        return Object.prototype.hasOwnProperty.call(measureSet, r) && hasTimeInt(measureSet[r]);
+      });
+      for (var tj = 0; tj < tRefs.length; tj++) {
+        var tbase = tRefs[tj];
+        crossMeasure.push({
+          type: "cx-double-time-shift",
+          severity: "high",
+          issue: "\"" + tname + "\" applies time intelligence AND references [" + tbase + "] which already applies time intelligence — the shifts compound and produce wrong date ranges.",
+          measures: [tname, tbase],
+          fix: "Apply time intelligence at only one level. In \"" + tname + "\" reference the raw base measure (no time shift) and perform the single shift there.",
+          details: { outer: tname, inner: tbase }
+        });
+      }
+    }
+
+    // ── CX-006: Pure alias measure ───────────────────────────────────────────────
+    for (var ai = 0; ai < names.length; ai++) {
+      var aname = names[ai];
+      var abody = normalizeDaxBody(measureSet[aname]);
+      var aliasMatch = abody.match(/^\[([^\]]+)\]$/i);
+      if (aliasMatch) {
+        var aliasTarget = resolveMeasureName(aliasMatch[1]);
+        if (aliasTarget && aliasTarget !== aname) {
+          crossMeasure.push({
+            type: "cx-alias-measure",
+            severity: "low",
+            issue: "\"" + aname + "\" is a pure alias — its entire body is [" + aliasTarget + "], adding indirection with no functional benefit.",
+            measures: [aname, aliasTarget],
+            fix: "Remove the alias measure and reference [" + aliasTarget + "] directly in visuals and other measures.",
+            details: { alias: aname, target: aliasTarget }
+          });
+        }
+      }
+    }
+
+    return { perMeasure: perMeasure, crossMeasure: crossMeasure };
+  }
+
+  // ── End multi-measure analysis ────────────────────────────────────────────────
+
+  function analyzeRuleMatches(dax, modelContext) {
     const parsed = parseDAX(dax);
+    const mc = modelContext || {};
     const results = rules.map((rule) => {
-      const matchScore = scoreMatchParsed(rule, dax, parsed);
+      const matchScore = scoreMatchParsed(rule, dax, parsed, mc);
       const confidence = matchScore * getRuleConfidence(rule);
       const fix = applyTemplate(rule, parsed);
 
@@ -1344,6 +2358,7 @@ function printResults(dax) {
 
   window.PowerBIDaxEngine = {
     analyzeDAX,
+    analyzeMultiple,
     analyzeRuleMatches,
     applyTemplate,
     explainRule,

@@ -1,0 +1,7 @@
+node_modules/
+training/reports/
+training/overnight_runs/
+training/browser_reports/
+training/training_report.json
+training/training_report.md
+training/browser_smoke_report.json

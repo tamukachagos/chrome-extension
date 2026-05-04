@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Analyst AI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --accent:   #f2c811;
+      --accent2:  #2563eb;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --orange:   #f97316;
+      --text:     #e8e8f0;
+      --muted:    #8b8fa8;
+      --code-bg:  #12141e;
+      --radius:   10px;
+      --font:     "Segoe UI", Inter, -apple-system, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #header .logo {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: var(--accent);
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: 900;
+      color: #111;
+      flex-shrink: 0;
+    }
+    #header .title {
+      font-weight: 700;
+      font-size: 13px;
+      flex: 1;
+    }
+    #header .subtitle {
+      font-size: 10px;
+      color: var(--muted);
+    }
+    #platform-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #platform-badge.pbi     { border-color: #f2c811; color: #f2c811; }
+    #platform-badge.tableau { border-color: #e8825f; color: #e8825f; }
+    #platform-badge.sql     { border-color: #2563eb; color: #2563eb; }
+
+    /* ── Tabs ──────────────────────────────────────────────────── */
+    #tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* ── Tab panels ────────────────────────────────────────────── */
+    .tab-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .tab-panel.active { display: flex; }
+
+    /* ── Chat panel ────────────────────────────────────────────── */
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .msg .avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .msg.user .avatar  { background: var(--accent2); color: #fff; }
+    .msg.agent .avatar { background: var(--accent);  color: #111; }
+
+    .msg .bubble {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user .bubble  {
+      background: var(--accent2);
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+    .msg.agent .bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 2px;
+    }
+    .msg.agent .bubble code {
+      display: block;
+      background: var(--code-bg);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin: 6px 0;
+      font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+      font-size: 11px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .msg .meta {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* Thinking indicator */
+    .thinking-dots {
+      display: flex;
+      gap: 4px;
+      padding: 10px 12px;
+      align-items: center;
+    }
+    .thinking-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: bounce 0.9s infinite;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.30s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40%            { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* ── Input row ─────────────────────────────────────────────── */
+    #input-area {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    #user-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      padding: 8px 10px;
+      resize: none;
+      min-height: 36px;
+      max-height: 120px;
+      overflow-y: auto;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #user-input:focus { border-color: var(--accent2); }
+    #user-input::placeholder { color: var(--muted); }
+
+    .send-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius);
+      background: var(--accent2);
+      border: none;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .send-btn:hover { background: #1d4fd8; }
+    .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+
+    .stop-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius);
+      background: var(--red);
+      border: none;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      display: none;        /* shown only while running */
+      place-items: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .stop-btn:hover { background: #c53030; }
+
+    /* Screenshot button */
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { border-color: var(--text); color: var(--text); }
+
+    /* ── Quick actions panel ───────────────────────────────────── */
+    #actions-panel {
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin: 4px 0 6px;
+    }
+
+    .action-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .action-card:hover {
+      border-color: var(--accent2);
+      background: #1e2235;
+    }
+    .action-card .ac-title {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .action-card .ac-desc {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .action-card .ac-icon {
+      float: right;
+      font-size: 16px;
+      margin-top: -2px;
+    }
+
+    /* ── KPI registry panel ────────────────────────────────────── */
+    #kpi-panel {
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #add-kpi-form {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #add-kpi-form input, #add-kpi-form textarea {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 8px;
+      outline: none;
+    }
+    #add-kpi-form textarea { resize: vertical; min-height: 60px; }
+    #add-kpi-form input:focus, #add-kpi-form textarea:focus {
+      border-color: var(--accent2);
+    }
+
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+    .kpi-card .kpi-name { font-size: 12px; font-weight: 700; }
+    .kpi-card .kpi-dax  {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .kpi-card .kpi-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .kpi-card button {
+      font: inherit;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .kpi-card button:hover { color: var(--text); border-color: var(--text); }
+    .kpi-card button.danger:hover { color: var(--red); border-color: var(--red); }
+
+    /* ── Status bar ────────────────────────────────────────────── */
+    #status-bar {
+      border-top: 1px solid var(--border);
+      padding: 5px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    #status-bar .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    #status-bar .dot.green  { background: var(--green); }
+    #status-bar .dot.red    { background: var(--red); }
+    #status-bar .dot.orange { background: var(--orange); }
+    #status-bar .dot.pulse {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+    #status-text { flex: 1; }
+    #proxy-status { margin-left: auto; }
+
+    /* ── General utils ─────────────────────────────────────────── */
+    .btn {
+      font: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 7px;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--accent2); color: #fff; }
+    .btn-accent  { background: var(--accent);  color: #111; }
+    .btn-ghost   {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text); }
+
+    hr.divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 6px 0;
+    }
+
+    /* Screenshot thumbnail in chat */
+    .thumb {
+      max-width: 100%;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      margin-top: 4px;
+      cursor: zoom-in;
+    }
+
+    /* Streaming cursor blink */
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* Agent log in chat */
+    .agent-log {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: "Cascadia Code", Consolas, monospace;
+      padding: 4px 8px;
+      background: var(--code-bg);
+      border-radius: 5px;
+      margin-top: 4px;
+    }
+    .agent-log.ok  { color: var(--green); }
+    .agent-log.err { color: var(--red); }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <div id="header">
+    <div class="logo">D</div>
+    <div>
+      <div class="title">Data Analyst AI</div>
+      <div class="subtitle">Power BI · Tableau · SQL</div>
+    </div>
+    <span id="platform-badge">—</span>
+  </div>
+
+  <!-- Tabs -->
+  <div id="tabs">
+    <button class="tab-btn active" data-tab="chat">💬 Chat</button>
+    <button class="tab-btn"        data-tab="actions">⚡ Actions</button>
+    <button class="tab-btn"        data-tab="kpis">📊 KPIs</button>
+    <button class="tab-btn"        data-tab="alerts">🚨 <span id="alerts-badge" style="display:none;background:var(--red);color:#fff;border-radius:999px;padding:0 4px;font-size:9px;margin-left:2px"></span>Alerts</button>
+    <button class="tab-btn"        data-tab="workspace">🏢</button>
+    <button class="tab-btn"        data-tab="settings">⚙️</button>
+  </div>
+
+  <!-- Chat panel -->
+  <div id="tab-chat" class="tab-panel active">
+    <div id="chat-messages">
+      <div class="msg agent">
+        <div class="avatar">D</div>
+        <div>
+          <div class="bubble">Hello! I'm your AI data analyst. I can read your Power BI reports, write DAX measures, analyze visuals, and execute actions directly in the UI.
+
+What would you like to do today?</div>
+          <div class="meta">Data Analyst AI</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="input-area">
+      <button class="icon-btn" id="screenshot-btn" title="Take screenshot and analyze">📷</button>
+      <button class="icon-btn" id="scan-btn"       title="Scan page state">🔍</button>
+      <button class="icon-btn" id="narrate-btn"    title="Narrate all report pages">📖</button>
+      <textarea
+        id="user-input"
+        placeholder="Ask me to write a measure, analyze a visual, create a KPI..."
+        rows="1"
+      ></textarea>
+      <button class="send-btn" id="send-btn"  title="Send">➤</button>
+      <button class="stop-btn" id="stop-btn"  title="Stop">⏹</button>
+    </div>
+  </div>
+
+  <!-- Actions panel -->
+  <div id="tab-actions" class="tab-panel">
+    <div id="actions-panel">
+      <div class="section-label">Power BI</div>
+
+      <div class="action-card" data-action="new-measure">
+        <span class="ac-icon">📐</span>
+        <div class="ac-title">New Measure</div>
+        <div class="ac-desc">Open the measure editor and write a DAX formula</div>
+      </div>
+
+      <div class="action-card" data-action="audit-visuals">
+        <span class="ac-icon">🔎</span>
+        <div class="ac-title">Audit Visuals</div>
+        <div class="ac-desc">Screenshot + analyze all visuals on this page for issues</div>
+      </div>
+
+      <div class="action-card" data-action="check-dax">
+        <span class="ac-icon">✅</span>
+        <div class="ac-title">Check DAX in Formula Bar</div>
+        <div class="ac-desc">Run deterministic rules against the selected measure</div>
+      </div>
+
+      <div class="action-card" data-action="model-review">
+        <span class="ac-icon">🏗️</span>
+        <div class="ac-title">Model Review</div>
+        <div class="ac-desc">Analyze field list and relationships for modeling issues</div>
+      </div>
+
+      <hr class="divider" />
+      <div class="section-label">SQL / General</div>
+
+      <div class="action-card" data-action="gen-sql">
+        <span class="ac-icon">🗄️</span>
+        <div class="ac-title">Generate SQL Query</div>
+        <div class="ac-desc">Describe what you need and I'll write the SQL</div>
+      </div>
+
+      <div class="action-card" data-action="run-sql">
+        <span class="ac-icon">▶️</span>
+        <div class="ac-title">Run SQL Query</div>
+        <div class="ac-desc">Execute a SELECT against your configured database and see results</div>
+      </div>
+
+      <div class="action-card" data-action="screenshot-analyze">
+        <span class="ac-icon">🖼️</span>
+        <div class="ac-title">Screenshot & Analyze</div>
+        <div class="ac-desc">Take a screenshot and explain what's on screen</div>
+      </div>
+
+      <hr class="divider" />
+      <div class="section-label">Tableau</div>
+
+      <div class="action-card" data-action="tableau-state">
+        <span class="ac-icon">📊</span>
+        <div class="ac-title">Tableau: Get State</div>
+        <div class="ac-desc">Read current sheets, filters, and parameters from the active viz</div>
+      </div>
+
+      <div class="action-card" data-action="tableau-filter">
+        <span class="ac-icon">🔽</span>
+        <div class="ac-title">Tableau: Apply Filter</div>
+        <div class="ac-desc">Filter the active worksheet to specific values</div>
+      </div>
+
+      <div class="action-card" data-action="tableau-navigate">
+        <span class="ac-icon">📑</span>
+        <div class="ac-title">Tableau: Switch Sheet</div>
+        <div class="ac-desc">Navigate to a named sheet or dashboard tab</div>
+      </div>
+
+      <div class="action-card" data-action="tableau-parameter">
+        <span class="ac-icon">🎛️</span>
+        <div class="ac-title">Tableau: Set Parameter</div>
+        <div class="ac-desc">Change a parameter value in the active viz</div>
+      </div>
+
+      <div class="action-card" data-action="tableau-export">
+        <span class="ac-icon">🖼️</span>
+        <div class="ac-title">Tableau: Export Image</div>
+        <div class="ac-desc">Download the current view as an image</div>
+      </div>
+
+      <hr class="divider" />
+      <div class="section-label">Agent Mode</div>
+
+      <div class="action-card" data-action="run-dax-query">
+        <span class="ac-icon">▶️</span>
+        <div class="ac-title">Run DAX Query</div>
+        <div class="ac-desc">Execute a DAX EVALUATE query and see the result rows</div>
+      </div>
+
+      <div class="action-card" data-action="agent-goal">
+        <span class="ac-icon">🤖</span>
+        <div class="ac-title">Execute a Goal</div>
+        <div class="ac-desc">Describe a multi-step goal — I'll plan, execute, and verify each step</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Registry panel -->
+  <div id="tab-kpis" class="tab-panel">
+    <div id="kpi-panel">
+      <div class="section-label">KPI Registry</div>
+
+      <div id="add-kpi-form">
+        <input type="text"   id="kpi-name"       placeholder="KPI name (e.g. Gross Margin %)" />
+        <input type="text"   id="kpi-table"      placeholder="Table (e.g. Sales)" />
+        <textarea             id="kpi-dax"        placeholder="DAX expression"></textarea>
+        <input type="text"   id="kpi-definition" placeholder="Business definition" />
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="kpi-threshold" placeholder="Alert threshold (optional)" style="flex:1" />
+          <select id="kpi-direction" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none">
+            <option value="below">Below</option>
+            <option value="above">Above</option>
+            <option value="change_pct">% Change</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="add-kpi-btn">+ Add KPI</button>
+      </div>
+
+      <div id="kpi-list">
+        <!-- Populated by sidepanel.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts panel -->
+  <div id="tab-alerts" class="tab-panel">
+    <div id="alerts-panel" style="overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;">
+
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="section-label" style="margin:0;flex:1">KPI Monitoring</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="monitoring-enabled" style="accent-color:var(--accent2)"> Enabled
+        </label>
+        <select id="monitoring-interval" style="background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:10px;padding:2px 4px">
+          <option value="15">15 min</option>
+          <option value="30" selected>30 min</option>
+          <option value="60">1 hour</option>
+          <option value="360">6 hours</option>
+        </select>
+        <button class="btn btn-ghost" id="run-monitor-now" style="font-size:10px;padding:3px 8px">Run now</button>
+      </div>
+
+      <div style="font-size:10px;color:var(--muted)">
+        Monitoring checks KPIs with thresholds set. The Power BI token must be active (open a report first).
+      </div>
+
+      <hr class="divider">
+      <div class="section-label">Active Alerts</div>
+      <div id="alert-list">
+        <div style="color:var(--muted);font-size:11px">No alerts yet.</div>
+      </div>
+
+      <hr class="divider">
+      <div class="section-label">Alert History</div>
+      <div id="alert-history" style="font-size:11px;color:var(--muted)">No history.</div>
+    </div>
+  </div>
+
+  <!-- Workspace panel -->
+  <div id="tab-workspace" class="tab-panel">
+    <div id="workspace-panel" style="overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;">
+
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="section-label" style="margin:0;flex:1">Workspace</div>
+        <button class="btn btn-ghost" id="ws-refresh-btn" style="font-size:10px;padding:3px 8px">↻ Refresh</button>
+      </div>
+
+      <!-- Cross-workspace switcher -->
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="ws-workspace-select" style="flex:1;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px">
+          <option value="">Current workspace</option>
+        </select>
+        <button class="btn btn-ghost" id="ws-load-workspaces" style="font-size:10px;padding:3px 8px">List All</button>
+        <button class="btn btn-ghost" id="ws-switch-workspace" style="font-size:10px;padding:3px 8px">Switch →</button>
+      </div>
+
+      <div id="ws-datasets-section">
+        <div class="section-label">Datasets</div>
+        <div id="ws-datasets" style="font-size:11px;color:var(--muted)">Open a Power BI report to load workspace data.</div>
+      </div>
+
+      <hr class="divider">
+      <div id="ws-reports-section">
+        <div class="section-label">Reports</div>
+        <div id="ws-reports" style="font-size:11px;color:var(--muted)"></div>
+      </div>
+
+      <hr class="divider">
+      <div id="ws-schema-section">
+        <div class="section-label">Dataset Schema</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <select id="ws-dataset-select" style="flex:1;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px">
+            <option value="">Select a dataset…</option>
+          </select>
+          <button class="btn btn-ghost" id="ws-load-schema" style="font-size:10px;padding:3px 8px">Load</button>
+        </div>
+        <div id="ws-schema" style="font-size:11px;color:var(--muted)"></div>
+      </div>
+
+      <hr class="divider">
+      <div id="ws-powerquery-section">
+        <div class="section-label">Power Query (M) Editor</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <select id="ws-pq-dataset" style="flex:1;min-width:0;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px">
+            <option value="">Dataset…</option>
+          </select>
+          <select id="ws-pq-table" style="flex:1;min-width:0;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px">
+            <option value="">Table…</option>
+          </select>
+          <button class="btn btn-ghost" id="ws-pq-load" style="font-size:10px;padding:3px 8px">Load M</button>
+        </div>
+        <textarea id="ws-pq-editor" placeholder="M expression will appear here…" style="width:100%;min-height:100px;background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Cascadia Code',Consolas,monospace;font-size:11px;padding:8px;resize:vertical;outline:none;margin-bottom:6px"></textarea>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" id="ws-pq-ai-fix" style="flex:1;font-size:10px">🤖 AI Fix</button>
+          <button class="btn btn-primary" id="ws-pq-save" style="flex:1;font-size:10px">Save M</button>
+        </div>
+        <div id="ws-pq-status" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
+      </div>
+
+      <hr class="divider">
+      <!-- RLS Management -->
+      <div id="ws-rls-section">
+        <div class="section-label">Row-Level Security (RLS)</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <select id="ws-rls-dataset" style="flex:1;min-width:0;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px">
+            <option value="">Dataset…</option>
+          </select>
+          <button class="btn btn-ghost" id="ws-rls-load" style="font-size:10px;padding:3px 8px">Load Roles</button>
+        </div>
+        <div id="ws-rls-roles" style="font-size:11px;color:var(--muted)">Select a dataset to view RLS roles.</div>
+
+        <div style="margin-top:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:6px">ADD / TEST USER</div>
+          <input type="text" id="ws-rls-username" placeholder="user@company.com" style="width:100%;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px;margin-bottom:4px;outline:none" />
+          <input type="text" id="ws-rls-roles-input" placeholder="Role names (comma-separated)" style="width:100%;background:var(--code-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font:inherit;font-size:11px;padding:4px 6px;margin-bottom:6px;outline:none" />
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost" id="ws-rls-add-user" style="flex:1;font-size:10px">+ Add User</button>
+            <button class="btn btn-ghost" id="ws-rls-test" style="flex:1;font-size:10px">🔍 Test RLS</button>
+          </div>
+          <div id="ws-rls-status" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
+        </div>
+      </div>
+
+      <hr class="divider">
+      <div>
+        <div class="section-label">Dataset Refresh</div>
+        <div id="ws-refresh-history" style="font-size:11px;color:var(--muted)">Select a dataset above to see refresh history.</div>
+        <button class="btn btn-primary" id="ws-trigger-refresh" style="margin-top:6px;font-size:11px;display:none">▶ Trigger Refresh Now</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="tab-settings" class="tab-panel">
+    <div id="settings-panel" style="overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px;">
+
+      <div class="section-label">Connection</div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--muted)">Anthropic API Key</label>
+        <input type="password" id="s-api-key" placeholder="sk-ant-…" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none;" />
+        <div style="font-size:10px;color:var(--muted)">Stored locally. Sent only to your proxy, never to any third party.</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--muted)">Proxy Endpoint</label>
+        <input type="text" id="s-proxy" placeholder="http://localhost:3003" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none;" />
+        <div id="s-proxy-status" style="font-size:10px;color:var(--muted)">Not checked yet</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--muted)">SQL Connection String <span style="opacity:.5">(optional)</span></label>
+        <input type="text" id="s-sql-conn" placeholder="postgresql://user:pass@host:5432/db" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none;" />
+        <div style="font-size:10px;color:var(--muted)">Sent to your local proxy for SQL query execution. Never leaves your machine.</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--muted)">Slack Webhook URL <span style="opacity:.5">(optional — for KPI alerts)</span></label>
+        <input type="text" id="s-slack-webhook" placeholder="https://hooks.slack.com/services/…" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none;" />
+        <div style="font-size:10px;color:var(--muted)">KPI threshold alerts will be sent here. Sent only from your local proxy.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" id="s-save-btn" style="flex:1">Save Settings</button>
+        <button class="btn btn-ghost"   id="s-test-btn">Test Proxy</button>
+      </div>
+
+      <hr class="divider" />
+      <div class="section-label">Knowledge Base</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Custom facts injected into every AI request.</div>
+
+      <div id="s-knowledge-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <input type="text"     id="s-kb-title" placeholder="Title (e.g. Company fiscal year)" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none;" />
+        <textarea              id="s-kb-body"  placeholder="Body (e.g. Our fiscal year runs Oct–Sep)" style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;padding:6px 8px;outline:none;resize:vertical;min-height:56px;"></textarea>
+        <button class="btn btn-ghost" id="s-kb-add-btn">+ Add</button>
+      </div>
+
+      <hr class="divider" />
+      <div class="section-label">About</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.7">
+        <b style="color:var(--text)">Data Analyst AI</b> v1.1.0<br>
+        DAX engine: 91 rules<br>
+        Proxy: <span id="s-about-proxy">localhost:3003</span><br>
+        <a id="s-proxy-start-hint" href="#" style="color:var(--accent2);text-decoration:none">How to start the proxy ↗</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Idle</span>
+    <span id="proxy-status">Proxy: checking…</span>
+  </div>
+
+</div>
+<script src="daxEngine.js"></script>
+<script src="ruleLoader.js"></script>
+<script src="skills.js"></script>
+<script src="agentLoop.js"></script>
+<script src="insightEngine.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>

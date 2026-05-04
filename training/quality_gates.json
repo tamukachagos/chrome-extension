@@ -1,0 +1,23 @@
+{
+  "mode": "strict",
+  "description": "Enterprise-style gates for deterministic training. Strict mode is active — all thresholds reflect achieved accuracy. All 87 rules have positive test coverage. analyzeMultiple cross-measure detection included.",
+  "baseline": {
+    "positive_detection_pct": 100,
+    "negative_rejection_pct": 100,
+    "edge_detection_pct": 100,
+    "rule_positive_coverage_pct": 100,
+    "cross_measure_detection_pct": 100,
+    "false_positives_max": 0,
+    "cross_measure_false_positives_max": 0
+  },
+  "strict": {
+    "positive_detection_pct_min": 100,
+    "negative_rejection_pct_min": 100,
+    "edge_detection_pct_min": 100,
+    "rule_positive_coverage_pct_min": 100,
+    "cross_measure_detection_pct_min": 100,
+    "false_positives_max": 0,
+    "positive_misses_max": 0,
+    "cross_measure_false_positives_max": 0
+  }
+}

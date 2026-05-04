@@ -753,696 +753,998 @@
       "expected_fix": "CONCATENATEX(FILTER(DimEmployee, DimEmployee[IsManager] = TRUE()), DimEmployee[FullName], \", \", DimEmployee[FullName], ASC)"
     },
     {
-      "name": "[pq] Table.NestedJoin without expanding result column",
-      "input": "Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")",
-      "expected_issue": "adv-pq-001: Nested join creates a column of tables — without Table.ExpandTableColumn the data is never accessible and the join is wasted",
-      "expected_fix": "Table.ExpandTableColumn(joinResult, \"CustomerData\", {\"Name\", \"Email\"})",
-      "domain": "power_query"
+      "name": "[bulk:sales] SUMX direct additive fact scan",
+      "input": "sales Amount = SUMX(FactSales, FactSales[Quantity])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "sales Amount = SUM(FactSales[Quantity])",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] COUNTROWS FILTER fact equality",
+      "input": "sales Filtered Count = COUNTROWS(FILTER(FactSales, FactSales[SalesID] > 0))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "sales Filtered Count = CALCULATE(COUNTROWS(FactSales), FactSales[SalesID] > 0)",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] FILTER ALL dimension equality",
+      "input": "sales Filtered = CALCULATE([Total Sales], FILTER(ALL(DimDate), DimDate[MonthName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "sales Filtered = CALCULATE([Total Sales], DimDate[MonthName] = \"Target\")",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] RANKX over fact table",
+      "input": "sales Rank = RANKX(ALL(FactSales), [Total Sales])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "sales Rank = RANKX(ALLSELECTED(DimDate[MonthName]), [Total Sales], , DESC, Dense)",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] CONCATENATEX missing order",
+      "input": "sales List = CONCATENATEX(DimDate, DimDate[MonthName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "sales List = CONCATENATEX(DimDate, DimDate[MonthName], \", \", DimDate[MonthName], ASC)",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] FORMAT numeric measure",
+      "input": "sales Display = FORMAT([Total Sales], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] DATEADD minus 365 days",
+      "input": "sales PY = CALCULATE([Total Sales], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "sales PY = CALCULATE([Total Sales], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] hardcoded year literal",
+      "input": "sales 2024 = CALCULATE([Total Sales], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "sales CY = CALCULATE([Total Sales], DATESYTD(DimDate[Date]))",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] multiple OR same column",
+      "input": "sales Multi Filter = CALCULATE([Total Sales], DimDate[MonthName] = \"A\" || DimDate[MonthName] = \"B\" || DimDate[MonthName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "sales Multi Filter = CALCULATE([Total Sales], DimDate[MonthName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] TOPN no tiebreaker",
+      "input": "sales Top N = CALCULATE([Total Sales], TOPN(5, ALL(DimDate), [Total Sales], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "sales Top N = CALCULATE([Total Sales], TOPN(5, ALL(DimDate), [Total Sales], DESC, DimDate[DateKey], ASC))",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] ALL fact table removes security context",
+      "input": "sales Grand Total = CALCULATE([Total Sales], ALL(FactSales))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "sales Grand Total = CALCULATE([Total Sales], REMOVEFILTERS(FactSales[SalesID]))",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:sales] REMOVEFILTERS full fact table",
+      "input": "sales Unscoped Total = CALCULATE([Total Sales], REMOVEFILTERS(FactSales))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "sales Unscoped Total = CALCULATE([Total Sales], REMOVEFILTERS(FactSales[SalesID]))",
+      "domain": "sales",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:finance] SUMX direct additive fact scan",
+      "input": "finance Amount = SUMX(FactGL, FactGL[Amount])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "finance Amount = SUM(FactGL[Amount])",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[pq] Text.Contains inside Table.SelectRows breaking query folding",
-      "input": "Table.SelectRows(Source, each Text.Contains([Description], \"urgent\"))",
-      "expected_issue": "adv-pq-002: Text.Contains does not fold to SQL — entire table is loaded to memory before filtering",
-      "expected_fix": "Use Table.SelectRows with a foldable condition or filter in the SQL source query",
-      "domain": "power_query"
+      "name": "[bulk:finance] COUNTROWS FILTER fact equality",
+      "input": "finance Filtered Count = COUNTROWS(FILTER(FactGL, FactGL[TransactionType] = \"Active\"))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "finance Filtered Count = CALCULATE(COUNTROWS(FactGL), FactGL[TransactionType] = \"Active\")",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[pq] List.Accumulate for running total calculation",
-      "input": "List.Accumulate(Table.ToRows(Source), 0, (state, row) => state + row{2})",
-      "expected_issue": "adv-pq-003: List.Accumulate iterates row-by-row in Power Query engine — extremely slow on large tables",
-      "expected_fix": "Use a DAX running total measure or window function in SQL source instead",
-      "domain": "power_query"
+      "name": "[bulk:finance] FILTER ALL dimension equality",
+      "input": "finance Filtered = CALCULATE([Actual Amount], FILTER(ALL(DimAccount), DimAccount[AccountName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "finance Filtered = CALCULATE([Actual Amount], DimAccount[AccountName] = \"Target\")",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[pq] Table.Distinct on high-cardinality fact table",
-      "input": "Table.Distinct(FactSales)",
-      "expected_issue": "adv-pq-004: Table.Distinct on a large fact table sorts and deduplicates all rows in memory — very expensive",
-      "expected_fix": "Push deduplication to the SQL source with SELECT DISTINCT or identify the true grain",
-      "domain": "power_query"
+      "name": "[bulk:finance] RANKX over fact table",
+      "input": "finance Rank = RANKX(ALL(FactGL), [Actual Amount])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "finance Rank = RANKX(ALLSELECTED(DimAccount[AccountName]), [Actual Amount], , DESC, Dense)",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[supply_chain] modeling: Role-playing DimLocation with inactive relationship for dest",
-      "input": "Role-playing DimLocation with inactive relationship for destination",
-      "expected_issue": "adv-model-066: Only one relationship can be active — destination analysis requires USERELATIONSHIP in every measure",
-      "expected_fix": "Create DimOrigin and DimDestination as separate views or calculated tables from DimLocation",
-      "domain": "supply_chain"
+      "name": "[bulk:finance] CONCATENATEX missing order",
+      "input": "finance List = CONCATENATEX(DimAccount, DimAccount[AccountName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "finance List = CONCATENATEX(DimAccount, DimAccount[AccountName], \", \", DimAccount[AccountName], ASC)",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[marketing] modeling: FactCampaigns and FactWebAnalytics both connected to DimChan",
-      "input": "FactCampaigns and FactWebAnalytics both connected to DimChannel",
-      "expected_issue": "adv-model-063: When filtering by channel, both fact tables filter — but campaign spend and web sessions may not have 1:1 granularity causing misaligned aggregations",
-      "expected_fix": "Separate page-level visuals for campaign vs web metrics; avoid mixing fact tables in single visual",
-      "domain": "marketing"
+      "name": "[bulk:finance] FORMAT numeric measure",
+      "input": "finance Display = FORMAT([Actual Amount], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] Patient Age Calc Column Bad",
-      "input": "Patient Age = DATEDIFF(DimPatient[DateOfBirth], TODAY(), YEAR)",
-      "expected_issue": "adv-model-079: TODAY() in calculated column — stale between refreshes",
-      "expected_fix": "See rule adv-model-079",
-      "domain": "healthcare"
+      "name": "[bulk:finance] DATEADD minus 365 days",
+      "input": "finance PY = CALCULATE([Actual Amount], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "finance PY = CALCULATE([Actual Amount], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] High Risk Filter Bad",
-      "input": "High Risk Patients = COUNTROWS(FILTER(DimPatient, DimPatient[RiskScore] > 7))",
-      "expected_issue": "adv-perf-069: COUNTROWS(FILTER()) should be CALCULATE(COUNTROWS(), condition)",
-      "expected_fix": "See rule adv-perf-069",
-      "domain": "healthcare"
+      "name": "[bulk:finance] hardcoded year literal",
+      "input": "finance 2024 = CALCULATE([Actual Amount], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "finance CY = CALCULATE([Actual Amount], DATESYTD(DimDate[Date]))",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] LOS Format Bad",
-      "input": "LOS Display = FORMAT([Avg LOS], \"0.0 days\")",
-      "expected_issue": "adv-cor-008: FORMAT returns text — cannot sort or aggregate numerically",
-      "expected_fix": "See rule adv-cor-008",
-      "domain": "healthcare"
+      "name": "[bulk:finance] multiple OR same column",
+      "input": "finance Multi Filter = CALCULATE([Actual Amount], DimAccount[AccountName] = \"A\" || DimAccount[AccountName] = \"B\" || DimAccount[AccountName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "finance Multi Filter = CALCULATE([Actual Amount], DimAccount[AccountName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] Provider OR Filter Bad",
-      "input": "ER Visits = CALCULATE([Total Encounters], DimProvider[Specialty] = \"Emergency\" || DimProvider[Specialty] = \"Urgent Care\" || DimProvider[Specialty] = \"Trauma\")",
-      "expected_issue": "adv-perf-075: Chained OR on same column — use IN operator",
-      "expected_fix": "See rule adv-perf-075",
-      "domain": "healthcare"
+      "name": "[bulk:finance] TOPN no tiebreaker",
+      "input": "finance Top N = CALCULATE([Actual Amount], TOPN(5, ALL(DimAccount), [Actual Amount], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "finance Top N = CALCULATE([Actual Amount], TOPN(5, ALL(DimAccount), [Actual Amount], DESC, DimAccount[AccountKey], ASC))",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] modeling: FactEncounters snapshot summed across all dates",
-      "input": "FactEncounters snapshot summed across all dates",
-      "expected_issue": "adv-model-067: LOS_Days summed without date filter multiplies across all encounter dates",
-      "expected_fix": "Filter to specific date range; LOS is an event fact not a snapshot",
-      "domain": "healthcare"
+      "name": "[bulk:finance] ALL fact table removes security context",
+      "input": "finance Grand Total = CALCULATE([Actual Amount], ALL(FactGL))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "finance Grand Total = CALCULATE([Actual Amount], REMOVEFILTERS(FactGL[TransactionType]))",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] modeling: DimPatient used as both patient and provider via RELATED",
-      "input": "DimPatient used as both patient and provider via RELATED",
-      "expected_issue": "adv-model-066: Self-join risk when provider is also a patient — relationship ambiguity",
-      "expected_fix": "Use separate DimProvider table, never reuse DimPatient as provider",
-      "domain": "healthcare"
+      "name": "[bulk:finance] REMOVEFILTERS full fact table",
+      "input": "finance Unscoped Total = CALCULATE([Actual Amount], REMOVEFILTERS(FactGL))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "finance Unscoped Total = CALCULATE([Actual Amount], REMOVEFILTERS(FactGL[TransactionType]))",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] Revenue This Year Bad",
-      "input": "Revenue 2024 = CALCULATE([Gross Revenue], DimDate[Year] = 2024)",
-      "expected_issue": "adv-model-076: Hardcoded year literal",
-      "expected_fix": "See rule adv-model-076",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] SUMX direct additive fact scan",
+      "input": "saas Amount = SUMX(FactSubscriptions, FactSubscriptions[MRR])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "saas Amount = SUM(FactSubscriptions[MRR])",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] Top Customers Bad",
-      "input": "Top 10 Revenue = CALCULATE([Net Revenue], TOPN(10, ALL(DimCustomer), [Net Revenue], DESC))",
-      "expected_issue": "adv-cor-070: TOPN without tiebreaker — nondeterministic when customers are tied",
-      "expected_fix": "See rule adv-cor-070",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] COUNTROWS FILTER fact equality",
+      "input": "saas Filtered Count = COUNTROWS(FILTER(FactSubscriptions, FactSubscriptions[Status] = \"Active\"))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "saas Filtered Count = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Active\")",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] Channel Concat Bad",
-      "input": "Channels Used = CONCATENATEX(VALUES(DimCustomer[AcquisitionChannel]), DimCustomer[AcquisitionChannel], \", \")",
-      "expected_issue": "adv-cor-007: CONCATENATEX without ORDERBY — nondeterministic order",
-      "expected_fix": "See rule adv-cor-007",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] FILTER ALL dimension equality",
+      "input": "saas Filtered = CALCULATE([MRR], FILTER(ALL(DimAccount), DimAccount[AccountName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "saas Filtered = CALCULATE([MRR], DimAccount[AccountName] = \"Target\")",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] Return FILTER Bad",
-      "input": "Returned Items = COUNTROWS(FILTER(FactReturns, FactReturns[RefundAmount] > 0))",
-      "expected_issue": "adv-perf-069: COUNTROWS(FILTER()) — use CALCULATE(COUNTROWS(), condition)",
-      "expected_fix": "See rule adv-perf-069",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] RANKX over fact table",
+      "input": "saas Rank = RANKX(ALL(FactSubscriptions), [MRR])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "saas Rank = RANKX(ALLSELECTED(DimAccount[AccountName]), [MRR], , DESC, Dense)",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] RANKX Orders Bad",
-      "input": "Order Rank = RANKX(ALL(FactOrders), [Gross Revenue])",
-      "expected_issue": "adv-perf-077: RANKX over 8M row fact table — rank over DimCustomer or DimProduct",
-      "expected_fix": "See rule adv-perf-077",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] CONCATENATEX missing order",
+      "input": "saas List = CONCATENATEX(DimAccount, DimAccount[AccountName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "saas List = CONCATENATEX(DimAccount, DimAccount[AccountName], \", \", DimAccount[AccountName], ASC)",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] modeling: FactOrders and FactReturns both connected to DimCustomer",
-      "input": "FactOrders and FactReturns both connected to DimCustomer",
-      "expected_issue": "adv-model-063: Cross-fact filter on shared dimension — net revenue calculation may include BLANK rows",
-      "expected_fix": "Use TREATAS to apply customer context across both fact tables",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] FORMAT numeric measure",
+      "input": "saas Display = FORMAT([MRR], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] modeling: ReturnFlag column in FactOrders vs separate FactReturns tabl",
-      "input": "ReturnFlag column in FactOrders vs separate FactReturns table",
-      "expected_issue": "adv-model-068: Double-counting risk when both ReturnFlag and FactReturns used in same visual",
-      "expected_fix": "Pick one pattern — either flag in fact or separate return fact, not both",
-      "domain": "ecommerce"
+      "name": "[bulk:saas] DATEADD minus 365 days",
+      "input": "saas PY = CALCULATE([MRR], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "saas PY = CALCULATE([MRR], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] Switch Duplicate Severity Bad",
-      "input": "Severity Label = SWITCH(FactQuality[SeverityLevel], 1, \"Low\", 2, \"Medium\", 3, \"High\", 1, \"Critical\", \"Unknown\")",
-      "expected_issue": "adv-cor-078: Severity 1 appears twice — second branch unreachable",
-      "expected_fix": "See rule adv-cor-078",
-      "domain": "manufacturing"
+      "name": "[bulk:saas] hardcoded year literal",
+      "input": "saas 2024 = CALCULATE([MRR], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "saas CY = CALCULATE([MRR], DATESYTD(DimDate[Date]))",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] Line Age Column Bad",
-      "input": "Line Age Years = DATEDIFF(DimLine[CommissionDate], TODAY(), YEAR)",
-      "expected_issue": "adv-model-079: TODAY() in calculated column — stale between refreshes",
-      "expected_fix": "See rule adv-model-079",
-      "domain": "manufacturing"
+      "name": "[bulk:saas] multiple OR same column",
+      "input": "saas Multi Filter = CALCULATE([MRR], DimAccount[AccountName] = \"A\" || DimAccount[AccountName] = \"B\" || DimAccount[AccountName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "saas Multi Filter = CALCULATE([MRR], DimAccount[AccountName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] Defect SUMMARIZE Bad",
-      "input": "Defect Summary = SUMMARIZE(FactQuality, DimLine[LineName], \"Total\", [DPMO])",
-      "expected_issue": "adv-perf-037: SUMMARIZE with measures — use SUMMARIZECOLUMNS",
-      "expected_fix": "See rule adv-perf-037",
-      "domain": "manufacturing"
+      "name": "[bulk:saas] TOPN no tiebreaker",
+      "input": "saas Top N = CALCULATE([MRR], TOPN(5, ALL(DimAccount), [MRR], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "saas Top N = CALCULATE([MRR], TOPN(5, ALL(DimAccount), [MRR], DESC, DimAccount[AccountID], ASC))",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] OEE OR Shifts Bad",
-      "input": "Day Shift OEE = CALCULATE([OEE], DimShift[ShiftName] = \"Morning\" || DimShift[ShiftName] = \"Day\" || DimShift[ShiftName] = \"AM\")",
-      "expected_issue": "adv-perf-075: Chained OR — use IN operator",
-      "expected_fix": "See rule adv-perf-075",
-      "domain": "manufacturing"
+      "name": "[bulk:saas] ALL fact table removes security context",
+      "input": "saas Grand Total = CALCULATE([MRR], ALL(FactSubscriptions))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "saas Grand Total = CALCULATE([MRR], REMOVEFILTERS(FactSubscriptions[Status]))",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] modeling: FactProduction and FactQuality both connected to DimProduct ",
-      "input": "FactProduction and FactQuality both connected to DimProduct via ProductKey",
-      "expected_issue": "adv-model-063: Cross-fact aggregation may produce fan trap overcounting when both tables filtered simultaneously",
-      "expected_fix": "Keep measures in separate visuals or use TREATAS to bridge context",
-      "domain": "manufacturing"
+      "name": "[bulk:saas] REMOVEFILTERS full fact table",
+      "input": "saas Unscoped Total = CALCULATE([MRR], REMOVEFILTERS(FactSubscriptions))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "saas Unscoped Total = CALCULATE([MRR], REMOVEFILTERS(FactSubscriptions[Status]))",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] modeling: Scrap counted from both ScrapUnits column and FactQuality De",
-      "input": "Scrap counted from both ScrapUnits column and FactQuality DefectCount",
-      "expected_issue": "adv-model-068: Two sources of truth for scrap — ScrapUnits from production and DefectCount from quality inspection may diverge",
-      "expected_fix": "Establish single source of scrap truth; document reconciliation rule",
-      "domain": "manufacturing"
+      "name": "[bulk:inventory] SUMX direct additive fact scan",
+      "input": "inventory Amount = SUMX(FactInventory, FactInventory[OnHandQty])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "inventory Amount = SUM(FactInventory[OnHandQty])",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] Subscriber Age Bad",
-      "input": "Account Age Days = DATEDIFF(DimSubscriber[ActivationDate], TODAY(), DAY)",
-      "expected_issue": "adv-model-079: TODAY() in calculated column — stale between refreshes",
-      "expected_fix": "See rule adv-model-079",
-      "domain": "telecom"
+      "name": "[bulk:inventory] COUNTROWS FILTER fact equality",
+      "input": "inventory Filtered Count = COUNTROWS(FILTER(FactInventory, FactInventory[InventoryID] > 0))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "inventory Filtered Count = CALCULATE(COUNTROWS(FactInventory), FactInventory[InventoryID] > 0)",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] Usage DATEADD Bad",
-      "input": "Usage PY = CALCULATE([ARPU], DATEADD(DimDate[Date], -365, DAY))",
-      "expected_issue": "adv-perf-074: DATEADD -365 DAY ignores leap years — use SAMEPERIODLASTYEAR",
-      "expected_fix": "See rule adv-perf-074",
-      "domain": "telecom"
+      "name": "[bulk:inventory] FILTER ALL dimension equality",
+      "input": "inventory Filtered = CALCULATE([Total On Hand], FILTER(ALL(DimWarehouse), DimWarehouse[WarehouseName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "inventory Filtered = CALCULATE([Total On Hand], DimWarehouse[WarehouseName] = \"Target\")",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] Plan OR Filter Bad",
-      "input": "Premium Revenue = CALCULATE([ARPU], DimPlan[Tier] = \"Gold\" || DimPlan[Tier] = \"Platinum\" || DimPlan[Tier] = \"Diamond\" || DimPlan[Tier] = \"Elite\")",
-      "expected_issue": "adv-perf-075: Four OR conditions — use IN operator",
-      "expected_fix": "See rule adv-perf-075",
-      "domain": "telecom"
+      "name": "[bulk:inventory] RANKX over fact table",
+      "input": "inventory Rank = RANKX(ALL(FactInventory), [Total On Hand])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "inventory Rank = RANKX(ALLSELECTED(DimWarehouse[WarehouseName]), [Total On Hand], , DESC, Dense)",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] Username RLS Bad",
-      "input": "[RLS] = DimSubscriber[AccountManager] = USERNAME()",
-      "expected_issue": "adv-cor-071: USERNAME() deprecated in Power BI Service",
-      "expected_fix": "See rule adv-cor-071",
-      "domain": "telecom"
+      "name": "[bulk:inventory] CONCATENATEX missing order",
+      "input": "inventory List = CONCATENATEX(DimWarehouse, DimWarehouse[WarehouseName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "inventory List = CONCATENATEX(DimWarehouse, DimWarehouse[WarehouseName], \", \", DimWarehouse[WarehouseName], ASC)",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] Usage Rank Bad",
-      "input": "Usage Rank = RANKX(ALL(FactUsage), [Avg Data GB])",
-      "expected_issue": "adv-perf-077: RANKX over 50M row fact table — rank over DimSubscriber instead",
-      "expected_fix": "See rule adv-perf-077",
-      "domain": "telecom"
+      "name": "[bulk:inventory] FORMAT numeric measure",
+      "input": "inventory Display = FORMAT([Total On Hand], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] modeling: FactUsage (daily) and FactBilling (monthly) both connected t",
-      "input": "FactUsage (daily) and FactBilling (monthly) both connected to DimDate",
-      "expected_issue": "adv-model-067: Daily and monthly grain mixed — billing month filter returns all daily usage rows for that month, inflating daily metrics",
-      "expected_fix": "Use DATESINPERIOD or explicit month filter; keep daily and monthly visuals on separate pages",
-      "domain": "telecom"
+      "name": "[bulk:inventory] DATEADD minus 365 days",
+      "input": "inventory PY = CALCULATE([Total On Hand], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "inventory PY = CALCULATE([Total On Hand], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] modeling: 50M row FactUsage without aggregation table",
-      "input": "50M row FactUsage without aggregation table",
-      "expected_issue": "adv-model-089: No DirectQuery aggregation table configured — all report queries hit full 50M row table",
-      "expected_fix": "Create aggregation table at monthly/plan level; configure Power BI aggregations feature",
-      "domain": "telecom"
+      "name": "[bulk:inventory] hardcoded year literal",
+      "input": "inventory 2024 = CALCULATE([Total On Hand], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "inventory CY = CALCULATE([Total On Hand], DATESYTD(DimDate[Date]))",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "IF inside AVERAGEX — use CALCULATE+FILTER",
-      "input": "Avg Pos = AVERAGEX(FactSales, IF(FactSales[Amount] > 0, FactSales[Amount], BLANK()))",
-      "expected_issue": "adv-perf-080: IF inside AVERAGEX evaluates per-row — push to CALCULATE filter",
-      "expected_fix": "CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)"
+      "name": "[bulk:inventory] multiple OR same column",
+      "input": "inventory Multi Filter = CALCULATE([Total On Hand], DimWarehouse[WarehouseName] = \"A\" || DimWarehouse[WarehouseName] = \"B\" || DimWarehouse[WarehouseName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "inventory Multi Filter = CALCULATE([Total On Hand], DimWarehouse[WarehouseName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "MAXX on single column — use MAX instead",
-      "input": "Latest = MAXX(FactSales, FactSales[OrderDate])",
-      "expected_issue": "adv-perf-081: MAXX on direct column — MAX(FactSales[OrderDate]) is faster",
-      "expected_fix": "MAX(FactSales[OrderDate])"
+      "name": "[bulk:inventory] TOPN no tiebreaker",
+      "input": "inventory Top N = CALCULATE([Total On Hand], TOPN(5, ALL(DimWarehouse), [Total On Hand], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "inventory Top N = CALCULATE([Total On Hand], TOPN(5, ALL(DimWarehouse), [Total On Hand], DESC, DimWarehouse[WarehouseKey], ASC))",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "AVERAGEX on large fact — use DIVIDE(SUM,COUNT)",
-      "input": "Avg Sale = AVERAGEX(FactSales, FactSales[Amount])",
-      "expected_issue": "adv-perf-082: AVERAGEX on direct column reference — DIVIDE(SUM,COUNTROWS) is equivalent and faster",
-      "expected_fix": "DIVIDE(SUM(FactSales[Amount]), COUNTROWS(FactSales))"
+      "name": "[bulk:inventory] ALL fact table removes security context",
+      "input": "inventory Grand Total = CALCULATE([Total On Hand], ALL(FactInventory))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "inventory Grand Total = CALCULATE([Total On Hand], REMOVEFILTERS(FactInventory[InventoryID]))",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Nested SUMX inside SUMX",
-      "input": "Cross = SUMX(Products, SUMX(Customers, [Revenue]))",
-      "expected_issue": "adv-perf-084: Nested SUMX creates O(n²) complexity — redesign with SUMMARIZECOLUMNS",
-      "expected_fix": "SUMMARIZECOLUMNS(Products[Category], Customers[Segment], \"Rev\", [Revenue])"
+      "name": "[bulk:inventory] REMOVEFILTERS full fact table",
+      "input": "inventory Unscoped Total = CALCULATE([Total On Hand], REMOVEFILTERS(FactInventory))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "inventory Unscoped Total = CALCULATE([Total On Hand], REMOVEFILTERS(FactInventory[InventoryID]))",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "CROSSJOIN in measure materializing cartesian product",
-      "input": "Combos = COUNTROWS(CROSSJOIN(VALUES(DimProduct[Category]), VALUES(DimCustomer[Segment])))",
-      "expected_issue": "adv-perf-085: CROSSJOIN materializes full cartesian product at query time",
-      "expected_fix": "Calculate dimensions separately or use SUMMARIZECOLUMNS"
+      "name": "[bulk:supply_chain] SUMX direct additive fact scan",
+      "input": "supply chain Amount = SUMX(FactShipments, FactShipments[ShippedQty])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "supply chain Amount = SUM(FactShipments[ShippedQty])",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "TOPN(1) to get single value — use MAXX",
-      "input": "Best = SELECTCOLUMNS(TOPN(1, ALL(DimCustomer), [Revenue], DESC), \"Name\", DimCustomer[Name])",
-      "expected_issue": "adv-perf-086: TOPN(1) for scalar — MAXX over TOPN(1,...) is cleaner",
-      "expected_fix": "MAXX(TOPN(1, ALL(DimCustomer), [Revenue], DESC), DimCustomer[Name])"
+      "name": "[bulk:supply_chain] COUNTROWS FILTER fact equality",
+      "input": "supply chain Filtered Count = COUNTROWS(FILTER(FactShipments, FactShipments[ShipmentID] > 0))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "supply chain Filtered Count = CALCULATE(COUNTROWS(FactShipments), FactShipments[ShipmentID] > 0)",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "HASONEVALUE+SELECTEDVALUE redundant guard",
-      "input": "Label = IF(HASONEVALUE(Product[Name]), SELECTEDVALUE(Product[Name]), \"All\")",
-      "expected_issue": "adv-perf-087: SELECTEDVALUE second arg handles multi-value case — no IF needed",
-      "expected_fix": "SELECTEDVALUE(Product[Name], \"All\")"
+      "name": "[bulk:supply_chain] FILTER ALL dimension equality",
+      "input": "supply chain Filtered = CALCULATE([On Time Delivery Rate], FILTER(ALL(DimCarrier), DimCarrier[CarrierName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "supply chain Filtered = CALCULATE([On Time Delivery Rate], DimCarrier[CarrierName] = \"Target\")",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "CALCULATE inside SUMX with constant filter",
-      "input": "Total = SUMX(Sales, CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\"))",
-      "expected_issue": "adv-perf-090: CALCULATE with constant filter inside SUMX — move CALCULATE outside iterator",
-      "expected_fix": "CALCULATE(SUM(Sales[Amount]), Sales[Status] = \"Complete\")"
+      "name": "[bulk:supply_chain] RANKX over fact table",
+      "input": "supply chain Rank = RANKX(ALL(FactShipments), [On Time Delivery Rate])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "supply chain Rank = RANKX(ALLSELECTED(DimCarrier[CarrierName]), [On Time Delivery Rate], , DESC, Dense)",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "IFERROR masking expensive measure error",
-      "input": "Safe = IFERROR(DIVIDE([Complex Measure], [Base]), 0)",
-      "expected_issue": "adv-perf-091: IFERROR still evaluates the measure — use DIVIDE which handles zero natively",
-      "expected_fix": "DIVIDE([Complex Measure], [Base])"
+      "name": "[bulk:supply_chain] CONCATENATEX missing order",
+      "input": "supply chain List = CONCATENATEX(DimCarrier, DimCarrier[CarrierName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "supply chain List = CONCATENATEX(DimCarrier, DimCarrier[CarrierName], \", \", DimCarrier[CarrierName], ASC)",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "SUMX(DISTINCT(col)) — use VALUES()",
-      "input": "Total = SUMX(DISTINCT(Sales[CustomerID]), [Revenue])",
-      "expected_issue": "adv-perf-092: Use VALUES() instead of DISTINCT() as SUMX table arg",
-      "expected_fix": "SUMX(VALUES(Sales[CustomerID]), [Revenue])"
+      "name": "[bulk:supply_chain] FORMAT numeric measure",
+      "input": "supply chain Display = FORMAT([On Time Delivery Rate], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "GENERATE+ROW instead of ADDCOLUMNS",
-      "input": "D = SUMX(GENERATE(Sales, ROW(\"M\", Sales[Amount]*1.1)), [M])",
-      "expected_issue": "adv-perf-094: GENERATE+ROW overhead — ADDCOLUMNS is cleaner and equivalent",
-      "expected_fix": "SUMX(ADDCOLUMNS(Sales, \"M\", Sales[Amount]*1.1), [M])"
+      "name": "[bulk:supply_chain] DATEADD minus 365 days",
+      "input": "supply chain PY = CALCULATE([On Time Delivery Rate], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "supply chain PY = CALCULATE([On Time Delivery Rate], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "VAR declared but never used",
-      "input": "M = VAR x = [Base] VAR y = [Returns] RETURN x",
-      "expected_issue": "adv-cor-081: VAR y declared but never referenced in RETURN — remove dead code",
-      "expected_fix": "M = VAR x = [Base] RETURN x"
+      "name": "[bulk:supply_chain] hardcoded year literal",
+      "input": "supply chain 2024 = CALCULATE([On Time Delivery Rate], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "supply chain CY = CALCULATE([On Time Delivery Rate], DATESYTD(DimDate[Date]))",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "KEEPFILTERS changing filter semantics unintentionally",
-      "input": "Red Sales = CALCULATE([Sales], KEEPFILTERS(Product[Color] = \"Red\"))",
-      "expected_issue": "adv-cor-083: KEEPFILTERS intersects with existing filters — may produce empty when another color is selected",
-      "expected_fix": "Red Sales = CALCULATE([Sales], Product[Color] = \"Red\")  // replaces filter, not intersects"
+      "name": "[bulk:supply_chain] multiple OR same column",
+      "input": "supply chain Multi Filter = CALCULATE([On Time Delivery Rate], DimCarrier[CarrierName] = \"A\" || DimCarrier[CarrierName] = \"B\" || DimCarrier[CarrierName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "supply chain Multi Filter = CALCULATE([On Time Delivery Rate], DimCarrier[CarrierName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "USERELATIONSHIP outside CALCULATE — has no effect",
-      "input": "Bad = USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey])",
-      "expected_issue": "adv-cor-084: USERELATIONSHIP only works inside CALCULATE — no effect at top level",
-      "expected_fix": "CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))"
+      "name": "[bulk:supply_chain] TOPN no tiebreaker",
+      "input": "supply chain Top N = CALCULATE([On Time Delivery Rate], TOPN(5, ALL(DimCarrier), [On Time Delivery Rate], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "supply chain Top N = CALCULATE([On Time Delivery Rate], TOPN(5, ALL(DimCarrier), [On Time Delivery Rate], DESC, DimCarrier[CarrierKey], ASC))",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "RLS FILTER() returning table instead of boolean",
-      "input": "[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())",
-      "expected_issue": "adv-cor-085: RLS expression must return TRUE/FALSE — FILTER() returns a table",
-      "expected_fix": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()"
+      "name": "[bulk:supply_chain] ALL fact table removes security context",
+      "input": "supply chain Grand Total = CALCULATE([On Time Delivery Rate], ALL(FactShipments))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "supply chain Grand Total = CALCULATE([On Time Delivery Rate], REMOVEFILTERS(FactShipments[ShipmentID]))",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "IF(ISBLANK()) pattern — use COALESCE instead",
-      "input": "Result = IF(ISBLANK([Revenue]), 0, [Revenue])",
-      "expected_issue": "adv-cor-086: IF(ISBLANK(x), fallback, x) is equivalent to COALESCE(x, fallback)",
-      "expected_fix": "COALESCE([Revenue], 0)"
+      "name": "[bulk:supply_chain] REMOVEFILTERS full fact table",
+      "input": "supply chain Unscoped Total = CALCULATE([On Time Delivery Rate], REMOVEFILTERS(FactShipments))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "supply chain Unscoped Total = CALCULATE([On Time Delivery Rate], REMOVEFILTERS(FactShipments[ShipmentID]))",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "4-level nested IF — use SWITCH(TRUE())",
-      "input": "Band = IF([R]>1000,\"A\",IF([R]>500,\"B\",IF([R]>100,\"C\",IF([R]>0,\"D\",\"E\"))))",
-      "expected_issue": "adv-cor-087: 4-deep nested IF — use SWITCH(TRUE()) for readability and performance",
-      "expected_fix": "SWITCH(TRUE(),[R]>1000,\"A\",[R]>500,\"B\",[R]>100,\"C\",[R]>0,\"D\",\"E\")"
+      "name": "[bulk:hr] SUMX direct additive fact scan",
+      "input": "hr Amount = SUMX(FactHeadcount, FactHeadcount[Salary])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "hr Amount = SUM(FactHeadcount[Salary])",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "EARLIER in iterator — use VAR instead",
-      "input": "RunTotal = CALCULATE(SUM(S[Amt]), FILTER(S, S[Date] <= EARLIER(S[Date])))",
-      "expected_issue": "adv-cor-088: EARLIER is confusing and slower — use VAR currentDate = S[Date]",
-      "expected_fix": "VAR d = S[Date] RETURN CALCULATE(SUM(S[Amt]), S[Date] <= d)"
+      "name": "[bulk:hr] COUNTROWS FILTER fact equality",
+      "input": "hr Filtered Count = COUNTROWS(FILTER(FactHeadcount, FactHeadcount[Status] = \"Active\"))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "hr Filtered Count = CALCULATE(COUNTROWS(FactHeadcount), FactHeadcount[Status] = \"Active\")",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "DIVIDE with 0 alternative breaks aggregation",
-      "input": "Ratio = DIVIDE([A], [B], 0)",
-      "expected_issue": "adv-cor-089: DIVIDE with 0 alternative returns 0 instead of BLANK — inflates SUM aggregations",
-      "expected_fix": "DIVIDE([A], [B])  // returns BLANK on zero denominator — correct for aggregation"
+      "name": "[bulk:hr] FILTER ALL dimension equality",
+      "input": "hr Filtered = CALCULATE([Headcount], FILTER(ALL(DimEmployee), DimEmployee[FullName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "hr Filtered = CALCULATE([Headcount], DimEmployee[FullName] = \"Target\")",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "SWITCH with no ELSE clause",
-      "input": "Label = SWITCH(S[Status], \"A\", \"Active\", \"S\", \"Suspended\")",
-      "expected_issue": "adv-cor-090: No ELSE clause — unmatched values silently return BLANK",
-      "expected_fix": "SWITCH(S[Status], \"A\", \"Active\", \"S\", \"Suspended\", \"Unknown\")"
+      "name": "[bulk:hr] RANKX over fact table",
+      "input": "hr Rank = RANKX(ALL(FactHeadcount), [Headcount])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "hr Rank = RANKX(ALLSELECTED(DimEmployee[FullName]), [Headcount], , DESC, Dense)",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "TOTALMTD deprecated wrapper",
-      "input": "MTD = TOTALMTD([Sales], DimDate[Date])",
-      "expected_issue": "adv-cor-091: TOTALMTD is deprecated alias — use CALCULATE([Sales], DATESMTD(DimDate[Date]))",
-      "expected_fix": "CALCULATE([Sales], DATESMTD(DimDate[Date]))"
+      "name": "[bulk:hr] CONCATENATEX missing order",
+      "input": "hr List = CONCATENATEX(DimEmployee, DimEmployee[FullName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "hr List = CONCATENATEX(DimEmployee, DimEmployee[FullName], \", \", DimEmployee[FullName], ASC)",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "DATESYTD without fiscal year-end argument",
-      "input": "FY YTD = CALCULATE([Rev], DATESYTD(DimDate[Date]))",
-      "expected_issue": "adv-cor-093: Missing year-end argument defaults to Dec 31 on fiscal year models",
-      "expected_fix": "CALCULATE([Rev], DATESYTD(DimDate[Date], \"6/30\"))"
+      "name": "[bulk:hr] FORMAT numeric measure",
+      "input": "hr Display = FORMAT([Headcount], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "NOT ISBLANK vs <> BLANK()",
-      "input": "HasVal = [Measure] <> BLANK()",
-      "expected_issue": "adv-cor-094: Use NOT ISBLANK([Measure]) — <> BLANK() has edge cases with some data types",
-      "expected_fix": "NOT ISBLANK([Measure])"
+      "name": "[bulk:hr] DATEADD minus 365 days",
+      "input": "hr PY = CALCULATE([Headcount], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "hr PY = CALCULATE([Headcount], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Nested CONCATENATE — use & operator",
-      "input": "Name = CONCATENATE(CONCATENATE([First], \" \"), [Last])",
-      "expected_issue": "adv-cor-098: Nested CONCATENATE — use & operator for chaining: [First] & \" \" & [Last]",
-      "expected_fix": "[First] & \" \" & [Last]"
+      "name": "[bulk:hr] hardcoded year literal",
+      "input": "hr 2024 = CALCULATE([Headcount], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "hr CY = CALCULATE([Headcount], DATESYTD(DimDate[Date]))",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "CONTAINS instead of CONTAINSROW",
-      "input": "IsVIP = CONTAINS(VIPList, VIPList[ID], Customer[ID])",
-      "expected_issue": "adv-cor-096: CONTAINS argument order is error-prone — use CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])",
-      "expected_fix": "CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])"
+      "name": "[bulk:hr] multiple OR same column",
+      "input": "hr Multi Filter = CALCULATE([Headcount], DimEmployee[FullName] = \"A\" || DimEmployee[FullName] = \"B\" || DimEmployee[FullName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "hr Multi Filter = CALCULATE([Headcount], DimEmployee[FullName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "IN with single value — use direct equality",
-      "input": "IsRed = Sales[Color] IN {\"Red\"}",
-      "expected_issue": "adv-cor-097: IN with one value — Sales[Color] = \"Red\" is cleaner and equivalent",
-      "expected_fix": "Sales[Color] = \"Red\""
+      "name": "[bulk:hr] TOPN no tiebreaker",
+      "input": "hr Top N = CALCULATE([Headcount], TOPN(5, ALL(DimEmployee), [Headcount], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "hr Top N = CALCULATE([Headcount], TOPN(5, ALL(DimEmployee), [Headcount], DESC, DimEmployee[EmployeeKey], ASC))",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Table.NestedJoin without expand step",
-      "input": "Table.NestedJoin(Orders, \"CustomerID\", Customers, \"CustomerID\", \"CustomerData\")",
-      "expected_issue": "adv-pq-001: NestedJoin creates column of tables — no ExpandTableColumn step follows",
-      "expected_fix": "Table.ExpandTableColumn(result, \"CustomerData\", {\"Name\", \"Email\"})"
+      "name": "[bulk:hr] ALL fact table removes security context",
+      "input": "hr Grand Total = CALCULATE([Headcount], ALL(FactHeadcount))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "hr Grand Total = CALCULATE([Headcount], REMOVEFILTERS(FactHeadcount[Status]))",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Text.Contains inside Table.SelectRows breaking folding",
-      "input": "Table.SelectRows(Source, each Text.Contains([Desc], \"urgent\"))",
-      "expected_issue": "adv-pq-002: Text.Contains breaks query folding — full table loaded to memory",
-      "expected_fix": "Filter in SQL source: WHERE Desc LIKE '%urgent%'"
+      "name": "[bulk:hr] REMOVEFILTERS full fact table",
+      "input": "hr Unscoped Total = CALCULATE([Headcount], REMOVEFILTERS(FactHeadcount))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "hr Unscoped Total = CALCULATE([Headcount], REMOVEFILTERS(FactHeadcount[Status]))",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "List.Accumulate for running total",
-      "input": "List.Accumulate(Table.ToRows(Source), 0, (s, r) => s + r{2})",
-      "expected_issue": "adv-pq-003: List.Accumulate iterates row-by-row — very slow on large tables",
-      "expected_fix": "Calculate running total as DAX measure or SQL window function"
+      "name": "[bulk:marketing] SUMX direct additive fact scan",
+      "input": "marketing Amount = SUMX(FactCampaigns, FactCampaigns[Impressions])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "marketing Amount = SUM(FactCampaigns[Impressions])",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Table.Buffer on large source table",
-      "input": "Table.Buffer(Source)",
-      "expected_issue": "adv-pq-008: Table.Buffer forces in-memory evaluation and blocks query folding",
-      "expected_fix": "Remove Table.Buffer unless preventing re-evaluation of volatile source"
+      "name": "[bulk:marketing] COUNTROWS FILTER fact equality",
+      "input": "marketing Filtered Count = COUNTROWS(FILTER(FactCampaigns, FactCampaigns[ChannelKey] = \"Active\"))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "marketing Filtered Count = CALCULATE(COUNTROWS(FactCampaigns), FactCampaigns[ChannelKey] = \"Active\")",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "MonthName axis sorts alphabetically",
-      "input": "// Line chart axis: DimDate[MonthName]",
-      "expected_issue": "adv-vis-007: MonthName text sorts alphabetically (Apr, Aug, Dec...) — set Sort By Column to Month integer",
-      "expected_fix": "Select MonthName → Column Tools → Sort by Column → Month"
+      "name": "[bulk:marketing] FILTER ALL dimension equality",
+      "input": "marketing Filtered = CALCULATE([CTR], FILTER(ALL(DimChannel), DimChannel[ChannelName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "marketing Filtered = CALCULATE([CTR], DimChannel[ChannelName] = \"Target\")",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Pie chart with 30 slices",
-      "input": "// Donut chart: category = DimChannel[ChannelName] with 30 channels",
-      "expected_issue": "adv-vis-005: Pie/donut with 30 slices is unreadable — use bar chart or Top N filter",
-      "expected_fix": "Bar chart or TOPN measure grouping remainder as 'Other'"
+      "name": "[bulk:marketing] RANKX over fact table",
+      "input": "marketing Rank = RANKX(ALL(FactCampaigns), [CTR])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "marketing Rank = RANKX(ALLSELECTED(DimChannel[ChannelName]), [CTR], , DESC, Dense)",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Slicer on high-cardinality email column",
-      "input": "// Slicer: DimCustomer[Email] — 500,000 unique values",
-      "expected_issue": "adv-vis-002: Slicer on 500K unique emails — replace with search box or dropdown",
-      "expected_fix": "Search-as-you-type slicer or filter panel"
+      "name": "[bulk:marketing] CONCATENATEX missing order",
+      "input": "marketing List = CONCATENATEX(DimChannel, DimChannel[ChannelName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "marketing List = CONCATENATEX(DimChannel, DimChannel[ChannelName], \", \", DimChannel[ChannelName], ASC)",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Date slicer on fact table date column",
-      "input": "// Slicer: FactSales[OrderDate] — not from DimDate",
-      "expected_issue": "adv-vis-003: Date slicer using fact table date won't filter time intelligence measures correctly",
-      "expected_fix": "Connect slicer to DimDate[Date]"
+      "name": "[bulk:marketing] FORMAT numeric measure",
+      "input": "marketing Display = FORMAT([CTR], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "ALL() removing RLS filters",
-      "input": "Total = CALCULATE([Revenue], ALL(FactSales))",
-      "expected_issue": "adv-sec-005: ALL(FactSales) removes RLS row-level security — security bypass risk",
-      "expected_fix": "CALCULATE([Revenue], REMOVEFILTERS(FactSales[Region]))"
+      "name": "[bulk:marketing] DATEADD minus 365 days",
+      "input": "marketing PY = CALCULATE([CTR], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "marketing PY = CALCULATE([CTR], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "USERPRINCIPALNAME mixed case comparison in RLS",
-      "input": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()",
-      "expected_issue": "adv-sec-002: Case-sensitive comparison — LOWER() both sides to prevent user lockout",
-      "expected_fix": "LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())"
+      "name": "[bulk:marketing] hardcoded year literal",
+      "input": "marketing 2024 = CALCULATE([CTR], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "marketing CY = CALCULATE([CTR], DATESYTD(DimDate[Date]))",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "RLS FILTER expression returning table",
-      "input": "[RLS] = FILTER(DimEmployee, DimEmployee[Email] = USERPRINCIPALNAME())",
-      "expected_issue": "adv-cor-085 / adv-sec: RLS must return TRUE/FALSE — FILTER() returns a table and will error",
-      "expected_fix": "DimEmployee[Email] = USERPRINCIPALNAME()"
+      "name": "[bulk:marketing] multiple OR same column",
+      "input": "marketing Multi Filter = CALCULATE([CTR], DimChannel[ChannelName] = \"A\" || DimChannel[ChannelName] = \"B\" || DimChannel[ChannelName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "marketing Multi Filter = CALCULATE([CTR], DimChannel[ChannelName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "No date table marked — time intelligence fails",
-      "input": "// Model has CalendarTable but not marked as Date Table",
-      "expected_issue": "adv-model-080: Date table not marked — DATESYTD/SAMEPERIODLASTYEAR return wrong results",
-      "expected_fix": "Table Tools → Mark as Date Table in Power BI Desktop"
+      "name": "[bulk:marketing] TOPN no tiebreaker",
+      "input": "marketing Top N = CALCULATE([CTR], TOPN(5, ALL(DimChannel), [CTR], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "marketing Top N = CALCULATE([CTR], TOPN(5, ALL(DimChannel), [CTR], DESC, DimChannel[ChannelKey], ASC))",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Auto date/time enabled on large model",
-      "input": "// Options → Data Load → Auto Date/Time enabled",
-      "expected_issue": "adv-model-081: Auto date/time creates hidden tables for every date column — disable and use shared DimDate",
-      "expected_fix": "Disable Auto Date/Time; create single shared DimDate"
+      "name": "[bulk:marketing] ALL fact table removes security context",
+      "input": "marketing Grand Total = CALCULATE([CTR], ALL(FactCampaigns))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "marketing Grand Total = CALCULATE([CTR], REMOVEFILTERS(FactCampaigns[ChannelKey]))",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Many-to-many without bridge table",
-      "input": "// FactSales[ProductKey] → DimProduct many-to-many cardinality without bridge",
-      "expected_issue": "adv-model-083: Many-to-many requires bridge table or TREATAS workaround",
-      "expected_fix": "Create bridge table or use TREATAS in measures"
+      "name": "[bulk:marketing] REMOVEFILTERS full fact table",
+      "input": "marketing Unscoped Total = CALCULATE([CTR], REMOVEFILTERS(FactCampaigns))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "marketing Unscoped Total = CALCULATE([CTR], REMOVEFILTERS(FactCampaigns[ChannelKey]))",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Bidirectional filter on bridge table causes ambiguity",
-      "input": "// DimEmployeeRole bridge has bidirectional filters to DimEmployee and DimRole",
-      "expected_issue": "adv-model-084: Bidirectional bridge causes filter ambiguity — set to single-direction",
-      "expected_fix": "Set to single-direction; use CROSSFILTER only in measures needing reverse filtering"
+      "name": "[bulk:operations] SUMX direct additive fact scan",
+      "input": "operations Amount = SUMX(FactWorkOrders, FactWorkOrders[PlannedHours])",
+      "expected_issue": "adv-perf-039: SUMX over a fact table for a directly additive column should be SUM",
+      "expected_fix": "operations Amount = SUM(FactWorkOrders[PlannedHours])",
+      "domain": "operations",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Two active date relationships on same fact table pair",
-      "input": "// FactOrders: OrderDateKey and ShipDateKey both active to DimDate",
-      "expected_issue": "adv-model-087: Power BI only allows one active relationship per table pair — second silently ignored or errors",
-      "expected_fix": "Keep one active; use USERELATIONSHIP for the other in measures"
+      "name": "[bulk:operations] COUNTROWS FILTER fact equality",
+      "input": "operations Filtered Count = COUNTROWS(FILTER(FactWorkOrders, FactWorkOrders[WorkType] = \"Active\"))",
+      "expected_issue": "adv-perf-069: COUNTROWS(FILTER(FactTable, condition)) should use CALCULATE(COUNTROWS(), condition)",
+      "expected_fix": "operations Filtered Count = CALCULATE(COUNTROWS(FactWorkOrders), FactWorkOrders[WorkType] = \"Active\")",
+      "domain": "operations",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[auto] adv-cor-001: CALCULATE with FILTER(ALL(DimTable), condition) instead of d",
-      "input": "Sales YTD = CALCULATE([Total Sales], FILTER(ALL('Date'), 'Date'[Year] = 2024))",
-      "expected_rule": "adv-cor-001",
-      "expected_issue": "adv-cor-001: CALCULATE with FILTER(ALL(DimTable), condition) instead of direct column filter",
-      "expected_fix": "Sales YTD = CALCULATE([Total Sales], 'Date'[Year] = 2024)",
-      "auto_generated": true
+      "name": "[bulk:operations] FILTER ALL dimension equality",
+      "input": "operations Filtered = CALCULATE([OEE], FILTER(ALL(DimAsset), DimAsset[AssetName] = \"Target\"))",
+      "expected_issue": "adv-cor-001: FILTER(ALL(dim)) wrapping a single equality condition should use a direct column filter",
+      "expected_fix": "operations Filtered = CALCULATE([OEE], DimAsset[AssetName] = \"Target\")",
+      "domain": "operations",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[auto] adv-cor-022: ISINSCOPE called on a column not present in any hierarchy or",
-      "input": "Subtotal Label = IF(ISINSCOPE(Customer[PostalCode]), \"Detail\", \"Total\")",
+      "name": "[bulk:operations] RANKX over fact table",
+      "input": "operations Rank = RANKX(ALL(FactWorkOrders), [OEE])",
+      "expected_issue": "adv-perf-077: RANKX over an entire fact table should rank over a dimension or aggregated table",
+      "expected_fix": "operations Rank = RANKX(ALLSELECTED(DimAsset[AssetName]), [OEE], , DESC, Dense)",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] CONCATENATEX missing order",
+      "input": "operations List = CONCATENATEX(DimAsset, DimAsset[AssetName], \", \")",
+      "expected_issue": "adv-cor-008: CONCATENATEX without ORDERBY returns nondeterministic output",
+      "expected_fix": "operations List = CONCATENATEX(DimAsset, DimAsset[AssetName], \", \", DimAsset[AssetName], ASC)",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] FORMAT numeric measure",
+      "input": "operations Display = FORMAT([OEE], \"#,##0\")",
+      "expected_issue": "adv-cor-010: FORMAT returns text and breaks numeric aggregation or sort",
+      "expected_fix": "Use the Power BI format pane instead of FORMAT in the DAX measure",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] DATEADD minus 365 days",
+      "input": "operations PY = CALCULATE([OEE], DATEADD(DimDate[Date], -365, DAY))",
+      "expected_issue": "adv-perf-074: DATEADD with -365 DAY misses leap years; use SAMEPERIODLASTYEAR",
+      "expected_fix": "operations PY = CALCULATE([OEE], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] hardcoded year literal",
+      "input": "operations 2024 = CALCULATE([OEE], DimDate[Year] = 2024)",
+      "expected_issue": "adv-model-076: Hardcoded year literal silently becomes wrong as the calendar changes",
+      "expected_fix": "operations CY = CALCULATE([OEE], DATESYTD(DimDate[Date]))",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] multiple OR same column",
+      "input": "operations Multi Filter = CALCULATE([OEE], DimAsset[AssetName] = \"A\" || DimAsset[AssetName] = \"B\" || DimAsset[AssetName] = \"C\")",
+      "expected_issue": "adv-perf-075: Multiple OR conditions on the same column should use IN",
+      "expected_fix": "operations Multi Filter = CALCULATE([OEE], DimAsset[AssetName] IN {\"A\", \"B\", \"C\"})",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] TOPN no tiebreaker",
+      "input": "operations Top N = CALCULATE([OEE], TOPN(5, ALL(DimAsset), [OEE], DESC))",
+      "expected_issue": "adv-cor-070: TOPN without a tiebreaker can include nondeterministic rows",
+      "expected_fix": "operations Top N = CALCULATE([OEE], TOPN(5, ALL(DimAsset), [OEE], DESC, DimAsset[AssetKey], ASC))",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] ALL fact table removes security context",
+      "input": "operations Grand Total = CALCULATE([OEE], ALL(FactWorkOrders))",
+      "expected_issue": "adv-perf-038: ALL on a fact table removes broad filters and can bypass intended security context",
+      "expected_fix": "operations Grand Total = CALCULATE([OEE], REMOVEFILTERS(FactWorkOrders[WorkType]))",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] REMOVEFILTERS full fact table",
+      "input": "operations Unscoped Total = CALCULATE([OEE], REMOVEFILTERS(FactWorkOrders))",
+      "expected_issue": "adv-model-075: REMOVEFILTERS(Table) clears all table filters; list only intended columns",
+      "expected_fix": "operations Unscoped Total = CALCULATE([OEE], REMOVEFILTERS(FactWorkOrders[WorkType]))",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "CALCULATE with FILTER on small dimension table — valid multi-condition filter",
+      "input": "CityRevenue = CALCULATE([TotalRev], FILTER(Geography, Geography[Country] = \"USA\" && Geography[City] = \"New York\"))",
+      "expected_rule": "adv-perf-001",
+      "expected_issue": "adv-perf-001: FILTER on a non-fact dimension table with multi-column condition — acceptable performance"
+    },
+    {
+      "name": "ALLSELECTED without ISINSCOPE guard — returns ALL in DAX Studio context",
+      "input": "Market Share = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))",
+      "expected_rule": "adv-cor-004",
+      "expected_issue": "adv-cor-004: ALLSELECTED in DIVIDE/CALCULATE without ISINSCOPE guard behaves like ALL when evaluated outside a visual"
+    },
+    {
+      "name": "[ctx] ALLSELECTED confirmed from DAX Studio — callingContext definitive",
+      "input": "Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))",
+      "expected_rule": "adv-cor-004",
+      "expected_issue": "adv-cor-004: ALLSELECTED called from DAX Studio — behaves as ALL, not scoped to slicer selection",
+      "modelContext": {
+        "callingContext": "dax-studio"
+      }
+    },
+    {
+      "name": "[ctx] ISINSCOPE on column NOT in any model hierarchy — definitive miss",
+      "input": "Label = IF(ISINSCOPE(Customer[FullAddress]), \"Detail\", \"Total\")",
       "expected_rule": "adv-cor-022",
-      "expected_issue": "adv-cor-022: ISINSCOPE called on a column not present in any hierarchy or visual — always returns FALSE",
-      "expected_fix": "Subtotal Label = IF(ISINSCOPE(Customer[City]), \"Detail\", \"Total\") -- use the column actually in the hierarchy",
-      "auto_generated": true
+      "expected_issue": "adv-cor-022: Customer[FullAddress] is not in any model hierarchy — ISINSCOPE always returns FALSE",
+      "modelContext": {
+        "hierarchies": {
+          "Customer": {
+            "Geography Hierarchy": [
+              "Country",
+              "State",
+              "City"
+            ]
+          }
+        }
+      }
     },
     {
-      "name": "[auto] adv-perf-047: SWITCH evaluating all branches when only first match matters",
+      "name": "[ctx] LOOKUPVALUE when active relationship confirmed via model schema",
+      "input": "Margin = LOOKUPVALUE(Product[Margin], Product[ProductID], Sales[ProductID])",
+      "expected_rule": "adv-cor-002",
+      "expected_issue": "adv-cor-002: active relationship confirmed — use RELATED instead of LOOKUPVALUE",
+      "modelContext": {
+        "relationships": [
+          {
+            "fromTable": "Sales",
+            "fromColumn": "ProductID",
+            "toTable": "Product",
+            "toColumn": "ProductID",
+            "direction": "single",
+            "cardinality": "many-to-one",
+            "active": true,
+            "fromColumnType": "integer",
+            "toColumnType": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[ctx] ALL on Customer table that has RLS — confirmed security bypass",
+      "input": "Grand Total = CALCULATE([Revenue], ALL(Customer))",
+      "expected_rule": "adv-perf-038",
+      "expected_issue": "adv-perf-038: ALL(Customer) removes RLS filters — Customer is in rlsTables",
+      "modelContext": {
+        "rlsTables": [
+          "Customer"
+        ],
+        "relationships": [
+          {
+            "fromTable": "Sales",
+            "fromColumn": "CustomerID",
+            "toTable": "Customer",
+            "toColumn": "CustomerID",
+            "direction": "single",
+            "cardinality": "many-to-one",
+            "active": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "[ctx] DATESYTD without year-end on June fiscal year — schema confirms",
+      "input": "FYTD Sales = CALCULATE([Sales], DATESYTD('Date'[Date]))",
+      "expected_rule": "adv-cor-024",
+      "expected_issue": "adv-cor-024: fiscal year ends June — missing year-end argument defaults to Dec 31",
+      "modelContext": {
+        "dateTable": {
+          "tableName": "Date",
+          "dateColumn": "Date",
+          "marked": true,
+          "fiscalYearEndMonth": 6
+        }
+      }
+    },
+    {
+      "name": "[ctx] DirectQuery table — adv-model-068 fires via storageModes",
+      "input": "// Page: Revenue Overview — visual filters: none",
+      "expected_rule": "adv-model-068",
+      "expected_issue": "adv-model-068: FactSales is DirectQuery and this page has no date or key filter — may cause full table scan",
+      "modelContext": {
+        "storageModes": {
+          "FactSales": "DirectQuery",
+          "DimDate": "Import"
+        }
+      }
+    },
+    {
+      "name": "ISINSCOPE on leaf dimension attribute — not in any visual hierarchy",
+      "input": "Subtotal = IF(ISINSCOPE(Customer[City]), \"Detail\", \"Total\")",
+      "expected_rule": "adv-cor-022",
+      "expected_issue": "adv-cor-022: ISINSCOPE(Customer[City]) — City is a leaf attribute not part of a matrix hierarchy; always returns FALSE"
+    },
+    {
+      "name": "SWITCH with CALCULATE branches — all branches evaluated in DAX",
       "input": "Tier = SWITCH(TRUE(), [Revenue] > 1000000, CALCULATE([Revenue], ALL(Sales)), [Revenue] > 100000, CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date])), 0)",
       "expected_rule": "adv-perf-047",
-      "expected_issue": "adv-perf-047: SWITCH evaluating all branches when only first match matters — all SWITCH branches are evaluated in DAX",
-      "expected_fix": "VAR AllSales = CALCULATE([Revenue], ALL(Sales)) VAR PY = CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date])) RETURN SWITCH(TRUE(), [Revenue] > 1000000, AllSales, [Revenue] > 100000, PY, 0)",
-      "auto_generated": true
+      "expected_issue": "adv-perf-047: SWITCH evaluates all CALCULATE branches on every query — cache sub-expressions in VAR"
     },
     {
-      "name": "[auto] adv-perf-083: DISTINCTCOUNT on composite text key — integer key is 5-10x f",
-      "input": "Unique Orders = DISTINCTCOUNT(FactSales[OrderKey])",
-      "expected_rule": "adv-perf-083",
-      "expected_issue": "adv-perf-083: DISTINCTCOUNT on composite text key — integer key is 5-10x faster",
-      "expected_fix": "Unique Orders = DISTINCTCOUNT(FactSales[OrderID])",
-      "auto_generated": true
+      "name": "USERNAME() in RLS filter against DimEmployee email column",
+      "input": "[RLS Filter] = FILTER(DimEmployee, DimEmployee[Email] = USERNAME())",
+      "expected_rule": "adv-cor-071",
+      "expected_issue": "adv-cor-071: USERNAME() deprecated in Power BI Service — DimEmployee[Email] comparison will silently fail in cloud tenants"
     },
     {
-      "name": "[auto] adv-perf-088: Multiple measures calling same expensive sub-measure without",
-      "input": "Ratio = [Total Sales] / [Base Sales]\nDiff = [Total Sales] - [Base Sales]\n// [Base Sales] evaluated twice per cell",
-      "expected_rule": "adv-perf-088",
-      "expected_issue": "adv-perf-088: Multiple measures calling same expensive sub-measure without VAR caching",
-      "expected_fix": "Ratio = VAR base = [Base Sales] RETURN DIVIDE([Total Sales], base)\nDiff = VAR base = [Base Sales] RETURN [Total Sales] - base",
-      "auto_generated": true
+      "name": "RELATED inside FILTER predicate — row context is available but anti-pattern",
+      "input": "Over Band = COUNTROWS(FILTER(FactHeadcount, FactHeadcount[Salary] > RELATED(DimJobLevel[SalaryMax])))",
+      "expected_rule": "adv-cor-072",
+      "expected_issue": "adv-cor-072: RELATED inside FILTER predicate — FILTER provides row context but prefer SUMX or restructure with CROSSJOIN/TREATAS"
     },
     {
-      "name": "[auto] adv-perf-089: ALLEXCEPT with many columns specified — REMOVEFILTERS on spe",
-      "input": "Market Share = CALCULATE([Sales], ALLEXCEPT(Sales, Sales[Year], Sales[Quarter], Sales[Month], Sales[Region]))",
-      "expected_rule": "adv-perf-089",
-      "expected_issue": "adv-perf-089: ALLEXCEPT with many columns specified — REMOVEFILTERS on specific columns is cleaner",
-      "expected_fix": "Market Share = CALCULATE([Sales], REMOVEFILTERS(Sales[Customer], Sales[Product]))",
-      "auto_generated": true
+      "name": "SUM on ClosingBalance column — semi-additive missing time guard",
+      "input": "Total Balance = SUM(Account[ClosingBalance])",
+      "expected_rule": "adv-cor-080",
+      "expected_issue": "adv-cor-080: SUM on a semi-additive balance or inventory column"
     },
     {
-      "name": "[auto] adv-perf-093: PARALLELPERIOD used for rolling window — shifts whole calend",
-      "input": "Prev30 = CALCULATE([Rev], PARALLELPERIOD('Date'[Date], -1, MONTH))",
-      "expected_rule": "adv-perf-093",
-      "expected_issue": "adv-perf-093: PARALLELPERIOD used for rolling window — shifts whole calendar period, not a sliding window",
-      "expected_fix": "Prev30 = CALCULATE([Rev], DATESINPERIOD('Date'[Date], MAX('Date'[Date]) - 30, -30, DAY))",
-      "auto_generated": true
+      "name": "SUM on StockLevel — snapshot column summed across time",
+      "input": "Stock = SUM(Warehouse[StockLevel])",
+      "expected_rule": "adv-cor-080",
+      "expected_issue": "adv-cor-080: SUM on a semi-additive balance or inventory column"
     },
     {
-      "name": "[auto] adv-cor-092: FIRSTNONBLANK vs FIRSTDATE — different semantics: FIRSTNONBL",
-      "input": "First Sale Date = FIRSTDATE(FactSales[OrderDate])",
-      "expected_rule": "adv-cor-092",
-      "expected_issue": "adv-cor-092: FIRSTNONBLANK vs FIRSTDATE — different semantics: FIRSTNONBLANK finds first date where measure is non-blank",
-      "expected_fix": "First Sale Date = FIRSTNONBLANK(DimDate[Date], [Total Sales])",
-      "auto_generated": true
+      "name": "COUNTROWS on Inventory table without date filter",
+      "input": "Item Count = COUNTROWS(Inventory)",
+      "expected_rule": "adv-cor-081",
+      "expected_issue": "adv-cor-081: COUNTROWS on a snapshot or inventory table without a date filter"
     },
     {
-      "name": "[auto] adv-model-082: Calculated table depending on another calculated table — ref",
-      "input": "FactAdjusted = ADDCOLUMNS(FactSales, \"Margin\", FactSales[Revenue] - FactSales[Cost])\nSummary = SUMMARIZECOLUMNS(FactAdjusted[Category], \"Total\", SUM(FactAdjusted[Margin]))",
+      "name": "COUNTROWS on Positions table — all historical rows returned",
+      "input": "Open Positions = COUNTROWS(Positions)",
+      "expected_rule": "adv-cor-081",
+      "expected_issue": "adv-cor-081: COUNTROWS on a snapshot or inventory table without a date filter"
+    },
+    {
+      "name": "[ctx] TOPN(500) on 5k-row Product table — rowCounts confirms 10% scan",
+      "input": "Top Products = TOPN(500, Product, [Revenue], DESC)",
+      "expected_rule": "adv-perf-042",
+      "expected_issue": "adv-perf-042: TOPN with very large N",
+      "modelContext": {
+        "rowCounts": {
+          "Product": 5000
+        }
+      }
+    },
+    {
+      "name": "[ctx] CONTAINS inside FILTER on 2M-row fact — O(n*m) confirmed by rowCounts",
+      "input": "Filtered = CALCULATE(COUNTROWS(Sales), FILTER(Sales, CONTAINS(Blacklist, Blacklist[ID], Sales[CustomerID])))",
+      "expected_rule": "adv-perf-032",
+      "expected_issue": "adv-perf-032: CONTAINS inside FILTER",
+      "modelContext": {
+        "rowCounts": {
+          "Sales": 2000000
+        }
+      }
+    },
+    {
+      "name": "FILTER over StagedFact table — calculated table chaining heuristic",
+      "input": "Sales Count = COUNTROWS(FILTER(StagedFact, StagedFact[Amount] > 0))",
       "expected_rule": "adv-model-082",
-      "expected_issue": "adv-model-082: Calculated table depending on another calculated table — refresh order may cause stale data",
-      "expected_fix": "// Build transformation chain in Power Query instead of chained calculated tables",
-      "auto_generated": true
+      "expected_issue": "adv-model-082: Calculated table chains another calculated table"
     },
     {
-      "name": "[auto] adv-model-085: High-cardinality text column imported without need — inflate",
-      "input": "// DimProduct[Description] is a free-text column with 50,000 unique values",
-      "expected_rule": "adv-model-085",
-      "expected_issue": "adv-model-085: High-cardinality text column imported without need — inflates model size and compression ratio",
-      "expected_fix": "// Remove column in Power Query: Table.RemoveColumns(Source, {\"Description\"}). Show in tooltip via drill-through page instead.",
-      "auto_generated": true
+      "name": "[ctx] Chained calculated table via modelContext.calculatedTables",
+      "input": "Revenue = SUM(StagedSales[Amount])",
+      "expected_rule": "adv-model-082",
+      "expected_issue": "adv-model-082: Calculated table chains another calculated table",
+      "modelContext": {
+        "calculatedTables": [
+          {
+            "name": "RawSales",
+            "dependsOn": [],
+            "nonFoldable": false
+          },
+          {
+            "name": "StagedSales",
+            "dependsOn": [
+              "RawSales"
+            ],
+            "nonFoldable": false
+          }
+        ]
+      }
     },
     {
-      "name": "[auto] adv-model-086: Composite model mixing Import and DirectQuery in same visual",
-      "input": "// Visual combines [Total Sales] (Import) with [Live Inventory] (DirectQuery)",
-      "expected_rule": "adv-model-086",
-      "expected_issue": "adv-model-086: Composite model mixing Import and DirectQuery in same visual — some DAX functions not supported in DirectQuery",
-      "expected_fix": "// Check DirectQuery DAX limitations. Consider caching DirectQuery table as Import for frequently-used aggregations.",
-      "auto_generated": true
+      "name": "DAX source comment mentions Table.FromList — non-foldable M heuristic",
+      "input": "// M: LookupTable = Table.FromList(csvRows, Splitter.SplitByNothing())\nCount = COUNTROWS(LookupTable)",
+      "expected_rule": "adv-model-083",
+      "expected_issue": "adv-model-083: DAX measure references a calculated table built from an M query"
     },
     {
-      "name": "[auto] adv-model-088: Large fact table in DirectQuery with no aggregation table — ",
-      "input": "// 50M row FactUsage in DirectQuery; no aggregation table configured",
-      "expected_rule": "adv-model-088",
-      "expected_issue": "adv-model-088: Large fact table in DirectQuery with no aggregation table — all queries hit full source",
-      "expected_fix": "// Create monthly aggregation table in Power BI. Configure under: Model → Manage Aggregations.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-model-090: RLS filter using IN() with a long list of hardcoded values —",
-      "input": "[RLS] = DimTerritory[Region] IN {\"North\", \"South\", \"East\", \"West\", \"Central\"}",
-      "expected_rule": "adv-model-090",
-      "expected_issue": "adv-model-090: RLS filter using IN() with a long list of hardcoded values — brittle, doesn't scale",
-      "expected_fix": "// Use a UserMapping table: join USERPRINCIPALNAME() to a UserPermissions table that maps users to regions.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-pq-005: Table.TransformColumns with custom function — may break quer",
-      "input": "Table.TransformColumns(Source, {{\"Amount\", each _ * 1.1, type number}})",
-      "expected_rule": "adv-pq-005",
-      "expected_issue": "adv-pq-005: Table.TransformColumns with custom function — may break query folding",
-      "expected_fix": "// Apply the transformation in SQL source (computed column) or verify folding with View Native Query",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-pq-006: try...otherwise null hiding data errors — bad rows silently ",
-      "input": "[Amount] = try [RawAmount] otherwise null",
-      "expected_rule": "adv-pq-006",
-      "expected_issue": "adv-pq-006: try...otherwise null hiding data errors — bad rows silently become null",
-      "expected_fix": "// Log errors to separate audit query. Use Table.SelectRows to remove bad rows explicitly.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-pq-007: Untyped Power Query parameter — inferred as text, causes ari",
-      "input": "let StartDate = #date(2024,1,1) in StartDate  // parameter has no declared type",
-      "expected_rule": "adv-pq-007",
-      "expected_issue": "adv-pq-007: Untyped Power Query parameter — inferred as text, causes arithmetic or date failures",
-      "expected_fix": "// Declare type: StartDate as date = #date(2024,1,1)",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-pq-009: List.Generate for date range expansion — never folds to SQL ",
-      "input": "List.Generate(() => StartDate, each _ <= EndDate, each Date.AddDays(_, 1))",
-      "expected_rule": "adv-pq-009",
-      "expected_issue": "adv-pq-009: List.Generate for date range expansion — never folds to SQL source",
-      "expected_fix": "// Use a pre-built calendar table in SQL, or use Power BI's CALENDAR() DAX function for DimDate",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-pq-010: Binary or image column loaded in model — inflates file size ",
-      "input": "// Power Query loads Product[ImageBinary] column into model",
-      "expected_rule": "adv-pq-010",
-      "expected_issue": "adv-pq-010: Binary or image column loaded in model — inflates file size with non-queryable data",
-      "expected_fix": "Table.RemoveColumns(Source, {\"ImageBinary\", \"PDF\", \"Photo\"})",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-vis-001: Card visual showing SUM when COUNT or AVERAGE was intended",
-      "input": "// Card: value = SUM(DimCustomer[Age]) — shows total of all ages, not average",
-      "expected_rule": "adv-vis-001",
-      "expected_issue": "adv-vis-001: Card visual showing SUM when COUNT or AVERAGE was intended",
-      "expected_fix": "// Change to AVERAGE(DimCustomer[Age]) or DIVIDE(SUM, COUNT) for meaningful card value",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-vis-004: Matrix visual with 5+ row or column fields — performance deg",
-      "input": "// Matrix: rows = [Region, Country, City, Store, Product], columns = [Year, Quarter, Month]",
-      "expected_rule": "adv-vis-004",
-      "expected_issue": "adv-vis-004: Matrix visual with 5+ row or column fields — performance degrades, visual becomes unreadable",
-      "expected_fix": "// Reduce to 3 row fields maximum. Use drill-through pages for lower-level detail.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-vis-006: Tooltip page using heavy measures — tooltip loads slowly, ba",
-      "input": "// Tooltip page has 8 measures each requiring full table scan",
-      "expected_rule": "adv-vis-006",
-      "expected_issue": "adv-vis-006: Tooltip page using heavy measures — tooltip loads slowly, bad user experience",
-      "expected_fix": "// Pre-aggregate tooltip measures as calculated columns, or reduce measure count on tooltip page",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-vis-008: KPI visual target is a hardcoded number — doesn't adjust wit",
-      "input": "// KPI: value = [Revenue], target = 1000000 (hardcoded constant)",
-      "expected_rule": "adv-vis-008",
-      "expected_issue": "adv-vis-008: KPI visual target is a hardcoded number — doesn't adjust with time period filter",
-      "expected_fix": "// Make target a measure: Target = CALCULATE(SUM(DimBudget[TargetAmount]), ALLEXCEPT(DimDate, DimDate[Year]))",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-vis-009: Scatter chart with millions of data points — visual is unrea",
-      "input": "// Scatter: X=[Revenue], Y=[Margin], Detail=FactSales[OrderID] — 8M points",
-      "expected_rule": "adv-vis-009",
-      "expected_issue": "adv-vis-009: Scatter chart with millions of data points — visual is unreadable and browser may freeze",
-      "expected_fix": "// Aggregate to category or region level. Use sampling or Top N filter on detail field.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-vis-010: Report-level filter hiding data — users see filtered report ",
-      "input": "// Report-level filter: DimDate[Year] = 2024 — invisible to users",
-      "expected_rule": "adv-vis-010",
-      "expected_issue": "adv-vis-010: Report-level filter hiding data — users see filtered report without knowing filter is active",
-      "expected_fix": "// Add a visible label or slicer showing the active filter. Document filters in report description.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-sec-001: RLS not configured — all users see all data in published rep",
-      "input": "// No RLS roles defined; report contains sensitive financial or HR data",
-      "expected_rule": "adv-sec-001",
-      "expected_issue": "adv-sec-001: RLS not configured — all users see all data in published report",
-      "expected_fix": "// Add RLS role in Power BI Desktop → Security. Test with 'View as Role' before publishing.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-sec-003: RLS on dimension with bidirectional filter to fact — securit",
-      "input": "// DimTerritory has bidirectional filter to FactSales; RLS on DimTerritory leaks to DimCustomer",
-      "expected_rule": "adv-sec-003",
-      "expected_issue": "adv-sec-003: RLS on dimension with bidirectional filter to fact — security filter leaks through to other dimensions",
-      "expected_fix": "// Set relationship to single-direction. Apply RLS on FactSales directly or use CROSSFILTER only within measures.",
-      "auto_generated": true
-    },
-    {
-      "name": "[auto] adv-sec-004: Object-level security (OLS) not used for sensitive columns —",
-      "input": "// DimEmployee[Salary] visible to all users — not protected by OLS",
-      "expected_rule": "adv-sec-004",
-      "expected_issue": "adv-sec-004: Object-level security (OLS) not used for sensitive columns — column visible even if not in visual",
-      "expected_fix": "// Configure OLS in Tabular Editor or XMLA endpoint to restrict column access by role.",
-      "auto_generated": true
+      "name": "[ctx] SUMX over non-foldable table confirmed via calculatedTables",
+      "input": "Total = SUMX(PreparedOrders, PreparedOrders[Amount])",
+      "expected_rule": "adv-model-083",
+      "expected_issue": "adv-model-083: DAX measure references a calculated table",
+      "modelContext": {
+        "calculatedTables": [
+          {
+            "name": "PreparedOrders",
+            "dependsOn": [],
+            "nonFoldable": true
+          }
+        ]
+      }
     }
   ],
   "negative_cases": [
@@ -1453,10 +1755,6 @@
     {
       "name": "Valid SELECTEDVALUE with explicit default",
       "input": "Region = SELECTEDVALUE(Geo[Region], \"All Regions\")"
-    },
-    {
-      "name": "Valid ALLSELECTED in visual market share measure",
-      "input": "Share = DIVIDE([Rev], CALCULATE([Rev], ALLSELECTED(Product[Category])))"
     },
     {
       "name": "Valid SWITCH with non-overlapping bands",
@@ -1491,20 +1789,8 @@
       "input": "Sales = CALCULATE([Rev], TREATAS(VALUES(Budget[RegionID]), Geo[RegionID]))"
     },
     {
-      "name": "Valid USERPRINCIPALNAME with LOWER normalization",
-      "input": "[RLS] = LOWER(USERPRINCIPALNAME()) = LOWER(Employee[Email])"
-    },
-    {
-      "name": "Valid HASONEVALUE in matrix subtotal",
-      "input": "Label = IF(HASONEVALUE(Customer[Name]), SELECTEDVALUE(Customer[Name]), \"Subtotal\")"
-    },
-    {
       "name": "Valid CALENDAR with correct date order",
       "input": "Dates = CALENDAR(DATE(2015,1,1), DATE(2030,12,31))"
-    },
-    {
-      "name": "Valid DATEDIFF in calculated column with VAR",
-      "input": "DaysOpen = DATEDIFF(Orders[OrderDate], Orders[CloseDate], DAY)"
     },
     {
       "name": "Valid FLOOR on negative margin",
@@ -1535,20 +1821,8 @@
       "input": "Val = CALCULATE(CALCULATE([Rev], Product[Color] = \"Red\"), Geo[Country] = \"US\")"
     },
     {
-      "name": "Valid DATESYTD with year-end argument",
-      "input": "FYTD = CALCULATE([Rev], DATESYTD('Date'[Date], \"6/30\"))"
-    },
-    {
-      "name": "Valid GENERATE for date-product cross join in calculated table",
-      "input": "CrossTab = GENERATE(VALUES('Date'[Month]), VALUES(Product[Category]))"
-    },
-    {
       "name": "Valid SUMMARIZECOLUMNS in calculated table",
       "input": "Summary = SUMMARIZECOLUMNS(Sales[Region], \"Rev\", SUM(Sales[Amount]))"
-    },
-    {
-      "name": "Valid REMOVEFILTERS on specific columns",
-      "input": "Total = CALCULATE([Rev], REMOVEFILTERS(Sales[Region]))"
     },
     {
       "name": "Valid CROSSFILTER in dedicated bi-directional measure",
@@ -1567,10 +1841,6 @@
       "input": "PY = CALCULATE([Rev], SAMEPERIODLASTYEAR('Date'[Date]))"
     },
     {
-      "name": "Valid HASONEVALUE guard on slicer value",
-      "input": "Val = IF(HASONEVALUE('Date'[Year]), SELECTEDVALUE('Date'[Year]), YEAR(TODAY()))"
-    },
-    {
       "name": "Valid PARALLELPERIOD for same-month prior year",
       "input": "PMPY = CALCULATE([Rev], PARALLELPERIOD('Date'[Date], -12, MONTH))"
     },
@@ -1587,16 +1857,8 @@
       "input": "CustCount = COUNTROWS(Customer)"
     },
     {
-      "name": "Valid DISTINCTCOUNT on integer key",
-      "input": "Orders = DISTINCTCOUNT(Sales[OrderID])"
-    },
-    {
       "name": "Valid FILTER with multi-table condition",
       "input": "VIPSales = CALCULATE([Rev], FILTER(Sales, RELATED(Customer[Tier]) = \"VIP\"))"
-    },
-    {
-      "name": "Valid LOOKUPVALUE when no relationship exists",
-      "input": "Rate = LOOKUPVALUE(ExRate[Rate], ExRate[Currency], Sales[Currency], ExRate[Date], Sales[OrderDate])"
     },
     {
       "name": "Valid CALENDARAUTO usage",
@@ -1609,10 +1871,6 @@
     {
       "name": "Valid IF with complex nested condition",
       "input": "Class = IF(AND([Rev] > 0, [Orders] > 3), \"Active\", IF([Rev] > 0, \"Low\", \"Inactive\"))"
-    },
-    {
-      "name": "Valid DATESYTD on marked Date table column",
-      "input": "YTD = CALCULATE([Rev], DATESYTD('Date'[Date]))"
     },
     {
       "name": "Valid USERELATIONSHIP for inactive date relationship",
@@ -1631,24 +1889,66 @@
       "input": "Level = IF(ISINSCOPE(Product[SubCategory]), \"Sub\", IF(ISINSCOPE(Product[Category]), \"Cat\", \"Total\"))"
     },
     {
+      "name": "[ctx] ISINSCOPE on City — City IS in model hierarchy, should not fire",
+      "input": "Level = IF(ISINSCOPE(Customer[City]), \"City\", \"Total\")",
+      "modelContext": {
+        "hierarchies": {
+          "Customer": {
+            "Geography Hierarchy": [
+              "Country",
+              "State",
+              "City"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "[ctx] ALL(Customer) where Customer has no RLS — no security bypass",
+      "input": "Grand Total = CALCULATE([Revenue], ALL(Customer))",
+      "modelContext": {
+        "rlsTables": [
+          "Sales"
+        ],
+        "relationships": [
+          {
+            "fromTable": "Sales",
+            "fromColumn": "CustomerID",
+            "toTable": "Customer",
+            "toColumn": "CustomerID",
+            "direction": "single",
+            "cardinality": "many-to-one",
+            "active": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "[ctx] DATESYTD on December fiscal year — no year-end arg needed",
+      "input": "YTD = CALCULATE([Rev], DATESYTD('Date'[Date]))",
+      "modelContext": {
+        "dateTable": {
+          "tableName": "Date",
+          "dateColumn": "Date",
+          "marked": true,
+          "fiscalYearEndMonth": 12
+        }
+      }
+    },
+    {
+      "name": "[ctx] ALLSELECTED in report-visual context with ISINSCOPE guard — valid",
+      "input": "PctShare = IF(ISINSCOPE(Product[Category]), DIVIDE([Rev], CALCULATE([Rev], ALLSELECTED(Product[Category]))), 0)",
+      "modelContext": {
+        "callingContext": "report-visual"
+      }
+    },
+    {
       "name": "Valid COALESCE replacing ISBLANK+IF pattern",
       "input": "Safe = COALESCE([Revenue], 0)"
     },
     {
       "name": "Valid DIVIDE with custom alternate result",
       "input": "Margin% = DIVIDE([Gross Margin], [Revenue], 0)"
-    },
-    {
-      "name": "Valid KEEPFILTERS preserving slicer context inside CALCULATE",
-      "input": "AdjustedTotal = CALCULATE([Rev], KEEPFILTERS(ALL(Product[Category])))"
-    },
-    {
-      "name": "Valid EXCEPT for set difference in calculated table",
-      "input": "Inactive = EXCEPT(ALL(Customer[CustomerID]), VALUES(Sales[CustomerID]))"
-    },
-    {
-      "name": "Valid GENERATE for cross-join in calculated table",
-      "input": "Grid = GENERATE(ALL(Product[Category]), ALL('Date'[Year]))"
     },
     {
       "name": "Valid CONTAINS in calculated table definition",
@@ -1719,10 +2019,6 @@
       "input": "Total = CALCULATE([Rev], REMOVEFILTERS(Sales[Region]), REMOVEFILTERS(Sales[Category]))"
     },
     {
-      "name": "Valid CALENDARAUTO with fiscal month end",
-      "input": "Dates = CALENDARAUTO(6)"
-    },
-    {
       "name": "Valid ALLSELECTED with ISINSCOPE guard",
       "input": "Share = IF(ISINSCOPE(Product[Category]), DIVIDE([Rev], CALCULATE([Rev], ALLSELECTED(Product[Category]))), 1)"
     },
@@ -1791,16 +2087,8 @@
       "input": "T = CALCULATE([Rev], ALLEXCEPT(Sales, Sales[ProductID], Sales[Region]))"
     },
     {
-      "name": "Valid FILTER over dimension not fact",
-      "input": "Seg = CALCULATE([Rev], FILTER(Customer, Customer[Tier] = \"Gold\" && Customer[Region] = \"US\"))"
-    },
-    {
       "name": "Valid SEARCH for non-case-sensitive pattern match",
       "input": "HasKeyword = IF(ISNUMBER(SEARCH(\"pending\", Orders[Notes], 1)), 1, 0)"
-    },
-    {
-      "name": "Valid try...otherwise with explicit error logging",
-      "input": "N/A — Power Query: Table.AddColumn(Source, \"Safe\", each try [Amount] otherwise null) followed by error audit query"
     },
     {
       "name": "Valid YEAR(TODAY()) in a one-time label",
@@ -2086,12 +2374,6 @@
       "expected_issue": "none"
     },
     {
-      "name": "Correct USERPRINCIPALNAME in RLS",
-      "input": "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())",
-      "notes": "Case-insensitive UPN comparison",
-      "expected_issue": "none"
-    },
-    {
       "name": "Correct TOPN with tiebreaker",
       "input": "Top 5 = CALCULATE([Revenue], TOPN(5, ALL(DimCustomer), [Revenue], DESC, DimCustomer[CustomerKey], ASC))",
       "notes": "Tiebreaker column prevents nondeterminism",
@@ -2128,331 +2410,576 @@
       "expected_issue": "none"
     },
     {
-      "name": "[sales] valid: Avg Order Value",
-      "input": "Avg Order Value = DIVIDE([Total Sales], DISTINCTCOUNT(FactSales[SalesID]))",
+      "name": "[bulk:sales] valid: base SUM additive column",
+      "input": "sales Amount = SUM(FactSales[Quantity])",
       "expected_issue": "none",
-      "notes": "Average revenue per order",
-      "domain": "sales"
+      "notes": "Direct additive measure",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[finance] valid: Revenue",
-      "input": "Revenue = CALCULATE([Actual Amount], DimAccount[AccountType] = \"Revenue\")",
+      "name": "[bulk:sales] valid: safe DIVIDE measure",
+      "input": "sales Ratio = DIVIDE(SUM(FactSales[Quantity]), DISTINCTCOUNT(FactSales[SalesID]))",
       "expected_issue": "none",
-      "notes": "Total revenue from GL",
-      "domain": "finance"
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[saas] valid: DAU",
-      "input": "DAU = CALCULATE(DISTINCTCOUNT(FactUsage[AccountID]), LASTDATE(DimDate[Date]))",
+      "name": "[bulk:sales] valid: direct CALCULATE equality",
+      "input": "sales Filtered = CALCULATE([Total Sales], FactSales[SalesID] > 0)",
       "expected_issue": "none",
-      "notes": "Daily active users (accounts)",
-      "domain": "saas"
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] valid: Total Encounters",
-      "input": "Total Encounters = COUNTROWS(FactEncounters)",
+      "name": "[bulk:sales] valid: SAMEPERIODLASTYEAR",
+      "input": "sales PY = CALCULATE([Total Sales], SAMEPERIODLASTYEAR(DimDate[Date]))",
       "expected_issue": "none",
-      "notes": "Volume of patient encounters",
-      "domain": "healthcare"
+      "notes": "Correct prior-year time intelligence",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] valid: Avg LOS",
-      "input": "Avg LOS = DIVIDE(SUM(FactEncounters[LOS_Days]), COUNTROWS(FactEncounters))",
+      "name": "[bulk:sales] valid: TOPN with tiebreaker",
+      "input": "sales Top N = CALCULATE([Total Sales], TOPN(5, ALL(DimDate), [Total Sales], DESC, DimDate[DateKey], ASC))",
       "expected_issue": "none",
-      "notes": "Average length of stay",
-      "domain": "healthcare"
+      "notes": "Stable TOPN ordering",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] valid: Readmission Rate",
-      "input": "Readmission Rate = DIVIDE(CALCULATE(COUNTROWS(FactEncounters), FactEncounters[ReadmissionFlag] = 1), COUNTROWS(FactEncounters))",
+      "name": "[bulk:sales] valid: CONCATENATEX ordered",
+      "input": "sales List = CONCATENATEX(DimDate, DimDate[MonthName], \", \", DimDate[MonthName], ASC)",
       "expected_issue": "none",
-      "notes": "30-day readmission rate",
-      "domain": "healthcare"
+      "notes": "Deterministic string aggregation",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] valid: Cost per Encounter",
-      "input": "Cost per Encounter = DIVIDE(SUM(FactEncounters[TotalCost]), COUNTROWS(FactEncounters))",
+      "name": "[bulk:sales] valid: RANKX over dimension",
+      "input": "sales Rank = RANKX(ALLSELECTED(DimDate[MonthName]), [Total Sales], , DESC, Dense)",
       "expected_issue": "none",
-      "notes": "Average cost per visit",
-      "domain": "healthcare"
+      "notes": "Ranks visible dimension members",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[healthcare] valid: Reimbursement Ratio",
-      "input": "Reimbursement Ratio = DIVIDE(SUM(FactEncounters[ReimbursementAmount]), SUM(FactEncounters[TotalCharges]))",
+      "name": "[bulk:sales] valid: IN filter list",
+      "input": "sales Multi Filter = CALCULATE([Total Sales], DimDate[MonthName] IN {\"A\", \"B\", \"C\"})",
       "expected_issue": "none",
-      "notes": "Payer reimbursement rate",
-      "domain": "healthcare"
+      "notes": "Preferred multi-value column filter",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] valid: Gross Revenue",
-      "input": "Gross Revenue = SUM(FactOrders[Revenue])",
+      "name": "[bulk:finance] valid: base SUM additive column",
+      "input": "finance Amount = SUM(FactGL[Amount])",
       "expected_issue": "none",
-      "notes": "Total order revenue before returns",
-      "domain": "ecommerce"
+      "notes": "Direct additive measure",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] valid: Net Revenue",
-      "input": "Net Revenue = [Gross Revenue] - SUM(FactReturns[RefundAmount])",
+      "name": "[bulk:finance] valid: safe DIVIDE measure",
+      "input": "finance Ratio = DIVIDE(SUM(FactGL[Amount]), DISTINCTCOUNT(FactGL[GLID]))",
       "expected_issue": "none",
-      "notes": "Revenue after refunds",
-      "domain": "ecommerce"
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] valid: Return Rate",
-      "input": "Return Rate = DIVIDE(COUNTROWS(FactReturns), COUNTROWS(FactOrders))",
+      "name": "[bulk:finance] valid: direct CALCULATE equality",
+      "input": "finance Filtered = CALCULATE([Actual Amount], FactGL[TransactionType] = \"Active\")",
       "expected_issue": "none",
-      "notes": "Percentage of orders returned",
-      "domain": "ecommerce"
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] valid: Customer LTV",
-      "input": "Customer LTV = DIVIDE([Net Revenue], DISTINCTCOUNT(FactOrders[CustomerKey]))",
+      "name": "[bulk:finance] valid: SAMEPERIODLASTYEAR",
+      "input": "finance PY = CALCULATE([Actual Amount], SAMEPERIODLASTYEAR(DimDate[Date]))",
       "expected_issue": "none",
-      "notes": "Average lifetime value per customer",
-      "domain": "ecommerce"
+      "notes": "Correct prior-year time intelligence",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[ecommerce] valid: Repeat Purchase Rate",
-      "input": "Repeat Purchase Rate = DIVIDE(CALCULATE(DISTINCTCOUNT(FactOrders[CustomerKey]), CALCULATE(COUNTROWS(FactOrders), FactOrders[CustomerKey]) > 1), DISTINCTCOUNT(FactOrders[CustomerKey]))",
+      "name": "[bulk:finance] valid: TOPN with tiebreaker",
+      "input": "finance Top N = CALCULATE([Actual Amount], TOPN(5, ALL(DimAccount), [Actual Amount], DESC, DimAccount[AccountKey], ASC))",
       "expected_issue": "none",
-      "notes": "% of customers with more than one order",
-      "domain": "ecommerce"
+      "notes": "Stable TOPN ordering",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] valid: OEE",
-      "input": "OEE = DIVIDE(SUM(FactProduction[ActualUnits]), SUM(FactProduction[PlannedUnits]))",
+      "name": "[bulk:finance] valid: CONCATENATEX ordered",
+      "input": "finance List = CONCATENATEX(DimAccount, DimAccount[AccountName], \", \", DimAccount[AccountName], ASC)",
       "expected_issue": "none",
-      "notes": "Overall Equipment Effectiveness",
-      "domain": "manufacturing"
+      "notes": "Deterministic string aggregation",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] valid: Scrap Rate",
-      "input": "Scrap Rate = DIVIDE(SUM(FactProduction[ScrapUnits]), SUM(FactProduction[ActualUnits]))",
+      "name": "[bulk:finance] valid: RANKX over dimension",
+      "input": "finance Rank = RANKX(ALLSELECTED(DimAccount[AccountName]), [Actual Amount], , DESC, Dense)",
       "expected_issue": "none",
-      "notes": "Percentage of units scrapped",
-      "domain": "manufacturing"
+      "notes": "Ranks visible dimension members",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] valid: Defects Per Million",
-      "input": "DPMO = DIVIDE(SUM(FactQuality[DefectCount]) * 1000000, SUM(FactProduction[ActualUnits]))",
+      "name": "[bulk:finance] valid: IN filter list",
+      "input": "finance Multi Filter = CALCULATE([Actual Amount], DimAccount[AccountName] IN {\"A\", \"B\", \"C\"})",
       "expected_issue": "none",
-      "notes": "Defects per million opportunities",
-      "domain": "manufacturing"
+      "notes": "Preferred multi-value column filter",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[manufacturing] valid: Avg Cycle Time",
-      "input": "Avg Cycle Time = DIVIDE(SUM(FactProduction[CycleTimeSec]), COUNTROWS(FactProduction))",
+      "name": "[bulk:saas] valid: base SUM additive column",
+      "input": "saas Amount = SUM(FactSubscriptions[MRR])",
       "expected_issue": "none",
-      "notes": "Average cycle time in seconds",
-      "domain": "manufacturing"
+      "notes": "Direct additive measure",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] valid: ARPU",
-      "input": "ARPU = DIVIDE(SUM(FactBilling[BillAmount]), DISTINCTCOUNT(FactBilling[SubscriberKey]))",
+      "name": "[bulk:saas] valid: safe DIVIDE measure",
+      "input": "saas Ratio = DIVIDE(SUM(FactSubscriptions[MRR]), DISTINCTCOUNT(FactSubscriptions[SubscriptionID]))",
       "expected_issue": "none",
-      "notes": "Average revenue per user",
-      "domain": "telecom"
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] valid: Churn Rate",
-      "input": "Churn Rate = DIVIDE(CALCULATE(COUNTROWS(DimSubscriber), DimSubscriber[ChurnFlag] = 1), COUNTROWS(DimSubscriber))",
+      "name": "[bulk:saas] valid: direct CALCULATE equality",
+      "input": "saas Filtered = CALCULATE([MRR], FactSubscriptions[Status] = \"Active\")",
       "expected_issue": "none",
-      "notes": "Overall churn rate",
-      "domain": "telecom"
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] valid: Data Revenue",
-      "input": "Data Revenue = CALCULATE(SUM(FactUsage[RevenueAmount]), FactUsage[DataGB] > 0)",
+      "name": "[bulk:saas] valid: SAMEPERIODLASTYEAR",
+      "input": "saas PY = CALCULATE([MRR], SAMEPERIODLASTYEAR(DimDate[Date]))",
       "expected_issue": "none",
-      "notes": "Revenue from data usage",
-      "domain": "telecom"
+      "notes": "Correct prior-year time intelligence",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "[telecom] valid: Avg Data Usage GB",
-      "input": "Avg Data GB = DIVIDE(SUM(FactUsage[DataGB]), DISTINCTCOUNT(FactUsage[SubscriberKey]))",
+      "name": "[bulk:saas] valid: TOPN with tiebreaker",
+      "input": "saas Top N = CALCULATE([MRR], TOPN(5, ALL(DimAccount), [MRR], DESC, DimAccount[AccountID], ASC))",
       "expected_issue": "none",
-      "notes": "Average data consumption per subscriber",
-      "domain": "telecom"
+      "notes": "Stable TOPN ordering",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct CALCULATE with column filter (no FILTER wrap)",
-      "input": "Sales CY = CALCULATE([Revenue], DimDate[Year] = YEAR(TODAY()))",
-      "notes": "Direct column filter is idiomatic and fast",
-      "expected_issue": "none"
+      "name": "[bulk:saas] valid: CONCATENATEX ordered",
+      "input": "saas List = CONCATENATEX(DimAccount, DimAccount[AccountName], \", \", DimAccount[AccountName], ASC)",
+      "expected_issue": "none",
+      "notes": "Deterministic string aggregation",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct SAMEPERIODLASTYEAR for prior year",
-      "input": "PY = CALCULATE([Revenue], SAMEPERIODLASTYEAR(DimDate[Date]))",
-      "notes": "Correct time intelligence — handles leap years",
-      "expected_issue": "none"
+      "name": "[bulk:saas] valid: RANKX over dimension",
+      "input": "saas Rank = RANKX(ALLSELECTED(DimAccount[AccountName]), [MRR], , DESC, Dense)",
+      "expected_issue": "none",
+      "notes": "Ranks visible dimension members",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct DIVIDE for safe division",
-      "input": "Margin = DIVIDE([Gross Profit], [Revenue])",
-      "notes": "DIVIDE handles zero denominator returning BLANK",
-      "expected_issue": "none"
+      "name": "[bulk:saas] valid: IN filter list",
+      "input": "saas Multi Filter = CALCULATE([MRR], DimAccount[AccountName] IN {\"A\", \"B\", \"C\"})",
+      "expected_issue": "none",
+      "notes": "Preferred multi-value column filter",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct IN operator for multi-value filter",
-      "input": "EU = CALCULATE([Revenue], DimTerritory[Region] IN {\"DE\",\"FR\",\"UK\",\"IT\"})",
-      "notes": "IN is faster and more readable than chained OR",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: base SUM additive column",
+      "input": "inventory Amount = SUM(FactInventory[OnHandQty])",
+      "expected_issue": "none",
+      "notes": "Direct additive measure",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct COALESCE for blank handling",
-      "input": "Safe = COALESCE([Revenue], 0)",
-      "notes": "Explicit blank-to-zero conversion",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: safe DIVIDE measure",
+      "input": "inventory Ratio = DIVIDE(SUM(FactInventory[OnHandQty]), DISTINCTCOUNT(FactInventory[InventoryID]))",
+      "expected_issue": "none",
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct USERPRINCIPALNAME with LOWER",
-      "input": "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())",
-      "notes": "Case-insensitive UPN comparison",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: direct CALCULATE equality",
+      "input": "inventory Filtered = CALCULATE([Total On Hand], FactInventory[InventoryID] > 0)",
+      "expected_issue": "none",
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct CALCULATE(COUNTROWS()) filter",
-      "input": "Churned = CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status] = \"Churned\")",
-      "notes": "Preferred over COUNTROWS(FILTER(...))",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: SAMEPERIODLASTYEAR",
+      "input": "inventory PY = CALCULATE([Total On Hand], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "expected_issue": "none",
+      "notes": "Correct prior-year time intelligence",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct USERELATIONSHIP inside CALCULATE",
-      "input": "DestCount = CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestKey], DimLocation[LocationKey]))",
-      "notes": "Correctly activates inactive relationship",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: TOPN with tiebreaker",
+      "input": "inventory Top N = CALCULATE([Total On Hand], TOPN(5, ALL(DimWarehouse), [Total On Hand], DESC, DimWarehouse[WarehouseKey], ASC))",
+      "expected_issue": "none",
+      "notes": "Stable TOPN ordering",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct VAR pattern to cache sub-expression",
-      "input": "Diff = VAR base = [Base Sales] RETURN [Total Sales] - base",
-      "notes": "VAR prevents double evaluation of expensive measure",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: CONCATENATEX ordered",
+      "input": "inventory List = CONCATENATEX(DimWarehouse, DimWarehouse[WarehouseName], \", \", DimWarehouse[WarehouseName], ASC)",
+      "expected_issue": "none",
+      "notes": "Deterministic string aggregation",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct SWITCH(TRUE()) for range banding",
-      "input": "Band = SWITCH(TRUE(), [Rev]>1000,\"High\", [Rev]>500,\"Mid\", [Rev]>0,\"Low\", \"Zero\")",
-      "notes": "Ordered conditions narrow to wide — no overlap",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: RANKX over dimension",
+      "input": "inventory Rank = RANKX(ALLSELECTED(DimWarehouse[WarehouseName]), [Total On Hand], , DESC, Dense)",
+      "expected_issue": "none",
+      "notes": "Ranks visible dimension members",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct SELECTEDVALUE with default",
-      "input": "Sel = SELECTEDVALUE(Product[Name], \"All\")",
-      "notes": "No need for HASONEVALUE wrapper",
-      "expected_issue": "none"
+      "name": "[bulk:inventory] valid: IN filter list",
+      "input": "inventory Multi Filter = CALCULATE([Total On Hand], DimWarehouse[WarehouseName] IN {\"A\", \"B\", \"C\"})",
+      "expected_issue": "none",
+      "notes": "Preferred multi-value column filter",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct REMOVEFILTERS for specific column",
-      "input": "Market = CALCULATE([Rev], REMOVEFILTERS(FactSales[Region]))",
-      "notes": "Removes only region filter, not RLS filters",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: base SUM additive column",
+      "input": "supply chain Amount = SUM(FactShipments[ShippedQty])",
+      "expected_issue": "none",
+      "notes": "Direct additive measure",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct DATESMTD for month-to-date",
-      "input": "MTD = CALCULATE([Sales], DATESMTD(DimDate[Date]))",
-      "notes": "Explicit time intelligence — not deprecated TOTALMTD",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: safe DIVIDE measure",
+      "input": "supply chain Ratio = DIVIDE(SUM(FactShipments[ShippedQty]), DISTINCTCOUNT(FactShipments[ShipmentID]))",
+      "expected_issue": "none",
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct SNAPSHOT fact with LASTDATE filter",
-      "input": "HC = CALCULATE(SUM(FactHeadcount[Salary]), LASTDATE(DimDate[Date]))",
-      "notes": "Snapshot fact correctly filtered to single date",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: direct CALCULATE equality",
+      "input": "supply chain Filtered = CALCULATE([On Time Delivery Rate], FactShipments[ShipmentID] > 0)",
+      "expected_issue": "none",
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct SWITCH with unique cases and ELSE",
-      "input": "Label = SWITCH(S[Status], \"A\", \"Active\", \"I\", \"Inactive\", \"P\", \"Pending\", \"Unknown\")",
-      "notes": "All cases unique, ELSE clause present",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: SAMEPERIODLASTYEAR",
+      "input": "supply chain PY = CALCULATE([On Time Delivery Rate], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "expected_issue": "none",
+      "notes": "Correct prior-year time intelligence",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct CONTAINSROW for membership test",
-      "input": "IsVIP = CONTAINSROW(VALUES(VIPList[ID]), Customer[ID])",
-      "notes": "Cleaner than CONTAINS — argument order unambiguous",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: TOPN with tiebreaker",
+      "input": "supply chain Top N = CALCULATE([On Time Delivery Rate], TOPN(5, ALL(DimCarrier), [On Time Delivery Rate], DESC, DimCarrier[CarrierKey], ASC))",
+      "expected_issue": "none",
+      "notes": "Stable TOPN ordering",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct string concat with & operator",
-      "input": "FullName = DimEmployee[FirstName] & \" \" & DimEmployee[LastName]",
-      "notes": "& chains cleanly — no nested CONCATENATE",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: CONCATENATEX ordered",
+      "input": "supply chain List = CONCATENATEX(DimCarrier, DimCarrier[CarrierName], \", \", DimCarrier[CarrierName], ASC)",
+      "expected_issue": "none",
+      "notes": "Deterministic string aggregation",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct ADDCOLUMNS for row-level calculation",
-      "input": "D = SUMX(ADDCOLUMNS(Sales, \"Markup\", Sales[Amount]*1.1), [Markup])",
-      "notes": "ADDCOLUMNS is cleaner than GENERATE+ROW",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: RANKX over dimension",
+      "input": "supply chain Rank = RANKX(ALLSELECTED(DimCarrier[CarrierName]), [On Time Delivery Rate], , DESC, Dense)",
+      "expected_issue": "none",
+      "notes": "Ranks visible dimension members",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct MAX on single column",
-      "input": "Latest = MAX(FactSales[OrderDate])",
-      "notes": "MAX is faster than MAXX for direct column",
-      "expected_issue": "none"
+      "name": "[bulk:supply_chain] valid: IN filter list",
+      "input": "supply chain Multi Filter = CALCULATE([On Time Delivery Rate], DimCarrier[CarrierName] IN {\"A\", \"B\", \"C\"})",
+      "expected_issue": "none",
+      "notes": "Preferred multi-value column filter",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct CALCULATE(AVERAGE()) for conditional average",
-      "input": "AvgPos = CALCULATE(AVERAGE(FactSales[Amount]), FactSales[Amount] > 0)",
-      "notes": "Filter pushed to CALCULATE — not per-row IF",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: safe DIVIDE measure",
+      "input": "hr Ratio = DIVIDE(SUM(FactHeadcount[Salary]), DISTINCTCOUNT(FactHeadcount[HeadcountID]))",
+      "expected_issue": "none",
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct USERPRINCIPALNAME (not USERNAME)",
-      "input": "[RLS] = DimEmployee[Email] = USERPRINCIPALNAME()",
-      "notes": "USERPRINCIPALNAME is the correct cloud function",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: direct CALCULATE equality",
+      "input": "hr Filtered = CALCULATE([Headcount], FactHeadcount[Status] = \"Active\")",
+      "expected_issue": "none",
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct Table.ExpandTableColumn after NestedJoin",
-      "input": "Table.ExpandTableColumn(joined, \"CustomerData\", {\"Name\", \"Email\"})",
-      "notes": "Always expand after NestedJoin",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: SAMEPERIODLASTYEAR",
+      "input": "hr PY = CALCULATE([Headcount], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "expected_issue": "none",
+      "notes": "Correct prior-year time intelligence",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct Power Query parameter with type",
-      "input": "StartDate as date = #date(2020,1,1)",
-      "notes": "Explicit type prevents inference errors",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: TOPN with tiebreaker",
+      "input": "hr Top N = CALCULATE([Headcount], TOPN(5, ALL(DimEmployee), [Headcount], DESC, DimEmployee[EmployeeKey], ASC))",
+      "expected_issue": "none",
+      "notes": "Stable TOPN ordering",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct DATESYTD with fiscal year end",
-      "input": "FYTD = CALCULATE([Rev], DATESYTD(DimDate[Date], \"6/30\"))",
-      "notes": "Fiscal year-end parameter correctly specified",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: CONCATENATEX ordered",
+      "input": "hr List = CONCATENATEX(DimEmployee, DimEmployee[FullName], \", \", DimEmployee[FullName], ASC)",
+      "expected_issue": "none",
+      "notes": "Deterministic string aggregation",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct COALESCE over IF(ISBLANK())",
-      "input": "Safe = COALESCE([Revenue], 0)",
-      "notes": "COALESCE is cleaner than IF(ISBLANK(x), 0, x)",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: RANKX over dimension",
+      "input": "hr Rank = RANKX(ALLSELECTED(DimEmployee[FullName]), [Headcount], , DESC, Dense)",
+      "expected_issue": "none",
+      "notes": "Ranks visible dimension members",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct NOT ISBLANK usage",
-      "input": "HasValue = NOT ISBLANK([Measure])",
-      "notes": "ISBLANK is preferred over <> BLANK()",
-      "expected_issue": "none"
+      "name": "[bulk:hr] valid: IN filter list",
+      "input": "hr Multi Filter = CALCULATE([Headcount], DimEmployee[FullName] IN {\"A\", \"B\", \"C\"})",
+      "expected_issue": "none",
+      "notes": "Preferred multi-value column filter",
+      "domain": "hr",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct VALUES over DISTINCT in SUMX",
-      "input": "D = SUMX(VALUES(Sales[CustomerID]), [Revenue])",
-      "notes": "VALUES is idiomatic; includes BLANK handling",
-      "expected_issue": "none"
+      "name": "[bulk:marketing] valid: base SUM additive column",
+      "input": "marketing Amount = SUM(FactCampaigns[Impressions])",
+      "expected_issue": "none",
+      "notes": "Direct additive measure",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct OEE measure using DIVIDE",
-      "input": "OEE = DIVIDE(SUM(FactProduction[ActualUnits]), SUM(FactProduction[PlannedUnits]))",
-      "notes": "DIVIDE handles zero planned units gracefully",
-      "expected_issue": "none"
+      "name": "[bulk:marketing] valid: safe DIVIDE measure",
+      "input": "marketing Ratio = DIVIDE(SUM(FactCampaigns[Impressions]), DISTINCTCOUNT(FactCampaigns[CampaignID]))",
+      "expected_issue": "none",
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct CHURN RATE with CALCULATE filter",
-      "input": "Churn Rate = DIVIDE(CALCULATE(COUNTROWS(FactSubscriptions), FactSubscriptions[Status]=\"Churned\"), COUNTROWS(FactSubscriptions))",
-      "notes": "CALCULATE filter preferred over COUNTROWS(FILTER(...))",
-      "expected_issue": "none"
+      "name": "[bulk:marketing] valid: direct CALCULATE equality",
+      "input": "marketing Filtered = CALCULATE([CTR], FactCampaigns[ChannelKey] = \"Active\")",
+      "expected_issue": "none",
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Correct ARPU with DISTINCTCOUNT denominator",
-      "input": "ARPU = DIVIDE(SUM(FactBilling[BillAmount]), DISTINCTCOUNT(FactBilling[SubscriberKey]))",
-      "notes": "Correct per-user average revenue calculation",
-      "expected_issue": "none"
+      "name": "[bulk:marketing] valid: SAMEPERIODLASTYEAR",
+      "input": "marketing PY = CALCULATE([CTR], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "expected_issue": "none",
+      "notes": "Correct prior-year time intelligence",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] valid: TOPN with tiebreaker",
+      "input": "marketing Top N = CALCULATE([CTR], TOPN(5, ALL(DimChannel), [CTR], DESC, DimChannel[ChannelKey], ASC))",
+      "expected_issue": "none",
+      "notes": "Stable TOPN ordering",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] valid: CONCATENATEX ordered",
+      "input": "marketing List = CONCATENATEX(DimChannel, DimChannel[ChannelName], \", \", DimChannel[ChannelName], ASC)",
+      "expected_issue": "none",
+      "notes": "Deterministic string aggregation",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] valid: RANKX over dimension",
+      "input": "marketing Rank = RANKX(ALLSELECTED(DimChannel[ChannelName]), [CTR], , DESC, Dense)",
+      "expected_issue": "none",
+      "notes": "Ranks visible dimension members",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] valid: IN filter list",
+      "input": "marketing Multi Filter = CALCULATE([CTR], DimChannel[ChannelName] IN {\"A\", \"B\", \"C\"})",
+      "expected_issue": "none",
+      "notes": "Preferred multi-value column filter",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: base SUM additive column",
+      "input": "operations Amount = SUM(FactWorkOrders[PlannedHours])",
+      "expected_issue": "none",
+      "notes": "Direct additive measure",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: safe DIVIDE measure",
+      "input": "operations Ratio = DIVIDE(SUM(FactWorkOrders[PlannedHours]), DISTINCTCOUNT(FactWorkOrders[WorkOrderID]))",
+      "expected_issue": "none",
+      "notes": "DIVIDE handles zero denominators",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: direct CALCULATE equality",
+      "input": "operations Filtered = CALCULATE([OEE], FactWorkOrders[WorkType] = \"Active\")",
+      "expected_issue": "none",
+      "notes": "Direct filter argument avoids FILTER iterator",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: SAMEPERIODLASTYEAR",
+      "input": "operations PY = CALCULATE([OEE], SAMEPERIODLASTYEAR(DimDate[Date]))",
+      "expected_issue": "none",
+      "notes": "Correct prior-year time intelligence",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: TOPN with tiebreaker",
+      "input": "operations Top N = CALCULATE([OEE], TOPN(5, ALL(DimAsset), [OEE], DESC, DimAsset[AssetKey], ASC))",
+      "expected_issue": "none",
+      "notes": "Stable TOPN ordering",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: CONCATENATEX ordered",
+      "input": "operations List = CONCATENATEX(DimAsset, DimAsset[AssetName], \", \", DimAsset[AssetName], ASC)",
+      "expected_issue": "none",
+      "notes": "Deterministic string aggregation",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: RANKX over dimension",
+      "input": "operations Rank = RANKX(ALLSELECTED(DimAsset[AssetName]), [OEE], , DESC, Dense)",
+      "expected_issue": "none",
+      "notes": "Ranks visible dimension members",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] valid: IN filter list",
+      "input": "operations Multi Filter = CALCULATE([OEE], DimAsset[AssetName] IN {\"A\", \"B\", \"C\"})",
+      "expected_issue": "none",
+      "notes": "Preferred multi-value column filter",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "CONCATENATEX over empty table returns blank not error",
+      "input": "EmptyList = CONCATENATEX(FILTER(Product, Product[Active] = 0), Product[Name], \", \", Product[Name], ASC)"
+    },
+    {
+      "name": "RELATED in SUMX when relationship is inactive — silent blank",
+      "input": "MarginX = SUMX(Sales, Sales[Qty] * RELATED(Product[OldMargin]))"
+    },
+    {
+      "name": "CALENDARAUTO with fiscal end month argument — valid pattern",
+      "input": "Dates = CALENDARAUTO(6)"
+    },
+    {
+      "name": "TOPN with small N used for visual table output — not aggregation",
+      "input": "TopTable = TOPN(10, VALUES(Customer[Name]), [Rev], DESC, Customer[Name], ASC)"
+    },
+    {
+      "name": "COUNTROWS on fact table where destination relationship is inactive",
+      "input": "Deliveries by Destination = COUNTROWS(FactShipments)"
+    },
+    {
+      "name": "Headcount SUM on snapshot fact table — unfiltered total",
+      "input": "HC Total = SUM(FactHeadcount[Salary])"
+    },
+    {
+      "name": "SUM on Amount column — additive fact, not a snapshot",
+      "input": "Revenue = SUM(Sales[Amount])"
+    },
+    {
+      "name": "SUM on ClosingBalance with LASTDATE guard — valid point-in-time pattern",
+      "input": "Balance = CALCULATE(SUM(Account[ClosingBalance]), LASTDATE('Date'[Date]))"
+    },
+    {
+      "name": "COUNTROWS on Inventory with CALCULATE — date context provided",
+      "input": "Current Stock = CALCULATE(COUNTROWS(Inventory), LASTDATE('Date'[Date]))"
+    },
+    {
+      "name": "SUM on OpeningBalance inside AVERAGEX — deliberate cross-period average",
+      "input": "Avg Opening = AVERAGEX(VALUES('Date'[Month]), SUM(Account[OpeningBalance]))"
+    },
+    {
+      "name": "[ctx] TOPN(50) on 1M-row Sales — 0.005%, stays silent with rowCounts",
+      "input": "Top 50 = TOPN(50, Sales, [Revenue], DESC)",
+      "modelContext": {
+        "rowCounts": {
+          "Sales": 1000000
+        }
+      }
+    },
+    {
+      "name": "SUM on standard Sales fact table — not a chained calculated table",
+      "input": "Revenue = SUM(Sales[Amount])"
+    },
+    {
+      "name": "[ctx] Calculated table that depends on base query (not calc table) — no chain issue",
+      "input": "Revenue = SUM(StagedSales[Amount])",
+      "modelContext": {
+        "calculatedTables": [
+          {
+            "name": "StagedSales",
+            "dependsOn": [
+              "SourceQuery"
+            ],
+            "nonFoldable": false
+          }
+        ]
+      }
     }
   ],
   "edge_cases": [
@@ -2559,12 +3086,6 @@
       "expected_fix": "No fix — multi-key LOOKUPVALUE is appropriate here"
     },
     {
-      "name": "CONCATENATEX over empty table returns blank not error",
-      "input": "EmptyList = CONCATENATEX(FILTER(Product, Product[Active] = 0), Product[Name], \", \", Product[Name], ASC)",
-      "expected_issue": "No rule should fire — ORDERBY is correctly provided, empty result is expected behavior",
-      "expected_fix": "No fix needed"
-    },
-    {
       "name": "MAX on a date column stored as text in ISO format",
       "input": "Latest = MAX(Orders[OrderDateText])",
       "expected_issue": "Rule adv-cor-020 fires correctly — text MAX returns alphabetical not chronological max unless ISO format",
@@ -2597,14 +3118,8 @@
     {
       "name": "ISINSCOPE on a column that IS in a matrix hierarchy on the current report page",
       "input": "Level = IF(ISINSCOPE(Customer[City]), \"City\", \"Total\")",
-      "expected_issue": "Rule adv-perf-043 should NOT fire — City is in the matrix row hierarchy",
-      "expected_fix": "No fix needed"
-    },
-    {
-      "name": "RELATED in SUMX when relationship is inactive — RELATED returns blank silently",
-      "input": "MarginX = SUMX(Sales, Sales[Qty] * RELATED(Product[OldMargin]))",
-      "expected_issue": "RELATED on an inactive relationship column returns blank — need USERELATIONSHIP or CALCULATE wrapper",
-      "expected_fix": "SUMX(Sales, Sales[Qty] * CALCULATE(RELATED(Product[OldMargin]), USERELATIONSHIP(...)))"
+      "expected_issue": "Rule adv-perf-043 should fire — engine cannot know if City is in hierarchy from DAX text alone",
+      "expected_fix": "No fix needed if City is in hierarchy"
     },
     {
       "name": "REMOVEFILTERS(Sales[Region]) in a report with no Region slicer — safe but harmless",
@@ -2635,12 +3150,6 @@
       "input": "SalesCol = SUMX(FILTER(ALL(Sales), Sales[CustID] = EARLIER(Sales[CustID])), Sales[Amount])",
       "expected_issue": "Rule adv-cor-006 should NOT fire — EARLIER is inside FILTER inside SUMX, not directly in CALCULATE",
       "expected_fix": "No fix needed — EARLIER is valid in this row context"
-    },
-    {
-      "name": "CALENDAR using CALENDARAUTO with fiscal end month",
-      "input": "Dates = CALENDARAUTO(6)",
-      "expected_issue": "No rule should fire — CALENDARAUTO with month argument is the correct pattern",
-      "expected_fix": "No fix needed"
     },
     {
       "name": "DISTINCTCOUNT on a high-cardinality integer column — valid performance",
@@ -2695,12 +3204,6 @@
       "input": "Cat = IF(HASONEVALUE(Product[Category]), SELECTEDVALUE(Product[Category]), \"Multiple Selected\")",
       "expected_issue": "Rule adv-cor-003 should NOT fire — HASONEVALUE check with explicit 'Multiple Selected' label is valid pattern",
       "expected_fix": "No fix needed — this is a valid display pattern"
-    },
-    {
-      "name": "TOPN used to limit rows for a report visual, not for aggregation",
-      "input": "TopTable = TOPN(10, VALUES(Customer[Name]), [Rev], DESC, Customer[Name], ASC)",
-      "expected_issue": "Rule adv-perf-042 should NOT fire — N=10 is small and result is used as a visual table, not aggregated",
-      "expected_fix": "No fix needed"
     },
     {
       "name": "DATESYTD on fact date with no Date table and auto date/time disabled",
@@ -2763,27 +3266,15 @@
       "expected_fix": "Add ISINSCOPE guard or document that behavior is expected in no-slicer context"
     },
     {
-      "name": "Headcount summed across multiple snapshot months",
-      "input": "HC Total = SUM(FactHeadcount[Salary])",
-      "expected_issue": "adv-model-067: Snapshot fact — summing salary across all months inflates by month count",
-      "expected_fix": "HC Total = CALCULATE(SUM(FactHeadcount[Salary]), LASTDATE(DimDate[Date]))"
-    },
-    {
       "name": "CONCATENATEX over full fact table — may return truncated or blank result",
       "input": "All Items = CONCATENATEX(FactSales, FactSales[SalesID], \", \")",
       "expected_issue": "adv-cor-007/adv-perf: CONCATENATEX over millions of rows will timeout or be truncated by Power BI",
       "expected_fix": "Limit with TOPN or aggregate before concatenating"
     },
     {
-      "name": "Measure referencing inactive relationship without USERELATIONSHIP",
-      "input": "Deliveries by Destination = COUNTROWS(FactShipments)",
-      "expected_issue": "adv-model-066: DestinationKey→DimLocation is inactive; measure uses OriginKey relationship instead",
-      "expected_fix": "CALCULATE(COUNTROWS(FactShipments), USERELATIONSHIP(FactShipments[DestinationKey], DimLocation[LocationKey]))"
-    },
-    {
-      "name": "RELATED called at measure top level — runtime error",
+      "name": "RELATED called at measure top level — no row context",
       "input": "Cat = RELATED(DimProduct[Category])",
-      "expected_issue": "adv-cor-072: RELATED requires row context — fails at measure top level",
+      "expected_issue": "adv-cor-021: RELATED requires row context — fails at measure top level; wrap inside SUMX or use a calculated column",
       "expected_fix": "SUMX(FactSales, RELATED(DimProduct[Category]))  -- only if you need row-level iteration"
     },
     {
@@ -2811,124 +3302,447 @@
       "expected_fix": "Put ARR on secondary axis or show in separate visual"
     },
     {
-      "name": "BLANK propagation: BLANK + 0 = 0 but BLANK * 2 = BLANK",
-      "input": "Total = [Sales] * [Multiplier]  // Multiplier can be BLANK",
-      "expected_issue": "adv-cor-080: BLANK * number = BLANK — measure returns BLANK when Multiplier is blank",
-      "expected_fix": "Total = [Sales] * COALESCE([Multiplier], 1)"
+      "name": "[bulk:sales] high cardinality axis DimDate",
+      "input": "// Bar chart axis: DimDate[MonthName], values: [Total Sales]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "DIVIDE(0, 0) returns BLANK not 0",
-      "input": "Rate = DIVIDE(0, 0)",
-      "expected_issue": "adv-cor-089: DIVIDE(0,0) = BLANK — may be unexpected if 0 rate expected",
-      "expected_fix": "Wrap with COALESCE(DIVIDE(0,0), 0) if 0 is intended"
+      "name": "[bulk:sales] high cardinality axis DimCustomer",
+      "input": "// Bar chart axis: DimCustomer[MonthName], values: [Total Sales]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "KEEPFILTERS intersecting with existing visual filter produces empty result",
-      "input": "EU Only = CALCULATE([Sales], KEEPFILTERS(Geo[Region] = \"Europe\"))",
-      "expected_issue": "adv-cor-083: If user selects 'Asia' in slicer, KEEPFILTERS intersects to produce BLANK",
-      "expected_fix": "Use direct filter (not KEEPFILTERS) unless intersection is intentional"
+      "name": "[bulk:sales] high cardinality axis DimProduct",
+      "input": "// Bar chart axis: DimProduct[MonthName], values: [Total Sales]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "ALLSELECTED column vs table scope difference",
-      "input": "Pct = DIVIDE([Sales], CALCULATE([Sales], ALLSELECTED(Product[Category])))",
-      "expected_issue": "adv-cor-082: ALLSELECTED(Product[Category]) only removes category slicer — other Product filters still apply",
-      "expected_fix": "ALLSELECTED(Product) to remove all product filters"
+      "name": "[bulk:sales] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [Total Sales]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "sales",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "SWITCH(TRUE()) with overlapping ranges — first match wins silently",
-      "input": "B = SWITCH(TRUE(), [R]>0,\"Pos\", [R]>1000,\"High\", \"Zero\")",
-      "expected_issue": "adv-cor-005: [R]>1000 never reached — [R]>0 matches first for all positive values",
-      "expected_fix": "SWITCH(TRUE(), [R]>1000,\"High\", [R]>0,\"Pos\", \"Zero\")"
+      "name": "[bulk:finance] cross-fact visual FactGL plus DimBudget",
+      "input": "// Visual combines [FactGL metric] and [DimBudget metric] by DimAccount[AccountName]",
+      "expected_issue": "adv-model-063: Cross-fact visuals sharing a dimension can produce blank rows or inflated totals without explicit bridge logic",
+      "expected_fix": "Use a shared conformed dimension, TREATAS, or split the metrics into separate visuals",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "DATESYTD crossing fiscal year boundary without year-end arg",
-      "input": "Q1 FY YTD = CALCULATE([Rev], DATESYTD(DimDate[Date]))",
-      "expected_issue": "adv-cor-093: Fiscal year model without year-end arg returns calendar YTD not fiscal YTD",
-      "expected_fix": "DATESYTD(DimDate[Date], \"3/31\") for April fiscal year start"
+      "name": "[bulk:finance] high cardinality axis DimAccount",
+      "input": "// Bar chart axis: DimAccount[AccountName], values: [Actual Amount]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Snapshot fact with rolling date filter inflates result",
-      "input": "HC Rolling = CALCULATE(SUM(FactHeadcount[Salary]), DATESINPERIOD(DimDate[Date], MAX(DimDate[Date]), -3, MONTH))",
-      "expected_issue": "adv-model-067: Snapshot summed over 3 months = 3x actual headcount cost",
-      "expected_fix": "Use LASTDATE filter for snapshot; rolling only appropriate for flow facts"
+      "name": "[bulk:finance] high cardinality axis DimCostCenter",
+      "input": "// Bar chart axis: DimCostCenter[AccountName], values: [Actual Amount]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "RLS with USERPRINCIPALNAME on Azure B2B guest — UPN format differs",
-      "input": "[RLS] = LOWER(DimEmployee[Email]) = LOWER(USERPRINCIPALNAME())",
-      "expected_issue": "adv-sec-002: Azure B2B guest UPNs use #EXT# format — may not match stored email",
-      "expected_fix": "Normalize UPN format or use PATHCONTAINS for guest account matching"
+      "name": "[bulk:finance] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [Actual Amount]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "finance",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "CONCATENATEX over 1M row fact table — blank or timeout",
-      "input": "AllIDs = CONCATENATEX(FactSales, FactSales[SalesID], \", \")",
-      "expected_issue": "adv-cor-007: CONCATENATEX over millions of rows will timeout or be truncated by Power BI",
-      "expected_fix": "Limit with TOPN or aggregate before concatenating"
+      "name": "[bulk:saas] cross-fact visual FactSubscriptions plus FactUsage",
+      "input": "// Visual combines [FactSubscriptions metric] and [FactUsage metric] by DimAccount[AccountName]",
+      "expected_issue": "adv-model-063: Cross-fact visuals sharing a dimension can produce blank rows or inflated totals without explicit bridge logic",
+      "expected_fix": "Use a shared conformed dimension, TREATAS, or split the metrics into separate visuals",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "CALENDAR(start > end) produces zero rows",
-      "input": "Dates = CALENDAR(DATE(2025,1,1), DATE(2020,1,1))",
-      "expected_issue": "adv-cor-015: Start date after end date — calendar has zero rows, all time intelligence returns BLANK",
-      "expected_fix": "CALENDAR(DATE(2020,1,1), DATE(2025,12,31))"
+      "name": "[bulk:saas] high cardinality axis DimAccount",
+      "input": "// Bar chart axis: DimAccount[AccountName], values: [MRR]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "DISTINCTCOUNT on nullable foreign key column",
-      "input": "Count = DISTINCTCOUNT(FactSales[CustomerKey])",
-      "expected_issue": "edge: NULL/BLANK CustomerKeys counted as one distinct value — may inflate unique customer count",
-      "expected_fix": "CALCULATE(DISTINCTCOUNT(FactSales[CustomerKey]), NOT ISBLANK(FactSales[CustomerKey]))"
+      "name": "[bulk:saas] high cardinality axis DimPlan",
+      "input": "// Bar chart axis: DimPlan[AccountName], values: [MRR]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Two measures on different fact grains in same visual — denominator mismatch",
-      "input": "// Matrix: Rows=DimProduct, Values=[Order Count from FactOrders] + [Line Count from FactOrderLines]",
-      "expected_issue": "adv-model-063: Different grains in same visual — counts will not align, comparisons mislead",
-      "expected_fix": "Aggregate line count to order level first or use separate visuals"
+      "name": "[bulk:saas] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [MRR]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "saas",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "FORMAT mask with wrong decimal separator for EU locale",
-      "input": "Display = FORMAT([Amount], \"#,##0.00\")",
-      "expected_issue": "adv-cor-095: Comma thousands / period decimal may render as period thousands / comma decimal in EU locales",
-      "expected_fix": "Use Power BI format pane (locale-aware) instead of DAX FORMAT"
+      "name": "[bulk:inventory] cross-fact visual FactInventory plus FactPurchaseOrders",
+      "input": "// Visual combines [FactInventory metric] and [FactPurchaseOrders metric] by DimWarehouse[WarehouseName]",
+      "expected_issue": "adv-model-063: Cross-fact visuals sharing a dimension can produce blank rows or inflated totals without explicit bridge logic",
+      "expected_fix": "Use a shared conformed dimension, TREATAS, or split the metrics into separate visuals",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "ALL(FactTable) in percentage measure bypasses RLS",
-      "input": "Mkt Share = DIVIDE([Sales], CALCULATE([Sales], ALL(FactSales)))",
-      "expected_issue": "adv-sec-005: ALL(FactSales) removes RLS — user sees market share against all data, not their allowed data",
-      "expected_fix": "CALCULATE([Sales], REMOVEFILTERS(FactSales[Product])) — only remove product filter, not all filters"
+      "name": "[bulk:inventory] high cardinality axis DimWarehouse",
+      "input": "// Bar chart axis: DimWarehouse[WarehouseName], values: [Total On Hand]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "USERELATIONSHIP with inactive relationship used in calculated column",
-      "input": "// Calculated column using USERELATIONSHIP — not inside CALCULATE",
-      "expected_issue": "adv-cor-084: USERELATIONSHIP in calculated column has no effect — wrap in CALCULATE",
-      "expected_fix": "Add CALCULATE wrapper around the column expression"
+      "name": "[bulk:inventory] high cardinality axis DimSupplier",
+      "input": "// Bar chart axis: DimSupplier[WarehouseName], values: [Total On Hand]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Auto date/time + custom DimDate = duplicate date hierarchies in field list",
-      "input": "// Both Auto Date/Time and custom DimDate active in model",
-      "expected_issue": "adv-model-081: Duplicate date hierarchies confuse users and inflate model size — disable Auto Date/Time",
-      "expected_fix": "Options → Current File → Data Load → uncheck Auto Date/Time"
+      "name": "[bulk:inventory] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [Total On Hand]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "inventory",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "RANKX with ALLSELECTED on visual with no slicer — returns 1 for all rows",
-      "input": "Rank = RANKX(ALLSELECTED(DimCustomer), [Revenue], , DESC, Dense)",
-      "expected_issue": "edge: Without a slicer, ALLSELECTED = ALL — rank works. With slicer showing 1 customer, all rows rank 1",
-      "expected_fix": "Test rank behavior with and without slicer applied"
+      "name": "[bulk:supply_chain] high cardinality axis DimCarrier",
+      "input": "// Bar chart axis: DimCarrier[CarrierName], values: [On Time Delivery Rate]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "ISINSCOPE on column not in visual hierarchy — always FALSE",
-      "input": "IsDetail = ISINSCOPE(FactSales[SalesID])",
-      "expected_issue": "adv-cor-021: SalesID never appears in visual hierarchy — ISINSCOPE always FALSE, conditional never triggers",
-      "expected_fix": "Use a column that is actually in the visual's row/column grouping"
+      "name": "[bulk:supply_chain] high cardinality axis DimLocation",
+      "input": "// Bar chart axis: DimLocation[CarrierName], values: [On Time Delivery Rate]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Table.Distinct on fact table removing legitimate duplicates",
-      "input": "Table.Distinct(FactSales)",
-      "expected_issue": "adv-pq-004: Deduplication may remove valid rows if grain is not unique on natural key — verify before removing",
-      "expected_fix": "Confirm grain: use Table.Group to identify actual duplicates first"
+      "name": "[bulk:supply_chain] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [On Time Delivery Rate]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "supply_chain",
+      "source": "bulk_synthetic"
     },
     {
-      "name": "Binary image column in model inflating .pbix to 500MB+",
-      "input": "// Product[ImageBytes] loaded — model file is 480MB",
-      "expected_issue": "adv-pq-010 / adv-model-085: Binary column inflates model — remove in Power Query",
-      "expected_fix": "Table.RemoveColumns(Source, {\"ImageBytes\"})"
+      "name": "[bulk:hr] high cardinality axis DimEmployee",
+      "input": "// Bar chart axis: DimEmployee[FullName], values: [Headcount]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "hr",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:hr] high cardinality axis DimDepartment",
+      "input": "// Bar chart axis: DimDepartment[FullName], values: [Headcount]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "hr",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:hr] high cardinality axis DimJobLevel",
+      "input": "// Bar chart axis: DimJobLevel[FullName], values: [Headcount]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "hr",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:hr] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [Headcount]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "hr",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] cross-fact visual FactCampaigns plus FactWebAnalytics",
+      "input": "// Visual combines [FactCampaigns metric] and [FactWebAnalytics metric] by DimChannel[ChannelName]",
+      "expected_issue": "adv-model-063: Cross-fact visuals sharing a dimension can produce blank rows or inflated totals without explicit bridge logic",
+      "expected_fix": "Use a shared conformed dimension, TREATAS, or split the metrics into separate visuals",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] high cardinality axis DimChannel",
+      "input": "// Bar chart axis: DimChannel[ChannelName], values: [CTR]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] high cardinality axis DimAudience",
+      "input": "// Bar chart axis: DimAudience[ChannelName], values: [CTR]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:marketing] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [CTR]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "marketing",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] cross-fact visual FactWorkOrders plus FactDowntime",
+      "input": "// Visual combines [FactWorkOrders metric] and [FactDowntime metric] by DimAsset[AssetName]",
+      "expected_issue": "adv-model-063: Cross-fact visuals sharing a dimension can produce blank rows or inflated totals without explicit bridge logic",
+      "expected_fix": "Use a shared conformed dimension, TREATAS, or split the metrics into separate visuals",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] high cardinality axis DimAsset",
+      "input": "// Bar chart axis: DimAsset[AssetName], values: [OEE]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] high cardinality axis DimTechnician",
+      "input": "// Bar chart axis: DimTechnician[AssetName], values: [OEE]",
+      "expected_issue": "adv-model-069: High-cardinality axes make visual comparison unreadable",
+      "expected_fix": "Apply Top N, group remaining members as Other, or move details to drill-through",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "[bulk:operations] MonthName text sort",
+      "input": "// Line chart axis: DimDate[MonthName], values: [OEE]",
+      "expected_issue": "visual: MonthName text sorts alphabetically instead of calendar order",
+      "expected_fix": "Sort DimDate[MonthName] by DimDate[Month]",
+      "domain": "operations",
+      "source": "bulk_synthetic"
+    },
+    {
+      "name": "SUM on EndingInventory — edge: all conditions match",
+      "input": "End Inv = SUM(Product[EndingInventory])",
+      "expected_rule": "adv-cor-080"
+    },
+    {
+      "name": "COUNTROWS on Backlog table — edge: backlog is a snapshot",
+      "input": "Backlog Count = COUNTROWS(Backlog)",
+      "expected_rule": "adv-cor-081"
+    },
+    {
+      "name": "[ctx] TOPN(100) on 100-row Category — 100% scan, rowCounts confirms",
+      "input": "Top 100 = TOPN(100, Category, [Revenue], DESC)",
+      "modelContext": {
+        "rowCounts": {
+          "Category": 100
+        }
+      },
+      "expected_rule": "adv-perf-042"
+    },
+    {
+      "name": "CALCULATETABLE over TransformedData — chaining heuristic fires",
+      "input": "Subset = CALCULATETABLE(TransformedData, TransformedData[Region] = \"US\")",
+      "expected_rule": "adv-model-082"
+    },
+    {
+      "name": "[ctx] COUNTROWS on table with nonFoldable:true — confirmed non-foldable",
+      "input": "Count = COUNTROWS(BufferedLookup)",
+      "expected_rule": "adv-model-083",
+      "modelContext": {
+        "calculatedTables": [
+          {
+            "name": "BufferedLookup",
+            "dependsOn": [],
+            "nonFoldable": true
+          }
+        ]
+      }
+    }
+  ],
+  "cross_measure_cases": [
+    {
+      "name": "[cx] Circular reference A → B → A",
+      "measures": [
+        {
+          "name": "Measure A",
+          "dax": "Measure A = [Measure B] + 1"
+        },
+        {
+          "name": "Measure B",
+          "dax": "Measure B = [Measure A] * 2"
+        }
+      ],
+      "expected_interaction_type": "cx-circular-reference",
+      "expected_measures": [
+        "Measure A",
+        "Measure B"
+      ]
+    },
+    {
+      "name": "[cx] Redundant bare CALCULATE wrapper",
+      "measures": [
+        {
+          "name": "Revenue",
+          "dax": "Revenue = SUM(Sales[Amount])"
+        },
+        {
+          "name": "Revenue Copy",
+          "dax": "Revenue Copy = CALCULATE([Revenue])"
+        }
+      ],
+      "expected_interaction_type": "cx-redundant-calculate",
+      "expected_measures": [
+        "Revenue Copy",
+        "Revenue"
+      ]
+    },
+    {
+      "name": "[cx] Duplicate measure logic — identical bodies",
+      "measures": [
+        {
+          "name": "Total Sales",
+          "dax": "Total Sales = SUM(Sales[Amount])"
+        },
+        {
+          "name": "Sales Total",
+          "dax": "Sales Total = SUM(Sales[Amount])"
+        }
+      ],
+      "expected_interaction_type": "cx-duplicate-logic",
+      "expected_measures": [
+        "Total Sales",
+        "Sales Total"
+      ]
+    },
+    {
+      "name": "[cx] Measure reference inside FILTER predicate",
+      "measures": [
+        {
+          "name": "Revenue",
+          "dax": "Revenue = SUM(Sales[Amount])"
+        },
+        {
+          "name": "Big Customers",
+          "dax": "Big Customers = CALCULATE(COUNTROWS(Sales), FILTER(Sales, [Revenue] > 10000))"
+        }
+      ],
+      "expected_interaction_type": "cx-measure-in-filter",
+      "expected_measures": [
+        "Big Customers",
+        "Revenue"
+      ]
+    },
+    {
+      "name": "[cx] Double time-shift — LY of LY compounds shifts",
+      "measures": [
+        {
+          "name": "Last Year Revenue",
+          "dax": "Last Year Revenue = CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date]))"
+        },
+        {
+          "name": "Prior LY Revenue",
+          "dax": "Prior LY Revenue = CALCULATE([Last Year Revenue], SAMEPERIODLASTYEAR('Date'[Date]))"
+        }
+      ],
+      "expected_interaction_type": "cx-double-time-shift",
+      "expected_measures": [
+        "Prior LY Revenue",
+        "Last Year Revenue"
+      ]
+    },
+    {
+      "name": "[cx] Pure alias measure adds no logic",
+      "measures": [
+        {
+          "name": "Net Revenue",
+          "dax": "Net Revenue = SUM(Sales[Net])"
+        },
+        {
+          "name": "Rev",
+          "dax": "Rev = [Net Revenue]"
+        }
+      ],
+      "expected_interaction_type": "cx-alias-measure",
+      "expected_measures": [
+        "Rev",
+        "Net Revenue"
+      ]
+    },
+    {
+      "name": "[cx-neg] Valid fan-in — A and B both reference C, no cycle",
+      "measures": [
+        {
+          "name": "Revenue",
+          "dax": "Revenue = SUM(Sales[Amount])"
+        },
+        {
+          "name": "Margin",
+          "dax": "Margin = SUM(Sales[Profit])"
+        },
+        {
+          "name": "Ratio",
+          "dax": "Ratio = DIVIDE([Margin], [Revenue])"
+        }
+      ],
+      "excluded_interaction_type": "cx-circular-reference"
+    },
+    {
+      "name": "[cx-neg] Valid CALCULATE with actual filter — not redundant",
+      "measures": [
+        {
+          "name": "Revenue",
+          "dax": "Revenue = SUM(Sales[Amount])"
+        },
+        {
+          "name": "Online Revenue",
+          "dax": "Online Revenue = CALCULATE([Revenue], Sales[Channel] = \"Online\")"
+        }
+      ],
+      "excluded_interaction_type": "cx-redundant-calculate"
+    },
+    {
+      "name": "[cx-neg] Single time-shift referencing raw base — valid",
+      "measures": [
+        {
+          "name": "Revenue",
+          "dax": "Revenue = SUM(Sales[Amount])"
+        },
+        {
+          "name": "Last Year Revenue",
+          "dax": "Last Year Revenue = CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date]))"
+        }
+      ],
+      "excluded_interaction_type": "cx-double-time-shift"
     }
   ]
 }

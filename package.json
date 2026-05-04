@@ -1,0 +1,23 @@
+{
+  "name": "data-analyst-ai",
+  "version": "1.1.0",
+  "private": true,
+  "scripts": {
+    "gen-icons": "node tools/gen-icons.js",
+    "test:proxy": "node tools/test-proxy.js",
+    "test:proxy:live": "node tools/test-proxy.js --key $ANTHROPIC_API_KEY",
+    "pack": "node tools/pack.js",
+    "proxy": "node tools/anthropic-proxy/server.js",
+    "training:generate": "node scripts/generateSyntheticData.js && node scripts/buildBulkSyntheticTraining.js",
+    "training:evaluate": "node scripts/testRunner.js && node scripts/trainDeterministicEngine.js",
+    "training:strict": "node scripts/testRunner.js && node scripts/trainDeterministicEngine.js --strict",
+    "training:overnight": "node scripts/runOvernightTraining.js --hours 8 --interval-minutes 30",
+    "browser:smoke": "node scripts/browserSmokeTest.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.53.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
