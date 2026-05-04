@@ -261,6 +261,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                              errMsg.includes("Could not establish connection");
       if (isDisconnected) {
         try {
+          // Inject token capture in MAIN world first (must be before isolated-world scripts)
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["src/pbiTokenCapture.js"], world: "MAIN" });
           await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPTS });
           await new Promise(r => setTimeout(r, 600)); // let scripts initialise
           trySend((resp2, err2) => {

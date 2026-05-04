@@ -34,7 +34,15 @@
     }
   }
 
-  // Intercept fetch — Power BI web calls api.powerbi.com with Bearer tokens
+  // ── Listen for tokens emitted by pbiTokenCapture.js (MAIN world) ─────────────
+  // pbiTokenCapture.js runs in the MAIN world and can intercept the page's
+  // real window.fetch. It fires a CustomEvent here in the isolated world.
+  document.addEventListener("__pbi_auth", (e) => {
+    if (e.detail) storeToken(`Bearer ${e.detail}`);
+  });
+
+  // Fallback: also intercept fetch from OUR isolated world (catches extension-
+  // initiated calls, but NOT the page's own calls — see pbiTokenCapture.js).
   const _origFetch = window.fetch;
   window.fetch = function (input, init) {
     try {

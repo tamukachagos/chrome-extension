@@ -50,6 +50,17 @@
         "https://*.powerbi.com/*"
       ],
       "js": [
+        "src/pbiTokenCapture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://app.powerbi.com/*",
+        "https://*.powerbi.com/*"
+      ],
+      "js": [
         "src/pbiApi.js"
       ],
       "run_at": "document_start"
