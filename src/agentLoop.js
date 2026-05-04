@@ -233,10 +233,10 @@ Generate a corrective plan for the remaining work. Skip completed steps.`,
 
   async createMeasureViaApi(state, name, expression, formatString) {
     const ids   = state?._pbiIds || {};
-    const wid   = ids.workspaceId;
+    const wid   = ids.workspaceId;   // may be "me" for My Workspace — pbiApi.js handles it
     const rid   = ids.reportId;
-    if (!wid || !rid) {
-      return { ok: false, error: "Workspace / report IDs not found in URL" };
+    if (!rid) {
+      return { ok: false, error: "Report ID not found in URL" };
     }
 
     // Get datasetId

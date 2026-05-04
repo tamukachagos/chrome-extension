@@ -114,12 +114,13 @@
   // ── URL parsing ───────────────────────────────────────────────────────────────
 
   function parseUrl() {
-    // https://app.powerbi.com/groups/{workspaceId}/reports/{reportId}/...
+    // Handles both named workspaces (/groups/{uuid}/reports/{uuid})
+    // and "My workspace" (/groups/me/reports/{uuid})
     const m = location.pathname.match(
-      /\/groups\/([0-9a-f-]+)\/(?:reports|datasets)\/([0-9a-f-]+)/i
+      /\/groups\/([^/]+)\/(?:reports|datasets)\/([0-9a-f-]+)/i
     );
     return {
-      workspaceId: m ? m[1] : null,
+      workspaceId: m ? m[1] : null,   // may be "me" for My Workspace
       reportId:    m ? m[2] : null
     };
   }
@@ -127,6 +128,12 @@
   // ── REST API helper ───────────────────────────────────────────────────────────
 
   const BASE = "https://api.powerbi.com/v1.0/myorg";
+
+  // Build a groups-scoped path. If wid is null or "me" (My Workspace),
+  // return the path without /groups/ prefix — the REST API works either way.
+  function gpath(wid, subpath) {
+    return (wid && wid !== "me") ? `/groups/${wid}${subpath}` : subpath;
+  }
 
   async function api(path, opts = {}) {
     const tok = getToken();
@@ -164,8 +171,8 @@
       const ids = parseUrl();
       const wid = workspaceId || ids.workspaceId;
       const rid = reportId    || ids.reportId;
-      if (!wid || !rid) throw new Error("Cannot determine workspaceId / reportId from URL");
-      return api(`/groups/${wid}/reports/${rid}`);
+      if (!rid) throw new Error("Cannot determine reportId from URL");
+      return api(gpath(wid, `/reports/${rid}`));
     },
 
     // Get the dataset ID for the current report
@@ -176,26 +183,26 @@
 
     // List all tables in a dataset
     async getTables(workspaceId, datasetId) {
-      return api(`/groups/${workspaceId}/datasets/${datasetId}/tables`);
+      return api(gpath(workspaceId, `/datasets/${datasetId}/tables`));
     },
 
     // List measures in a table
     async getMeasures(workspaceId, datasetId, tableName) {
-      return api(`/groups/${workspaceId}/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/measures`);
+      return api(gpath(workspaceId, `/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/measures`));
     },
 
     // Create a new measure via REST API (reliable, no DOM)
     async createMeasure({ workspaceId, datasetId, tableName, name, expression, formatString, description }) {
       const ids = parseUrl();
       const wid = workspaceId || ids.workspaceId;
-      if (!wid || !datasetId || !tableName || !name || !expression)
-        throw new Error("createMeasure requires workspaceId, datasetId, tableName, name, expression");
+      if (!datasetId || !tableName || !name || !expression)
+        throw new Error("createMeasure requires datasetId, tableName, name, expression");
 
       const body = { name, expression };
       if (formatString)  body.formatString  = formatString;
       if (description)   body.description   = description;
 
-      return api(`/groups/${wid}/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/measures`, {
+      return api(gpath(wid, `/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/measures`), {
         method: "POST",
         body
       });
@@ -207,21 +214,17 @@
       const wid = workspaceId || ids.workspaceId;
       const body = { name, expression };
       if (formatString) body.formatString = formatString;
-      return api(`/groups/${wid}/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/measures/${encodeURIComponent(name)}`, {
+      return api(gpath(wid, `/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/measures/${encodeURIComponent(name)}`), {
         method: "PUT",
         body
       });
     },
 
     // Execute a DAX query and return the result rows
-    // Uses /groups/{wid}/datasets/{id}/executeQueries for shared workspaces (most production reports)
     async executeDaxQuery(datasetId, daxQuery, workspaceId) {
       if (!datasetId || !daxQuery) throw new Error("datasetId and daxQuery required");
-      const wid  = workspaceId || parseUrl().workspaceId;
-      const path = wid
-        ? `/groups/${wid}/datasets/${datasetId}/executeQueries`
-        : `/datasets/${datasetId}/executeQueries`; // fallback: My Workspace only
-      const result = await api(path, {
+      const wid = workspaceId || parseUrl().workspaceId;
+      const result = await api(gpath(wid, `/datasets/${datasetId}/executeQueries`), {
         method: "POST",
         body: {
           queries: [{ query: daxQuery }],
@@ -234,45 +237,43 @@
     // Refresh a dataset
     async refreshDataset(workspaceId, datasetId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/refreshes`, { method: "POST" });
+      return api(gpath(wid, `/datasets/${datasetId}/refreshes`), { method: "POST" });
     },
 
     // List datasets in a workspace
     async listDatasets(workspaceId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      if (!wid) throw new Error("workspaceId not found in URL");
-      return api(`/groups/${wid}/datasets`);
+      return api(gpath(wid, "/datasets"));
     },
 
     // List reports in a workspace
     async listReports(workspaceId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      if (!wid) throw new Error("workspaceId not found in URL");
-      return api(`/groups/${wid}/reports`);
+      return api(gpath(wid, "/reports"));
     },
 
     // Get refresh history for a dataset
     async getRefreshHistory(workspaceId, datasetId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/refreshes?$top=10`);
+      return api(gpath(wid, `/datasets/${datasetId}/refreshes?$top=10`));
     },
 
     // Get refresh schedule
     async getRefreshSchedule(workspaceId, datasetId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/refreshSchedule`);
+      return api(gpath(wid, `/datasets/${datasetId}/refreshSchedule`));
     },
 
     // List relationships in a dataset
     async getRelationships(workspaceId, datasetId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/relationships`);
+      return api(gpath(wid, `/datasets/${datasetId}/relationships`));
     },
 
     // Get dataset columns for a table (schema)
     async getColumns(workspaceId, datasetId, tableName) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/columns`);
+      return api(gpath(wid, `/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}/columns`));
     },
 
     // Get all tables with measures and columns
@@ -297,19 +298,16 @@
     // Update a table's Power Query M expression
     async updateTableSource(workspaceId, datasetId, tableName, mExpression) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}`, {
+      return api(gpath(wid, `/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}`), {
         method: "PUT",
-        body: {
-          name: tableName,
-          source: [{ expression: mExpression }]
-        }
+        body: { name: tableName, source: [{ expression: mExpression }] }
       });
     },
 
     // Get table's current M expression
     async getTableSource(workspaceId, datasetId, tableName) {
       const wid = workspaceId || parseUrl().workspaceId;
-      const table = await api(`/groups/${wid}/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}`);
+      const table = await api(gpath(wid, `/datasets/${datasetId}/tables/${encodeURIComponent(tableName)}`));
       return table?.source?.[0]?.expression || null;
     },
 
@@ -325,7 +323,7 @@
     // List dataset users (shows who has access — includes RLS-eligible identities)
     async listDatasetUsers(workspaceId, datasetId) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/users`);
+      return api(gpath(wid, `/datasets/${datasetId}/users`));
     },
 
     // Add or update a user on a dataset (with optional RLS role binding)
@@ -333,7 +331,7 @@
     // datasetUserAccessRight: "Read" | "ReadReshare" | "ReadExplore" | "Admin" | "Write" | "None"
     async addDatasetUser(workspaceId, datasetId, { identifier, principalType = "User", datasetUserAccessRight = "Read" }) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/users`, {
+      return api(gpath(wid, `/datasets/${datasetId}/users`), {
         method: "POST",
         body: { identifier, principalType, datasetUserAccessRight }
       });
@@ -342,7 +340,7 @@
     // Remove a user from a dataset
     async removeDatasetUser(workspaceId, datasetId, identifier) {
       const wid = workspaceId || parseUrl().workspaceId;
-      return api(`/groups/${wid}/datasets/${datasetId}/users/${encodeURIComponent(identifier)}`, {
+      return api(gpath(wid, `/datasets/${datasetId}/users/${encodeURIComponent(identifier)}`), {
         method: "DELETE"
       });
     },
@@ -384,7 +382,7 @@
       if (!wid || !rid) throw new Error("workspaceId and reportId required for RLS test");
       // datasetId is required in the identities array for shared workspace tokens
       const dsId = datasetId || (await this.getDatasetId(wid, rid).catch(() => null));
-      return api(`/groups/${wid}/reports/${rid}/GenerateToken`, {
+      return api(gpath(wid, `/reports/${rid}/GenerateToken`), {
         method: "POST",
         body: {
           accessLevel: "view",
