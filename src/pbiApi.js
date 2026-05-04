@@ -78,24 +78,29 @@
     return _origSetHeader.apply(this, arguments);
   };
 
-  // Fallback: scan MSAL localStorage cache (Power BI uses MSAL v2)
+  // Fallback: scan MSAL token cache — Power BI uses MSAL v2 which stores
+  // tokens in sessionStorage (NOT localStorage) in most browser environments.
   function tokenFromMsal() {
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key || !key.includes("accesstoken")) continue;
-        try {
-          const item = JSON.parse(localStorage.getItem(key) || "null");
-          if (!item?.secret) continue;
-          const exp = Number(item.expiresOn || 0) * 1000;
-          if (exp < Date.now() + 60_000) continue;
-          const target = (item.target || "") + (item.realm || "");
-          if (target.includes("powerbi") || target.includes("analysis.windows.net")) {
-            return item.secret;
-          }
-        } catch (_) {}
-      }
-    } catch (_) {}
+    // Search both sessionStorage and localStorage — different MSAL configs use different stores
+    const stores = [sessionStorage, localStorage];
+    for (const store of stores) {
+      try {
+        for (let i = 0; i < store.length; i++) {
+          const key = store.key(i);
+          if (!key || !key.includes("accesstoken")) continue;
+          try {
+            const item = JSON.parse(store.getItem(key) || "null");
+            if (!item?.secret) continue;
+            const exp = Number(item.expiresOn || 0) * 1000;
+            if (exp < Date.now() + 60_000) continue;
+            const target = (item.target || "") + (item.realm || "");
+            if (target.includes("powerbi") || target.includes("analysis.windows.net")) {
+              return item.secret;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
     return null;
   }
 
