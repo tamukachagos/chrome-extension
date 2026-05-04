@@ -369,10 +369,27 @@
       }
 
       case "new_measure": {
-        if (window.__dataAnalystAdapter) {
-          return window.__dataAnalystAdapter.clickNewMeasure();
+        if (!window.__dataAnalystAdapter)
+          return { ok: false, step_id: step.id, error: "platformAdapter not loaded" };
+
+        // First attempt: direct click
+        const r1 = window.__dataAnalystAdapter.clickNewMeasure();
+        if (r1.ok) return r1;
+
+        // Second attempt: if a right-click was triggered (Pass 3), wait and then
+        // look for "New measure" in the context menu that just opened
+        await new Promise(res => setTimeout(res, 600));
+        const menuItems = Array.from(document.querySelectorAll(
+          '[role="menuitem"], [role="option"], [class*="contextMenuItem"], [class*="menu-item"]'
+        ));
+        for (const el of menuItems) {
+          if (el.textContent.trim().toLowerCase().includes("new measure")) {
+            el.click();
+            return { ok: true, step_id: step.id, method: "context-menu" };
+          }
         }
-        return { ok: false, step_id: step.id, error: "platformAdapter not loaded" };
+
+        return { ok: false, step_id: step.id, error: r1.error };
       }
 
       case "write_measure_name": {

@@ -422,8 +422,14 @@
 
       case "step_start": {
         const label = data.step.reason || `${data.step.type}: ${data.step.target || data.step.text || ""}`;
-        updateProgress(_progressEl, `⚡ Step ${data.stepIndex + 1}/${data.total}: ${label.slice(0, 80)}${data.attempt > 0 ? ` (retry ${data.attempt})` : ""}`);
-        setStatus("orange", `Step ${data.stepIndex + 1}/${data.total}`, true);
+        if (data.stepIndex < 0) {
+          // Pre-plan step (e.g. waiting for token)
+          updateProgress(_progressEl, `⏳ ${label.slice(0, 100)}`);
+          setStatus("orange", label.slice(0, 40), true);
+        } else {
+          updateProgress(_progressEl, `⚡ Step ${data.stepIndex + 1}/${data.total}: ${label.slice(0, 80)}${data.attempt > 0 ? ` (retry ${data.attempt})` : ""}`);
+          setStatus("orange", `Step ${data.stepIndex + 1}/${data.total}`, true);
+        }
         break;
       }
 
@@ -440,8 +446,12 @@
         break;
 
       case "pbi_api":
-        if (data.result?.ok) {
-          appendMsg("agent", `🔗 Power BI API: measure created successfully.`);
+        if (data.action === "TOKEN_STATUS" && !data.result?.hasToken) {
+          appendMsg("agent", `⚠️ No Power BI token captured yet — using DOM automation instead of REST API. For faster, more reliable edits, interact with the report once (click a visual or field) so the extension can capture your session token.`);
+        } else if (data.result?.ok) {
+          appendMsg("agent", `🔗 Power BI REST API: ${data.action === "CREATE_MEASURE" ? "measure created successfully ✅" : "action completed."}`);
+        } else if (data.result && !data.result.ok) {
+          appendMsg("agent", `⚠️ Power BI API (${data.action}): ${data.result.error || "failed"}`);
         }
         break;
 

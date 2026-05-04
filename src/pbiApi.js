@@ -78,25 +78,76 @@
     return _origSetHeader.apply(this, arguments);
   };
 
-  // Fallback: scan MSAL token cache — Power BI uses MSAL v2 which stores
-  // tokens in sessionStorage (NOT localStorage) in most browser environments.
+  // Decode a JWT payload — returns parsed object or null
+  function decodeJwt(token) {
+    try {
+      const part = token.split(".")[1];
+      if (!part) return null;
+      // base64url → base64 → decode
+      const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(atob(base64));
+    } catch (_) { return null; }
+  }
+
+  // Check if a raw JWT string is a valid, non-expired Power BI access token
+  function isPbiJwt(token) {
+    if (typeof token !== "string" || token.split(".").length !== 3) return false;
+    const payload = decodeJwt(token);
+    if (!payload) return false;
+    // Must not be expired (exp is seconds)
+    if (payload.exp && payload.exp * 1000 < Date.now() + 60_000) return false;
+    // Must be scoped for Power BI or Azure Analysis Services
+    const aud = (Array.isArray(payload.aud) ? payload.aud.join(" ") : String(payload.aud || "")).toLowerCase();
+    return aud.includes("powerbi") || aud.includes("analysis.windows.net");
+  }
+
+  // Fallback: scan MSAL token cache — Power BI uses MSAL v2/v3 which stores
+  // tokens in sessionStorage in most browser environments. Tries three strategies:
+  //   1. MSAL v2 "accesstoken" key format → item.secret
+  //   2. Broader key scan → any JSON value with a .secret that is a PBI JWT
+  //   3. Raw value scan → any storage value that IS a PBI JWT
   function tokenFromMsal() {
-    // Search both sessionStorage and localStorage — different MSAL configs use different stores
     const stores = [sessionStorage, localStorage];
     for (const store of stores) {
       try {
-        for (let i = 0; i < store.length; i++) {
-          const key = store.key(i);
-          if (!key || !key.includes("accesstoken")) continue;
+        const keys = [];
+        for (let i = 0; i < store.length; i++) keys.push(store.key(i));
+
+        // Strategy 1: MSAL v2 format (key contains "accesstoken")
+        for (const key of keys) {
+          if (!key || !key.toLowerCase().includes("accesstoken")) continue;
           try {
             const item = JSON.parse(store.getItem(key) || "null");
             if (!item?.secret) continue;
-            const exp = Number(item.expiresOn || 0) * 1000;
-            if (exp < Date.now() + 60_000) continue;
-            const target = (item.target || "") + (item.realm || "");
-            if (target.includes("powerbi") || target.includes("analysis.windows.net")) {
+            // Accept token if it decodes as a valid PBI JWT
+            if (isPbiJwt(item.secret)) return item.secret;
+            // Fallback: use MSAL metadata fields
+            const exp    = Number(item.expiresOn || item.extendedExpiresOn || 0) * 1000;
+            const target = ((item.target || "") + " " + (item.realm || "") + " " + (item.credentialType || "")).toLowerCase();
+            if (exp > Date.now() + 60_000 &&
+                (target.includes("powerbi") || target.includes("analysis.windows.net"))) {
               return item.secret;
             }
+          } catch (_) {}
+        }
+
+        // Strategy 2: broader key scan — any JSON with a .secret that is a PBI JWT
+        for (const key of keys) {
+          if (!key) continue;
+          try {
+            const raw  = store.getItem(key) || "";
+            if (!raw.includes("eyJ")) continue; // quick pre-filter (JWTs start with eyJ)
+            const item = JSON.parse(raw);
+            if (item?.secret && isPbiJwt(item.secret)) return item.secret;
+          } catch (_) {}
+        }
+
+        // Strategy 3: raw value scan — storage value IS a PBI JWT directly
+        for (const key of keys) {
+          if (!key) continue;
+          try {
+            const val = store.getItem(key) || "";
+            if (isPbiJwt(val)) return val;
           } catch (_) {}
         }
       } catch (_) {}
@@ -402,8 +453,14 @@
     const p = msg.params || {};
 
     if (msg.type === "PBI_API_STATUS") {
-      const ids = parseUrl();
-      sendResponse({ ok: true, hasToken: pbiApi.hasToken(), ...ids });
+      const ids       = parseUrl();
+      const hasToken  = pbiApi.hasToken();
+      // Provide a brief debug hint when the token is missing so the UI can show it
+      const tokenHint = hasToken ? null
+        : _token                 ? "token_expired"
+        : tokenFromMsal()        ? "msal_scan_found_but_skipped"   // shouldn't happen
+        : "no_token_found";
+      sendResponse({ ok: true, hasToken, tokenHint, ...ids });
       return true;
     }
 

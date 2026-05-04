@@ -322,31 +322,76 @@
       return { ok: false, error: "Commit button not found" };
     },
 
-    // Click the "New measure" button
+    // Click the "New measure" button (or trigger via right-click context menu)
     clickNewMeasure() {
-      // CSS selector candidates
+      // ── Pass 1: direct selector candidates ─────────────────────────────────────
       const selectors = [
         '[data-testid="new-measure-button"]',
+        '[data-testid="newMeasureButton"]',
         '[aria-label="New measure"]',
         '[aria-label*="New measure"]',
         'button[title="New measure"]',
         'button[title*="New measure"]',
         '[class*="newMeasure"]',
+        '[class*="new-measure"]',
         '[role="button"][aria-label*="New measure"]',
+        // Ribbon / toolbar buttons
+        '[class*="ribbon"] button',
+        '[class*="Ribbon"] button',
+        '[class*="toolbar"] button',
+        '[role="toolbar"] button',
+        '[role="group"] button',
       ];
       for (const sel of selectors) {
-        const btn = qs(sel);
-        if (btn) { btn.click(); return { ok: true }; }
-      }
-      // Text-based fallback: scan visible menu items
-      const menuItems = qsa('[role="menuitem"], [role="option"], [class*="contextMenuItem"]');
-      for (const el of menuItems) {
-        if (el.textContent.trim().toLowerCase().includes("new measure")) {
-          el.click();
-          return { ok: true };
+        const candidates = qsa(sel);
+        for (const el of candidates) {
+          const label = (el.getAttribute("aria-label") || "").toLowerCase();
+          const title = (el.getAttribute("title") || "").toLowerCase();
+          const text  = el.textContent.trim().toLowerCase();
+          if (label.includes("new measure") || title.includes("new measure") || text === "new measure") {
+            el.click();
+            return { ok: true, selector: sel };
+          }
         }
       }
-      return { ok: false, error: "New measure button not found. Try right-clicking a table in the Fields pane first." };
+
+      // ── Pass 2: scan ALL buttons / interactive elements by text ────────────────
+      const allInteractive = qsa('button, [role="button"], [role="menuitem"], [role="option"]');
+      for (const el of allInteractive) {
+        const text  = el.textContent.trim().toLowerCase();
+        const label = (el.getAttribute("aria-label") || "").toLowerCase();
+        const title = (el.getAttribute("title") || "").toLowerCase();
+        if (text === "new measure" || label.includes("new measure") || title.includes("new measure")) {
+          el.click();
+          return { ok: true, method: "text-scan" };
+        }
+      }
+
+      // ── Pass 3: right-click the first table in the Data/Fields pane ────────────
+      // Power BI surfaces "New measure" via right-click on a table name
+      const tablePaneSelectors = [
+        '[data-testid*="table-header"]',
+        '[class*="fieldListGroupHeader"]',
+        '[class*="tableItem"]',
+        '[class*="modelEntity"]',
+        '[class*="entityHeader"]',
+        '[class*="dataViewpane"] [role="treeitem"]',
+        '[class*="fieldsPane"] [role="treeitem"]',
+        '[class*="dataPane"] [role="treeitem"]',
+        '[role="tree"] [role="treeitem"]',
+      ];
+      let tableEl = null;
+      for (const sel of tablePaneSelectors) {
+        const els = qsa(sel);
+        if (els.length) { tableEl = els[0]; break; }
+      }
+
+      if (tableEl) {
+        tableEl.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+        return { ok: false, error: "Triggered right-click on table — waiting for context menu. Re-run the step." };
+      }
+
+      return { ok: false, error: "New measure button not found. Please ensure you are in Edit mode, then right-click a table in the Data pane and choose New Measure." };
     },
 
     // Find and click a visual by title (partial match)

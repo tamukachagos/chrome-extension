@@ -290,10 +290,25 @@ Generate a corrective plan for the remaining work. Skip completed steps.`,
     try {
       // Gather context
       const state  = await this.pageState();
-      const pbiSt  = await this.pbiStatus();
+      let   pbiSt  = await this.pbiStatus();
+
+      // If on Power BI but no token yet, wait up to 3 s for the page to make an API call
+      if (pbiSt && !pbiSt.hasToken && state?.platform === "power_bi") {
+        this.emit("step_start", { step: { type: "wait", reason: "Waiting for Power BI token…" }, stepIndex: -1, total: 0, attempt: 0 });
+        for (let tries = 0; tries < 3; tries++) {
+          await sleep(1000);
+          pbiSt = await this.pbiStatus();
+          if (pbiSt?.hasToken) break;
+        }
+      }
+
       if (state && pbiSt) {
-        state._pbiIds = { workspaceId: pbiSt.workspaceId, reportId: pbiSt.reportId };
+        state._pbiIds   = { workspaceId: pbiSt.workspaceId, reportId: pbiSt.reportId };
         state._hasToken = pbiSt.hasToken;
+        if (!pbiSt.hasToken) {
+          // Emit a warning so the user knows the REST API path is unavailable
+          this.emit("pbi_api", { action: "TOKEN_STATUS", result: { hasToken: false, hint: pbiSt.tokenHint } });
+        }
       }
 
       const shot = opts.withScreenshot ? await this.screenshot() : null;
