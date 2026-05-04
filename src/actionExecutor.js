@@ -355,10 +355,20 @@
       }
 
       case "write_dax": {
-        if (window.__dataAnalystAdapter) {
-          return window.__dataAnalystAdapter.writeDax(text || "");
+        if (!window.__dataAnalystAdapter)
+          return { ok: false, step_id: step.id, error: "platformAdapter not loaded" };
+        // Safety: if the planner included "MeasureName = expression" in text,
+        // strip the name part — the DOM formula bar only wants the expression.
+        let daxExpr = text || "";
+        const eqIdx = daxExpr.indexOf("=");
+        if (eqIdx > 0 && !daxExpr.trim().toUpperCase().startsWith("EVALUATE")) {
+          const lhs = daxExpr.slice(0, eqIdx).trim();
+          // Only strip if LHS looks like a measure name (no spaces in middle, no operators)
+          if (lhs && !/[\+\-\*\/\(\)]/.test(lhs) && !lhs.includes(" ")) {
+            daxExpr = daxExpr.slice(eqIdx + 1).trim();
+          }
         }
-        return { ok: false, step_id: step.id, error: "platformAdapter not loaded" };
+        return window.__dataAnalystAdapter.writeDax(daxExpr);
       }
 
       case "write_sql": {
