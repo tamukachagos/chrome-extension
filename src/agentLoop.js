@@ -216,7 +216,7 @@ next_action values: "continue" (success), "retry" (try again), "replan" (need di
 
   // ── Re-planning ───────────────────────────────────────────────────────────────
 
-  async replan(goal, done, failed, stateDesc, shot) {
+  async replan(goal, done, failed, stateDesc, shot, hasToken = false) {
     const result = await this.callProxy({
       type: "action_plan",
       goal: `REPLAN: ${goal}
@@ -224,7 +224,8 @@ Already done: ${done.map(s => `${s.type}:${s.target || s.text || ""}`).join(" �
 Failed step: ${failed.type}:${failed.target || ""} — error: ${failed._error || "unknown"}
 Current state: ${stateDesc}
 Generate a corrective plan for the remaining work. Skip completed steps.`,
-      screenshot: shot ? { dataUrl: shot } : undefined
+      screenshot: shot ? { dataUrl: shot } : undefined,
+      context: { pageContext: stateDesc, hasToken }
     });
     return result.json?.steps?.length ? result.json : null;
   }
@@ -356,7 +357,26 @@ Generate a corrective plan for the remaining work. Skip completed steps.`,
               }
               break;
             }
-            // API failed — fall through to DOM execution
+
+            // REST API failed — inject full DOM flow immediately rather than falling
+            // through to a single write_dax which will fail without new_measure first.
+            const domFallbackSteps = [
+              { id: `${step.id}-nm`, type: "new_measure",        reason: "Open new measure dialog (API fallback)" },
+              { id: `${step.id}-wn`, type: "write_measure_name", text: measureName, reason: `Set measure name to "${measureName}"` },
+              { id: `${step.id}-wd`, type: "write_dax",          text: expression,  reason: "Enter the DAX expression" },
+              { id: `${step.id}-cf`, type: "commit_formula",      reason: "Save the measure" }
+            ];
+            // Remove any trailing DOM steps that were already planned (avoid duplicates)
+            const domFollowUpTypes = new Set(["new_measure", "write_measure_name", "commit_formula", "open_formula_bar"]);
+            let skipCount = 0;
+            while (i + 1 + skipCount < steps.length && domFollowUpTypes.has(steps[i + 1 + skipCount]?.type)) skipCount++;
+            // Replace current write_dax (and any following DOM steps) with the full 4-step DOM flow
+            steps.splice(i, 1 + skipCount, ...domFallbackSteps);
+            this.emit("step_fail", { step, stepIndex: i, error: apiResult?.error || "REST API unavailable — falling back to DOM", fatal: false });
+            log.push({ step, method: "api_failed_dom_fallback", error: apiResult?.error });
+            // Signal the outer loop to restart at i (new_measure) without treating this as a failure
+            success = "dom_injected";
+            break;
           }
 
           // ── DOM execution ────────────────────────────────────────────────────
@@ -399,6 +419,9 @@ Generate a corrective plan for the remaining work. Skip completed steps.`,
           }
         }
 
+        // DOM injection sentinel — steps array was patched; restart outer loop at i (new_measure)
+        if (success === "dom_injected") continue;
+
         if (!success) {
           const errMsg = step._error || "verification failed";
           this.emit("step_fail", { step, stepIndex: i, error: errMsg });
@@ -411,7 +434,7 @@ Generate a corrective plan for the remaining work. Skip completed steps.`,
             const nowShot   = await this.screenshot();
             const nowState  = await this.pageState();
             const stateDesc = this._stateContext(nowState);
-            const newPlan   = await this.replan(goal, completed, step, stateDesc, nowShot);
+            const newPlan   = await this.replan(goal, completed, step, stateDesc, nowShot, state?._hasToken || false);
 
             if (newPlan?.steps?.length) {
               replanCount++;
